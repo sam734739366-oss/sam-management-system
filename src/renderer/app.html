@@ -1,0 +1,586 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' file: data: blob:; script-src 'self' file:; style-src 'self' file: 'unsafe-inline'; img-src 'self' file: data: blob:; font-src 'self' file: data:; media-src 'self' file: blob:;" />
+  <title>SAM Management System</title>
+
+  <link rel="stylesheet" href="../../node_modules/@fontsource/cairo/arabic-400.css" />
+  <link rel="stylesheet" href="../../node_modules/@fontsource/cairo/arabic-600.css" />
+  <link rel="stylesheet" href="../../node_modules/@fontsource/cairo/arabic-700.css" />
+  <link rel="stylesheet" href="../../node_modules/@fontsource/cairo/arabic-800.css" />
+  <link rel="stylesheet" href="../../node_modules/@fontsource/cairo/latin-400.css" />
+  <link rel="stylesheet" href="../../node_modules/@fontsource/cairo/latin-700.css" />
+  <link rel="stylesheet" href="../../node_modules/@fontsource/tajawal/arabic-400.css" />
+  <link rel="stylesheet" href="../../node_modules/@fontsource/tajawal/arabic-500.css" />
+  <link rel="stylesheet" href="../../node_modules/@fontsource/tajawal/arabic-700.css" />
+  <link rel="stylesheet" href="../../node_modules/@fontsource/tajawal/latin-400.css" />
+  <link rel="stylesheet" href="../../node_modules/@fontsource/tajawal/latin-700.css" />
+
+  <link rel="stylesheet" href="css/theme.css" />
+  <link rel="stylesheet" href="css/app.css" />
+</head>
+<body class="app-body">
+
+  <!-- icon sprite -->
+  <svg class="hidden" aria-hidden="true">
+    <symbol id="i-dash" viewBox="0 0 24 24"><rect x="3" y="3" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="2"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="2"/></symbol>
+    <symbol id="i-box" viewBox="0 0 24 24"><path d="M21 8.5v7a2 2 0 0 1-1.05 1.76l-7 3.5a2 2 0 0 1-1.9 0l-7-3.5A2 2 0 0 1 3 15.5v-7a2 2 0 0 1 1.05-1.76l7-3.5a2 2 0 0 1 1.9 0l7 3.5A2 2 0 0 1 21 8.5z"/><path d="M3.3 7.3 12 11.8l8.7-4.5M12 21.5v-9.7"/></symbol>
+    <symbol id="i-wh" viewBox="0 0 24 24"><path d="M3 21V9.4a1 1 0 0 1 .55-.9l8-4a1 1 0 0 1 .9 0l8 4a1 1 0 0 1 .55.9V21"/><path d="M2 21h20M8 21v-6h8v6M8 12h8"/></symbol>
+    <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.4"/><path d="M2.6 20a6.4 6.4 0 0 1 12.8 0"/><path d="M17.4 5.7a3 3 0 0 1 0 5.4M18.3 14.4A5.6 5.6 0 0 1 21.5 19"/></symbol>
+    <symbol id="i-swap" viewBox="0 0 24 24"><path d="M4 8h13l-3.2-3.2M20 16H7l3.2 3.2"/></symbol>
+    <symbol id="i-factory" viewBox="0 0 24 24"><path d="M3 21V10l5 3V10l5 3V7l6 3v11z"/><path d="M3 21h18M7 17h2M12 17h2M17 17h2"/></symbol>
+    <symbol id="i-chart" viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15.5l3.5-4 3 2.5L20 8"/></symbol>
+    <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.5v2.6M12 18.9v2.6M4.2 7.2l2.2 1.3M17.6 15.5l2.2 1.3M4.2 16.8l2.2-1.3M17.6 8.5l2.2-1.3"/></symbol>
+    <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="2.6"/></symbol>
+    <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20h4l10.5-10.5a2.1 2.1 0 0 0-3-3L5 17v3z"/><path d="M14.5 6.5l3 3"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4.5h6V7M6.5 7l1 13h9l1-13"/><path d="M10.5 11v6M13.5 11v6"/></symbol>
+    <symbol id="i-print" viewBox="0 0 24 24"><path d="M7 9V4h10v5M7 18H5a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2h-2"/><rect x="7" y="14" width="10" height="7" rx="1.2"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></symbol>
+    <symbol id="i-exit" viewBox="0 0 24 24"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><path d="M10 17l5-5-5-5M15 12H3"/></symbol>
+    <symbol id="i-min" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+    <symbol id="i-max" viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="2"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+    <symbol id="i-bell" viewBox="0 0 24 24"><path d="M18 15V9a6 6 0 1 0-12 0v6l-2 3h16z"/><path d="M10 21h4"/></symbol>
+    <symbol id="i-warn" viewBox="0 0 24 24"><path d="M12 3.5 21 19H3z"/><path d="M12 9v5M12 16.5v.5"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M4 12.5 9.5 18 20 6.5"/></symbol>
+    <symbol id="i-db" viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="8" ry="3.2"/><path d="M4 6v6c0 1.8 3.6 3.2 8 3.2s8-1.4 8-3.2V6"/><path d="M4 12v6c0 1.8 3.6 3.2 8 3.2s8-1.4 8-3.2v-6"/></symbol>
+  </svg>
+
+  <!-- ===================== title bar ===================== -->
+  <header class="titlebar" id="titlebar">
+    <div class="tb-brand">
+      <img src="assets/img/icon.png" alt="" class="tb-logo" />
+      <div class="tb-name">
+        <strong>SAM</strong>
+        <span>Management System</span>
+      </div>
+      <span class="tb-ver" id="tbVer">v0.1.0</span>
+    </div>
+
+    <div class="tb-title" id="tbTitle">لوحة التحكم</div>
+
+    <div class="tb-user">
+      <span class="clock" id="tbClock">--:--</span>
+      <div class="user-chip" id="userChip" title="المستخدم الحالي">
+        <span class="avatar">م</span>
+        <span class="u-meta">
+          <b id="tbUser">admin</b>
+          <i id="tbRole">مدير النظام</i>
+        </span>
+      </div>
+      <button class="tb-btn" id="btnLogout" title="تسجيل الخروج">
+        <svg class="ic"><use href="#i-exit"/></svg>
+      </button>
+    </div>
+
+    <div class="tb-controls">
+      <button class="wc" id="btnMin" title="تصغير"><svg class="ic"><use href="#i-min"/></svg></button>
+      <button class="wc" id="btnMax" title="تكبير / استعادة"><svg class="ic"><use href="#i-max"/></svg></button>
+      <button class="wc close" id="btnClose" title="إغلاق"><svg class="ic"><use href="#i-x"/></svg></button>
+    </div>
+  </header>
+
+  <!-- ===================== shell ===================== -->
+  <div class="shell">
+    <aside class="sidebar">
+      <nav class="nav" id="nav">
+        <button class="nav-item active" data-view="dashboard"><svg class="ic"><use href="#i-dash"/></svg><span>لوحة التحكم</span></button>
+        <button class="nav-item" data-view="items"><svg class="ic"><use href="#i-box"/></svg><span>الأصناف</span></button>
+        <button class="nav-item" data-view="warehouses"><svg class="ic"><use href="#i-wh"/></svg><span>المخازن</span></button>
+        <button class="nav-item" data-view="parties"><svg class="ic"><use href="#i-users"/></svg><span>العملاء والموردين</span></button>
+        <button class="nav-item" data-view="transactions"><svg class="ic"><use href="#i-swap"/></svg><span>العمليات</span><em class="ph"></em></button>
+        <button class="nav-item" data-view="production"><svg class="ic"><use href="#i-factory"/></svg><span>الإنتاج</span><em class="ph"></em></button>
+        <button class="nav-item" data-view="reports"><svg class="ic"><use href="#i-chart"/></svg><span>التقارير</span><em class="ph"></em></button>
+        <button class="nav-item" data-view="settings"><svg class="ic"><use href="#i-gear"/></svg><span>الإعدادات</span></button>
+      </nav>
+
+      <div class="side-foot">
+        <div class="phase-card">
+          <span class="pc-label">المرحلة الحالية</span>
+          <span class="pc-num" id="sidePhaseNum">6</span>
+          <span class="pc-txt" id="sidePhaseTxt">المستخدمون والنسخ والمزامنة</span>
+        </div>
+        <div class="wm-tag">SAM 775158678</div>
+      </div>
+    </aside>
+
+    <main class="content" id="content">
+
+      <!-- ---------- dashboard ---------- -->
+      <section class="view active" id="v-dashboard">
+        <div class="view-head">
+          <div>
+            <h2>لوحة التحكم</h2>
+            <p class="sub" id="greetSub">أهلاً بك في نظام SAM</p>
+          </div>
+          <div class="view-actions">
+            <button class="btn btn-ghost" id="btnGoItems"><svg class="ic"><use href="#i-box"/></svg>إضافة صنف</button>
+            <button class="btn btn-primary" id="btnGoParties"><svg class="ic"><use href="#i-users"/></svg>إضافة عميل / مورد</button>
+          </div>
+        </div>
+
+        <div class="kpi-row">
+          <div class="kpi"><span class="k-top">إجمالي الأصناف</span><span class="k-val" id="kpiItems">0</span><span class="k-note">جدول items</span></div>
+          <div class="kpi gold"><span class="k-top">رصيد المخزن الرئيسي (حبة)</span><span class="k-val" id="kpiStock">0</span><span class="k-note" id="kpiStockNote">سليم + تالف + محجوز</span></div>
+          <div class="kpi"><span class="k-top">حركات اليوم</span><span class="k-val" id="kpiDocs">0</span><span class="k-note">أرصدة افتتاحية ومستندات</span></div>
+          <div class="kpi warn"><span class="k-top">تنبيهات</span><span class="k-val" id="kpiAlerts">0</span><span class="k-note">أقل من الحد الأدنى للجيد / تالف تجاوز الحد</span></div>
+        </div>
+
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-head">
+              <h3>أحدث حركات المخزون</h3>
+              <span class="badge gold">نقر مزدوج = عرض</span>
+            </div>
+            <div class="card-body tight">
+              <p class="tip">كل سطر هنا قراءة حقيقية من قاعدة SQLite. نقر مزدوج للعرض، وزر أيمن لقائمة (عرض / حذف نهائي) — الحذف ينعكس على الرصيد فوراً.</p>
+              <div class="tbl-wrap">
+                <table class="tbl" id="movesTbl">
+                  <thead><tr><th>#</th><th>الصنف</th><th>المخزن</th><th>النوع</th><th>الحركة (حبة)</th><th>التاريخ</th></tr></thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+              <div class="empty" id="movesEmpty">لا توجد حركات بعد — ابدأ من شاشة «الأصناف» بإضافة صنف مع رصيده الافتتاحي.</div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-head"><h3>تنبيهات الأصناف</h3><span class="badge" id="alertCount">0</span></div>
+            <div class="card-body tight">
+              <div class="tbl-wrap">
+                <table class="tbl" id="alertsTbl">
+                  <thead><tr><th>الصنف</th><th>جيد / تالف / محجوز</th><th>التنبيه</th></tr></thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+              <div class="empty" id="alertsEmpty">لا توجد تنبيهات — كل الأصناف ضمن الحدود المحددة.</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:16px">
+          <div class="card-head"><h3>خطة العمل</h3><span class="badge">7 مراحل</span></div>
+          <div class="card-body"><ol class="roadmap" id="roadmap"></ol></div>
+        </div>
+      </section>
+
+      <!-- ---------- items ---------- -->
+      <section class="view" id="v-items">
+        <div class="view-head">
+          <div>
+            <h2>الأصناف</h2>
+            <p class="sub">كل شيء يُحتسب بالحبة — الكرتونة والكيس حقول معلوماتية فقط</p>
+          </div>
+          <div class="view-actions">
+            <label class="search"><svg class="ic"><use href="#i-search"/></svg><input id="itemSearch" class="input" placeholder="بحث بالكود أو الاسم أو الفئة…" /></label>
+            <button class="btn btn-ghost" id="btnSmartSearch"><svg class="ic"><use href="#i-search"/></svg>بحث ذكي</button>
+            <button class="btn btn-primary" id="btnAddItem"><svg class="ic"><use href="#i-plus"/></svg>إضافة صنف</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-body tight">
+            <div class="tbl-wrap tall">
+              <table class="tbl" id="itemsTbl">
+                <thead><tr>
+                  <th>#</th><th>الكود</th><th>الاسم</th><th>الوحدة</th>
+                  <th>حبة/كرتونة</th><th>حبة/كيس</th>
+                  <th>سليم</th><th>تالف</th><th>محجوز</th><th>الإجمالي (حبة)</th><th>تنبيه</th>
+                </tr></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+            <div class="empty" id="itemsEmpty">لا توجد أصناف — اضغط «إضافة صنف» للبدء.</div>
+          </div>
+        </div>
+        <p class="foot-note">أعمدة سليم / تالف / محجوز خاصة بالمخزن الرئيسي، وعمود الإجمالي يشمل كل المخازن.</p>
+      </section>
+
+      <!-- ---------- warehouses ---------- -->
+      <section class="view" id="v-warehouses">
+        <div class="view-head">
+          <div>
+            <h2>المخازن</h2>
+            <p class="sub">مخزن رئيسي واحد + مخازن فرعية بلا حد</p>
+          </div>
+          <div class="view-actions">
+            <button class="btn btn-primary" id="btnAddWh"><svg class="ic"><use href="#i-plus"/></svg>إضافة مخزن</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-body tight">
+            <div class="tbl-wrap">
+              <table class="tbl" id="whTbl">
+                <thead><tr><th>#</th><th>الكود</th><th>الاسم</th><th>الموقع</th><th>النوع</th><th>عدد الأصناف</th><th>إجمالي الحبة</th><th>الحالة</th></tr></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <p class="foot-note">لا يمكن حذف مخزن لديه حركات مخزون — الحذف النهائي متاح للمخازن الفارغة فقط.</p>
+      </section>
+
+      <!-- ---------- parties ---------- -->
+      <section class="view" id="v-parties">
+        <div class="view-head">
+          <div>
+            <h2>العملاء والموردين</h2>
+            <p class="sub">جدول parties — يُستخدم كقائمة منسدلة في مستندات المرحلة 3</p>
+          </div>
+          <div class="view-actions">
+            <label class="search"><svg class="ic"><use href="#i-search"/></svg><input id="partySearch" class="input" placeholder="بحث بالاسم أو الهاتف…" /></label>
+            <button class="btn btn-primary" id="btnAddParty"><svg class="ic"><use href="#i-plus"/></svg>إضافة طرف</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-body tight">
+            <div class="tbl-wrap tall">
+              <table class="tbl" id="partiesTbl">
+                <thead><tr><th>#</th><th>الاسم</th><th>النوع</th><th>الهاتف</th><th>المستندات</th><th>ملاحظات</th></tr></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+            <div class="empty" id="partiesEmpty">لا توجد أطراف — أضف عميلاً أو مورداً للبدء.</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ---------- transactions ---------- -->
+      <section class="view" id="v-transactions">
+        <div class="view-head">
+          <div>
+            <h2>العمليات</h2>
+            <p class="sub">مشتريات · مبيعات · مرتجع مبيعات · مرتجع مشتريات · تحويلات — الكميات بالحبة دائماً</p>
+          </div>
+          <div class="view-actions">
+            <label class="search"><svg class="ic"><use href="#i-search"/></svg><input id="docSearch" class="input" placeholder="بحث برقم المستند أو الطرف…" /></label>
+            <button class="btn btn-primary" id="btnNewDoc"><svg class="ic"><use href="#i-plus"/></svg>مستند جديد</button>
+          </div>
+        </div>
+
+        <div class="tabs" id="docTabs">
+          <button class="tab active" data-kind="">الكل</button>
+          <button class="tab" data-kind="purchase">مشتريات</button>
+          <button class="tab" data-kind="sale">مبيعات</button>
+          <button class="tab" data-kind="sale_return">مرتجع مبيعات</button>
+          <button class="tab" data-kind="purchase_return">مرتجع مشتريات</button>
+          <button class="tab" data-kind="transfer">تحويلات</button>
+        </div>
+
+        <div class="card">
+          <div class="card-body tight">
+            <div class="tbl-wrap tall">
+              <table class="tbl" id="docsTbl">
+                <thead><tr>
+                  <th>#</th><th>الرقم</th><th>النوع</th><th>التاريخ</th><th>العميل / المورد</th>
+                  <th>المخزن</th><th>الأسطر</th><th>إجمالي الحبة</th><th>قيمة الفاتورة</th>
+                </tr></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+            <div class="empty" id="docsEmpty">لا توجد مستندات — أنشئ «مستند جديد».</div>
+          </div>
+        </div>
+        <p class="foot-note">نقر مزدوج = عرض المستند · زر أيمن = عرض / تعديل / حذف نهائي · مبيعات المودرن تعطي «حفظ وطباعة تصريح خروج» بالكميات فقط بدون أسعار.</p>
+      </section>
+
+      <!-- ---------- production ---------- -->
+      <section class="view" id="v-production">
+        <div class="view-head">
+          <div>
+            <h2>الإنتاج</h2>
+            <p class="sub">صرف الخام بالكراتين · تقرير الإنتاج اليومي بتوجيه تلقائي للأرصدة</p>
+          </div>
+          <div class="view-actions">
+            <button class="btn btn-ghost" id="btnNewIssue"><svg class="ic"><use href="#i-swap"/></svg>صرف خام جديد</button>
+            <button class="btn btn-primary" id="btnNewReceipt"><svg class="ic"><use href="#i-factory"/></svg>تقرير إنتاج يومي</button>
+          </div>
+        </div>
+
+        <div class="card routing-card">
+          <div class="card-head">
+            <h3>توجيه الأرصدة</h3>
+            <button class="btn btn-sm btn-ghost" id="btnSaveRouting"><svg class="ic"><use href="#i-check"/></svg>حفظ التوجيه</button>
+          </div>
+          <div class="card-body">
+            <div class="routing-grid">
+              <div class="rt">
+                <span class="rt-k">جيد</span>
+                <span class="rt-flow">منتج تام ← مخزن المنتج التام <b>السليم</b></span>
+                <div id="rtFgGood"></div>
+              </div>
+              <div class="rt">
+                <span class="rt-k">تالف علب</span>
+                <span class="rt-flow">منتج تام ← مخزن المنتج التام <b>التالف</b></span>
+                <div id="rtFgDefect"></div>
+              </div>
+              <div class="rt">
+                <span class="rt-k">تالف أمبولة</span>
+                <span class="rt-flow">المادة الخام ← مخزن <b>الخام التالف</b></span>
+                <div id="rtRawDefect"></div>
+              </div>
+              <div class="rt bag">
+                <span class="rt-k">الأكياس المستخدمة</span>
+                <span class="rt-flow">تُخصم من صنف الأكياس في المخزن المحدد (اختياري)</span>
+                <div id="rtBagItem"></div>
+                <div id="rtBagWh"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="tabs" id="prodTabs">
+          <button class="tab active" data-tab="issues">صرف المواد الخام</button>
+          <button class="tab" data-tab="receipts">تقارير الإنتاج</button>
+        </div>
+
+        <div class="card" id="issuesPanel">
+          <div class="card-body tight">
+            <div class="tbl-wrap tall">
+              <table class="tbl" id="issuesTbl">
+                <thead><tr><th>#</th><th>الرقم</th><th>التاريخ</th><th>المادة الخام</th><th>المخزن</th><th>كراتين</th><th>حبة</th><th>ملاحظة</th></tr></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+            <div class="empty" id="issuesEmpty">لا توجد مصروفات خام بعد.</div>
+          </div>
+        </div>
+
+        <div class="card hidden" id="receiptsPanel">
+          <div class="card-body tight">
+            <div class="tbl-wrap tall">
+              <table class="tbl" id="receiptsTbl">
+                <thead><tr>
+                  <th>#</th><th>الرقم</th><th>التاريخ</th><th>رقم الكرتونة</th><th>المادة الخام</th>
+                  <th>حبات الكرتونة</th><th>المنتَج</th><th>جيد</th><th>تالف علب</th><th>تالف أمبولة</th>
+                  <th>أكياس</th><th>العجز</th><th>الزيادة</th>
+                </tr></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+            <div class="empty" id="receiptsEmpty">لا توجد تقارير إنتاج بعد.</div>
+          </div>
+        </div>
+        <p class="foot-note">نقر مزدوج = عرض التقرير · زر أيمن = عرض / تعديل / حذف نهائي مع عرض الأثر على كل مخزن وحالة.</p>
+      </section>
+
+      <!-- ---------- reports ---------- -->
+      <section class="view" id="v-reports">
+        <div class="view-head">
+          <div>
+            <h2>مركز التقارير</h2>
+            <p class="sub">تقرير واحد ديناميكي — فلاتر كاملة، أعمدة اختيارية، رصيد متحرك، وتصدير PDF / Excel</p>
+          </div>
+          <div class="view-actions">
+            <button class="btn btn-primary" id="btnRunReport"><svg class="ic"><use href="#i-chart"/></svg>تشغيل التقرير</button>
+            <button class="btn btn-ghost" id="btnPrintReport"><svg class="ic"><use href="#i-print"/></svg>طباعة / PDF</button>
+            <button class="btn btn-ghost" id="btnExcelReport"><svg class="ic"><use href="#i-check"/></svg>تصدير Excel</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h3>الفلاتر</h3><button class="btn btn-sm btn-ghost" id="btnResetFilters">تفريغ الفلاتر</button></div>
+          <div class="card-body">
+            <div class="filters-grid">
+              <label class="field"><span>من تاريخ</span><input type="date" id="fFrom" class="input" /></label>
+              <label class="field"><span>إلى تاريخ</span><input type="date" id="fTo" class="input" /></label>
+              <div class="field"><span>المخزن</span><div id="fWh"></div></div>
+              <div class="field"><span>نوع المستند</span><div id="fKind"></div></div>
+              <div class="field"><span>العميل / المورد</span><div id="fParty"></div></div>
+              <div class="field"><span>الصنف</span><div id="fItem"></div></div>
+              <div class="field"><span>الحالة</span><div id="fBucket"></div></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:14px">
+          <div class="card-head">
+            <h3>الأعمدة الظاهرة</h3>
+            <div class="col-actions">
+              <button class="btn btn-sm btn-ghost" id="btnAllCols">تحديد الكل</button>
+              <button class="btn btn-sm btn-ghost" id="btnNoCols">إلغاء الكل</button>
+            </div>
+          </div>
+          <div class="card-body"><div class="cols-wrap" id="colsWrap"></div></div>
+        </div>
+
+        <div class="card" style="margin-top:14px">
+          <div class="card-body tight">
+            <div class="tbl-wrap tall" id="reportWrap"><table class="tbl" id="reportTbl"></table></div>
+            <div class="empty" id="reportEmpty">اضغط «تشغيل التقرير» لعرض النتائج.</div>
+            <div class="report-foot" id="reportFoot"></div>
+          </div>
+        </div>
+        <p class="foot-note">«رصيد المخزن الرئيسي الحالي» ثابت لكل صنف خارج نطاق التاريخ، و«الرصيد المتحرك» تراكمي لكل الحركات المؤهلة بالفلاتر حتى كل سطر.</p>
+      </section>
+
+      <!-- ---------- settings ---------- -->
+      <section class="view" id="v-settings">
+        <div class="view-head">
+          <div>
+            <h2>الإعدادات</h2>
+            <p class="sub">النظام · المستخدمون والصلاحيات · النسخ الاحتياطي ومزامنة Google Drive</p>
+          </div>
+        </div>
+
+        <div class="tabs" id="settingsTabs">
+          <button class="tab active" data-tab="general">عام</button>
+          <button class="tab" data-tab="users">المستخدمون والصلاحيات</button>
+          <button class="tab" data-tab="backup">النسخ الاحتياطي والمزامنة</button>
+          <button class="tab" data-tab="update">التحديث التلقائي</button>
+        </div>
+
+        <div id="set-general">
+          <div class="grid-2">
+            <div class="card">
+              <div class="card-head"><h3>قاعدة البيانات</h3><span class="badge ok">SQLite</span></div>
+              <div class="card-body">
+                <dl class="info" id="dbInfo"></dl>
+                <div class="row-btns" style="margin-top:14px">
+                  <button class="btn btn-ghost" id="btnOpenDbFolder"><svg class="ic"><use href="#i-db"/></svg>فتح مجلد قاعدة البيانات</button>
+                </div>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-head"><h3>معلومات النظام</h3></div>
+              <div class="card-body">
+                <dl class="info" id="sysInfo"></dl>
+                <div class="row-btns" style="margin-top:14px">
+                  <button class="btn btn-ghost" id="btnReplayIntro">إعادة عرض المقدمة</button>
+                  <button class="btn btn-ghost" id="btnChangeOwnPw">تغيير كلمة مروري</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="set-users" class="hidden">
+          <div class="card">
+            <div class="card-head">
+              <h3>المستخدمون</h3>
+              <button class="btn btn-primary btn-sm" id="btnAddUser"><svg class="ic"><use href="#i-plus"/></svg>إضافة مستخدم</button>
+            </div>
+            <div class="card-body tight">
+              <div class="tbl-wrap">
+                <table class="tbl" id="usersTbl">
+                  <thead><tr><th>#</th><th>اسم المستخدم</th><th>الاسم الكامل</th><th>الدور</th><th>الشاشات</th><th>الصلاحيات</th><th>الحالة</th><th>آخر دخول</th></tr></thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+          <p class="foot-note">المدير يملك كل شيء تلقائياً. «مستخدم» يُقيَّد بالشاشات والصلاحيات التي تختارها له، والتحقق يُطبَّق في العملية الرئيسية وليس في الواجهة فقط.</p>
+        </div>
+
+        <div id="set-backup" class="hidden">
+          <div class="grid-2">
+            <div class="card">
+              <div class="card-head"><h3>نسخة محلية</h3></div>
+              <div class="card-body">
+                <dl class="info" id="backupInfo"></dl>
+                <div class="row-btns" style="margin-top:14px">
+                  <button class="btn btn-gold" id="btnBackupNow"><svg class="ic"><use href="#i-db"/></svg>حفظ نسخة الآن</button>
+                  <button class="btn btn-ghost" id="btnBackupSaveAs">حفظ نسخة في مكان آخر…</button>
+                  <button class="btn btn-ghost" id="btnBackupFolder">فتح مجلد النسخ</button>
+                </div>
+                <div class="tbl-wrap" style="margin-top:14px;max-height:220px">
+                  <table class="tbl" id="backupsTbl">
+                    <thead><tr><th>الملف</th><th>الحجم</th><th>التاريخ</th></tr></thead>
+                    <tbody></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-head"><h3>مزامنة Google Drive</h3></div>
+              <div class="card-body">
+                <div class="field" style="margin-bottom:12px">
+                  <span>مجلد Google Drive</span>
+                  <div class="sync-row">
+                    <input class="input" id="syncFolder" placeholder="لم يتم اختيار مجلد" readonly />
+                    <button class="btn btn-ghost" id="btnPickFolder">اختيار مجلد…</button>
+                  </div>
+                </div>
+                <label class="check-row" style="align-self:auto;margin-bottom:12px">
+                  <input type="checkbox" id="syncAuto" /><span>مزامنة تلقائية عند تشغيل البرنامج</span>
+                </label>
+                <dl class="info" id="syncInfo"></dl>
+                <div class="row-btns" style="margin-top:14px">
+                  <button class="btn btn-primary" id="btnSyncNow"><svg class="ic"><use href="#i-check"/></svg>مزامنة الآن</button>
+                  <button class="btn btn-ghost" id="btnSaveSyncCfg">حفظ الإعدادات</button>
+                </div>
+                <p class="foot-note">تعمل المزامنة بكتابة قاعدة البيانات داخل المجلد الذي اخترته من Google Drive على جهازك، فيرفعها تطبيق Drive تلقائياً. لا يحتاج النظام إلى مفاتيح OAuth.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="set-update" class="hidden">
+          <div class="grid-2">
+            <div class="card">
+              <div class="card-head"><h3>التحديث التلقائي</h3><span class="badge" id="updStateBadge">جاهز</span></div>
+              <div class="card-body">
+                <dl class="info" id="updInfo"></dl>
+                <div class="upd-bar-wrap" id="updBarWrap">
+                  <div class="upd-bar-top">
+                    <span id="updLabel">لم يبدأ التحميل بعد</span>
+                    <b id="updPercent">0%</b>
+                  </div>
+                  <div class="upd-track"><div class="upd-fill" id="updFill"></div></div>
+                  <div class="upd-meta">
+                    <span id="updSize">0.0 / 0.0 MB</span>
+                    <span id="updSpeed">— MB/ث</span>
+                  </div>
+                </div>
+                <div class="row-btns" style="margin-top:16px">
+                  <button class="btn btn-primary" id="btnCheckUpdate"><svg class="ic"><use href="#i-swap"/></svg>فحص التحديثات</button>
+                  <button class="btn btn-gold hidden" id="btnDownloadUpdate"><svg class="ic"><use href="#i-print"/></svg>تحميل التحديث</button>
+                  <button class="btn btn-gold hidden" id="btnInstallUpdate"><svg class="ic"><use href="#i-check"/></svg>تثبيت وإعادة التشغيل</button>
+                  <button class="btn btn-ghost" id="btnSimulateUpdate">معاينة شريط التقدم</button>
+                </div>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-head"><h3>مصدر التحديثات</h3></div>
+              <div class="card-body">
+                <dl class="info" id="updFeed"></dl>
+                <p class="foot-note">يقرأ التطبيق ملف <b>updater.config.json</b> ويستخدم GitHub Releases كمصدر. ضع اسم حسابك في <b>owner</b> واسم المستودع في <b>repo</b> ثم انشر إصداراً يحتوي <b>latest.yml</b> وملفSetup.</p>
+                <p class="foot-note">في وضع التطوير (npm start) لا يعمل المحدث الحقيقي، لذلك زر «معاينة شريط التقدم» يعرض نفس الواجهة بأرقام تجريبية بشكل صريح.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- ===================== status bar ===================== -->
+  <footer class="statusbar">
+    <span class="sb-item"><b>SAM</b> 775158678</span>
+    <span class="sb-item dim" id="sbPhase">المرحلة 6 من 7 — المستخدمون والصلاحيات والنسخ والمزامنة</span>
+    <span class="sb-spacer"></span>
+    <span class="sb-item dim" id="sbDb">—</span>
+    <span class="sb-item dim" id="sbVer">Electron —</span>
+  </footer>
+
+  <div class="toasts" id="toasts"></div>
+
+  <!-- print host: only visible while printing -->
+  <div id="printHost" class="print-host"></div>
+
+  <script src="js/db.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/combobox.js"></script>
+  <script src="js/suggest.js"></script>
+  <script src="js/items.js"></script>
+  <script src="js/warehouses.js"></script>
+  <script src="js/parties.js"></script>
+  <script src="js/documents.js"></script>
+  <script src="js/production.js"></script>
+  <script src="js/reports.js"></script>
+  <script src="js/settings.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

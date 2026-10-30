@@ -1,0 +1,88 @@
+{
+  "name": "sam-management-system",
+  "version": "0.1.0",
+  "description": "SAM Management System — نظام إدارة الأصناف والمخازن والإنتاج",
+  "author": "SAM",
+  "license": "UNLICENSED",
+  "private": true,
+  "main": "src/main/main.js",
+  "scripts": {
+    "start": "electron .",
+    "assets": "node tools/build-assets.js",
+    "rebuild:native": "node tools/rebuild-sqlite.js",
+    "test:ui": "electron tools/shot6.js",
+    "dist": "electron-builder --win --x64",
+    "dist:publish": "electron-builder --win --x64 --publish always"
+  },
+  "devDependencies": {
+    "@electron/asar": "^4.3.1",
+    "@electron/rebuild": "^4.2.1",
+    "electron": "^33.2.0",
+    "electron-builder": "^26.18.0",
+    "electron-updater": "^6.8.11",
+    "png-to-ico": "^3.0.1",
+    "pngjs": "^7.0.0"
+  },
+  "dependencies": {
+    "@fontsource/cairo": "^5.1.1",
+    "@fontsource/tajawal": "^5.1.1",
+    "better-sqlite3": "^12.10.1"
+  },
+  "build": {
+    "appId": "com.sam.management",
+    "productName": "SAM Management System",
+    "copyright": "SAM 775158678",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/**/*",
+      "build/icon.png",
+      "build/icon.ico",
+      "updater.config.json",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "**/*.node"
+    ],
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "SAM Management System",
+      "artifactName": "SAM-Setup-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "SAM-Portable-${version}.${ext}"
+    },
+    "npmRebuild": false,
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "sam734739366-oss",
+        "repo": "sam-management-system",
+        "releaseType": "release"
+      }
+    ],
+    "asar": true
+  }
+}
