@@ -610,6 +610,6 @@
     load();
   });
 
-  window.SamDocs = { load, openEditor, printInvoice, printGatePass };
+  window.SamDocs = { load, openEditor, viewDoc, printInvoice, printGatePass };
   SamUI.bus.on(load);
 })();

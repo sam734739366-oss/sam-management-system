@@ -38,8 +38,8 @@
     };
     t.addEventListener('click', kill);
     setTimeout(kill, ms);
-    // never stack more than four
-    while (host.children.length > 4) host.firstElementChild.remove();
+    // never let a burst of messages bury the screen
+    while (host.children.length > 3) host.firstElementChild.remove();
   }
 
   /* ---------------- loading pill ---------------- */
