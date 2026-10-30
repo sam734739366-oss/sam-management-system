@@ -25,6 +25,7 @@ contextBridge.exposeInMainWorld('sam', {
     info: () => ipcRenderer.invoke('app:info'),
     openPath: (p) => ipcRenderer.invoke('app:openPath', p),
     saveFile: (opts) => ipcRenderer.invoke('app:saveFile', opts || {}),
+    saveXlsx: (spec) => ipcRenderer.invoke('app:saveXlsx', spec || {}),
     relaunch: () => ipcRenderer.invoke('app:relaunch')
   },
   nav: {

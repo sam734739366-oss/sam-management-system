@@ -1,6 +1,7 @@
 /* =====================================================================
    SamUI — shared building blocks used across every screen:
-   toasts, right-click menus, modals, hard-delete warning,
+   toasts, empty states, loading pill, right-click menus, modals,
+   hard-delete warning, thousands-aware number boxes, keyboard shortcuts,
    A4 print sheet with watermark + print preview.
    ===================================================================== */
 (function (global) {
@@ -8,6 +9,7 @@
 
   const WATERMARK = 'SAM 775158678';
   const APP_NAME = 'SAM Management System';
+  const CURRENCY = 'ريال يمني';
 
   const el = (tag, cls, html) => {
     const n = document.createElement(tag);
@@ -20,19 +22,113 @@
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 
-  /* ---------------- toasts ---------------- */
+  /* ---------------- toasts (no blocking popups) ---------------- */
+  const TOAST_ICON = { ok: 'i-check', bad: 'i-warn', warn: 'i-warn', info: 'i-bell' };
   function toast(msg, kind, ms = 3200) {
     const host = document.getElementById('toasts');
     if (!host) return;
-    const t = el('div', `toast ${kind || ''}`, `<span>${esc(msg)}</span>`);
+    const k = kind || 'info';
+    const t = el('div', `toast ${k}`, `${icon(TOAST_ICON[k] || 'i-bell')}<span>${esc(msg)}</span>`);
     host.appendChild(t);
-    setTimeout(() => {
+    const kill = () => {
       t.style.transition = 'opacity .3s, transform .3s';
       t.style.opacity = '0';
       t.style.transform = 'translateY(8px)';
       setTimeout(() => t.remove(), 320);
-    }, ms);
+    };
+    t.addEventListener('click', kill);
+    setTimeout(kill, ms);
+    // never stack more than four
+    while (host.children.length > 4) host.firstElementChild.remove();
   }
+
+  /* ---------------- loading pill ---------------- */
+  let busyCount = 0;
+  function busy(on, label) {
+    const node = document.getElementById('busyPill');
+    if (!node) return;
+    busyCount = Math.max(0, busyCount + (on ? 1 : -1));
+    if (label) node.lastElementChild.textContent = label;
+    node.classList.toggle('on', busyCount > 0);
+  }
+
+  /* ---------------- empty states ---------------- */
+  /**
+   * Fill an `.empty` block with a real empty state instead of a bare sentence.
+   * @param {HTMLElement|string} host
+   * @param {{title?:string,hint?:string,actionLabel?:string,onAction?:Function,icon?:string}} o
+   */
+  function emptyState(host, o) {
+    const node = typeof host === 'string' ? document.getElementById(host) : host;
+    if (!node) return;
+    node.innerHTML = `
+      <span class="e-ic">${icon(o.icon || 'i-inbox')}</span>
+      <span class="e-title">${esc(o.title || 'لا توجد بيانات')}</span>
+      ${o.hint ? `<span class="e-hint">${esc(o.hint)}</span>` : ''}
+      ${o.actionLabel ? `<button class="btn btn-primary btn-sm" type="button">${icon('i-plus')}<span>${esc(o.actionLabel)}</span></button>` : ''}`;
+    node.dataset.filled = '1';
+    if (o.actionLabel && o.onAction) {
+      node.querySelector('button').addEventListener('click', (e) => { e.stopPropagation(); o.onAction(); });
+    }
+    node._hidden = false;
+  }
+  /** show/hide an already-filled empty state */
+  function toggleEmpty(host, hasRows) {
+    const node = typeof host === 'string' ? document.getElementById(host) : host;
+    if (!node) return;
+    node.style.display = hasRows ? 'none' : 'flex';
+  }
+
+  /* ---------------- numbers: thousands separators ---------------- */
+  const cleanNum = (s) => String(s == null ? '' : s)
+    .replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 0x0660))
+    .replace(/[۰-۹]/g, (d) => String(d.charCodeAt(0) - 0x06f0))
+    .replace(/[,٬\s]/g, '')
+    .replace(/[^\d.\-]/g, '');
+  const parseNum = (v) => {
+    if (typeof v === 'number') return v;
+    const c = cleanNum(v);
+    if (!c || c === '-' || c === '.') return 0;
+    const n = Number(c);
+    return Number.isFinite(n) ? n : 0;
+  };
+  /** 1234567.5 -> "1,234,567.5" (never Arabic digits: inputs stay LTR-readable) */
+  const groupNum = (v) => {
+    const c = cleanNum(v);
+    if (!c || c === '-' || c === '.') return '';
+    const n = Number(c);
+    if (!Number.isFinite(n)) return String(v);
+    return n.toLocaleString('en-US', { maximumFractionDigits: 2 });
+  };
+
+  /**
+   * Turn a text box into a quantity / money field: raw digits while typing,
+   * grouped with commas on blur. `unit` renders an affix (e.g. currency).
+   */
+  function makeNumInput(input, opts = {}) {
+    input.dataset.num = '1';
+    input.setAttribute('inputmode', 'decimal');
+    input.classList.add('num-in');
+    if (opts.placeholder !== undefined) input.placeholder = opts.placeholder;
+    else input.placeholder = opts.decimals ? '0.00' : '0';
+    if (!input.dataset.numBound) {
+      input.dataset.numBound = '1';
+      input.addEventListener('focus', () => {
+        const raw = cleanNum(input.value);
+        input.value = raw && raw !== '-' ? raw : '';
+        input.select();
+      });
+      input.addEventListener('blur', () => {
+        const raw = cleanNum(input.value);
+        if (!raw || raw === '-' || raw === '.') { input.value = ''; return; }
+        input.value = groupNum(raw);
+        if (opts.onBlur) opts.onBlur(parseNum(input.value), input);
+      });
+      input.addEventListener('input', () => { if (opts.onInput) opts.onInput(parseNum(input.value), input); });
+    }
+    return input;
+  }
+  const numValue = (input) => parseNum(input.value);
 
   /* ---------------- context menu ---------------- */
   let openMenu = null;
@@ -95,6 +191,43 @@
     return node;
   }
 
+  /* ---------------- keyboard shortcut stack ---------------- */
+  /** screens push {save, isNew} while they are the top-most interactive layer */
+  const keyStack = [];
+  function pushKeys(handlers) {
+    keyStack.push(handlers);
+    return () => { const i = keyStack.indexOf(handlers); if (i >= 0) keyStack.splice(i, 1); };
+  }
+  function topKey(which) {
+    for (let i = keyStack.length - 1; i >= 0; i--) {
+      if (typeof keyStack[i][which] === 'function') return keyStack[i][which];
+    }
+    return null;
+  }
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'F5') {
+      const fn = topKey('refresh');
+      if (fn) { e.preventDefault(); fn(); }
+      return;
+    }
+    if (!(e.ctrlKey || e.metaKey)) return;
+    const k = e.key.toLowerCase();
+    if (k === 's') {
+      e.preventDefault();
+      const fn = topKey('save');
+      if (fn) fn();
+      else toast('لا يوجد نموذج مفتوح للحفظ', 'warn');
+    } else if (k === 'n') {
+      e.preventDefault();
+      const fn = topKey('new');
+      if (fn) fn();
+    } else if (k === 'p') {
+      e.preventDefault();
+      const fn = topKey('print');
+      if (fn) fn();
+    }
+  }, true);
+
   /* ---------------- modal ---------------- */
   function modal(opts) {
     const {
@@ -102,12 +235,13 @@
       body = '',
       actions = [{ label: 'إغلاق', value: 'close', kind: 'btn-ghost' }],
       danger = false,
+      info = false,
       width = null
     } = opts || {};
 
     return new Promise((resolve) => {
       const ov = el('div', 'overlay');
-      const box = el('div', `modal ${danger ? 'danger' : ''}`);
+      const box = el('div', `modal ${danger ? 'danger' : ''} ${info ? 'info' : ''}`);
       if (width) box.style.width = width;
       box.appendChild(el('h3', '', esc(title)));
       const b = el('div', 'modal-body');
@@ -125,16 +259,46 @@
       ov.appendChild(box);
       document.body.appendChild(ov);
 
+      let settled = false;
       function done(val) {
-        ov.remove();
+        if (settled) return;
+        settled = true;
         document.removeEventListener('keydown', onEsc, true);
+        pop();
+        ov.remove();
         resolve(val);
       }
       function onEsc(e) { if (e.key === 'Escape') done('cancel'); }
+      const pop = pushKeys({ save: null });
       document.addEventListener('keydown', onEsc, true);
       ov.addEventListener('mousedown', (e) => { if (e.target === ov) done('cancel'); });
       const first = foot.querySelector('.btn-primary, .btn-gold, .btn-danger') || foot.lastChild;
       if (first) first.focus();
+    });
+  }
+
+  /**
+   * Warning that does NOT block a save — used when stock is not enough:
+   * the user confirms and the document is written anyway.
+   */
+  function confirmWarning({ title = 'تنبيه', lines = [], note = '', okLabel = 'متابعة الحفظ' }) {
+    const rows = lines.length
+      ? `<ul style="margin:10px 0 0;padding-inline-start:20px;display:flex;flex-direction:column;gap:6px">
+           ${lines.map((l) => `<li><b>${esc(l.item)}</b> — ${esc(l.text)}</li>`).join('')}
+         </ul>`
+      : '';
+    return modal({
+      title,
+      info: true,
+      body: `<div style="display:flex;gap:12px;align-items:flex-start;background:var(--warn-bg);padding:12px 14px;border-radius:12px;border:1px solid var(--warn-line)">
+          ${icon('i-warn')}
+          <div><b style="color:var(--warn)">الرصيد غير كافٍ</b><br>
+          <span style="font-size:13.5px">${esc(note || 'يمكنك المتابعة؛ سيصبح الرصيد سالباً وستراه في التقارير كما هو.')}</span></div>
+        </div>${rows}`,
+      actions: [
+        { label: okLabel, value: 'yes', kind: 'btn-gold', icon: 'i-check' },
+        { label: 'رجوع', value: 'cancel', kind: 'btn-ghost' }
+      ]
     });
   }
 
@@ -145,15 +309,15 @@
   function confirmHardDelete({ docNo = '', docType = '', lines = [], extra = '' }) {
     const rows = lines.length
       ? `<table class="tbl" style="margin-top:10px">
-           <thead><tr><th>الصنف</th><th>المخزن</th><th>الحركة</th><th>الكمية (حبة)</th></tr></thead>
+           <thead><tr><th>الصنف</th><th>الموقع</th><th>الحركة</th><th>الكمية (حبة)</th></tr></thead>
            <tbody>${lines.map((l) => `<tr>
              <td>${esc(l.item)}</td><td>${esc(l.wh)}</td>
              <td>${esc(l.dir)}</td>
-             <td style="font-weight:800;color:${l.dir === 'زيادة' ? 'var(--ok)' : 'var(--bad)'}">${esc(l.qty)}</td>
+             <td class="num qty">${esc(l.qty)}</td>
            </tr>`).join('')}</tbody></table>`
       : '';
     const body = `
-      <div style="display:flex;gap:12px;align-items:center;background:var(--bad-bg);padding:12px 14px;border-radius:12px;border:1px solid #f3c4bd">
+      <div style="display:flex;gap:12px;align-items:center;background:var(--bad-bg);padding:12px 14px;border-radius:12px;border:1px solid var(--bad-line)">
         ${icon('i-warn')}
         <div><b style="color:var(--bad)">تحذير: حذف نهائي</b><br>
         <span style="font-size:13px">هذا المستند لن يُترك بحالة "ملغي" — سيُحذف من قاعدة البيانات نهائياً ولا يمكن التراجع.</span></div>
@@ -173,42 +337,60 @@
     });
   }
 
-  /* ---------------- A4 sheet ---------------- */
+  /* ---------------- print sheet (premium A4 layout) ---------------- */
   function sheet(o) {
     const s = el('section', `sheet ${o.landscape ? 'landscape' : ''}`);
+    const now = new Date().toLocaleString('ar-EG-u-nu-latn');
+    const meta = o.head || [];
     s.innerHTML = `
       <div class="wm">${esc(WATERMARK)}</div>
-      <header class="doc-head">
-        <div>
-          <div style="font-family:var(--font-display);font-size:19pt;font-weight:800;color:#1e3a8a">SAM</div>
-          <div style="font-size:10pt;color:#4a5b7c">نظام إدارة الأصناف والمخازن والإنتاج</div>
-          <div style="font-size:10pt;color:#4a5b7c;margin-top:2px">775158678</div>
+      <header class="doc-mast">
+        <div class="m-side">
+          <div><b>SAM</b> — 775158678</div>
+          <div>${esc(o.orgLine || 'نظام إدارة الأصناف والمخازن والإنتاج')}</div>
         </div>
-        <div style="text-align:center">
-          <div style="font-family:var(--font-display);font-size:16pt;font-weight:800">${esc(o.title || '')}</div>
-          <div style="font-size:9.5pt;color:#4a5b7c;margin-top:2px">${esc(o.subtitle || '')}</div>
+        <div class="m-brand">
+          <div class="b-name">SAM</div>
+          <div class="b-sub">${esc(o.brandLine || 'إدارة المخزون والإنتاج')}</div>
         </div>
-        <div style="text-align:left;font-size:9.5pt;color:#25355c;line-height:1.9">
-          ${o.head ? o.head.map((h) => `<div><b>${esc(h.k)}:</b> ${esc(h.v)}</div>`).join('') : ''}
+        <div class="m-side right">
+          <div>${esc(o.docRefLabel || 'رقم المستند')}: <b>${esc(o.docRef || '')}</b></div>
+          <div>التاريخ: ${esc(o.printDate || now)}</div>
         </div>
       </header>
-      <div class="${o.dense ? 'dense' : ''}" style="margin-top:6mm">${o.bodyHtml || ''}</div>
+
+      <div class="doc-title">
+        <h1>${esc(o.title || '')}</h1>
+        ${o.subtitle ? `<div class="t-sub">${esc(o.subtitle)}</div>` : ''}
+      </div>
+
+      ${meta.length ? `<div class="doc-meta">
+        ${meta.map((h) => `<div class="m-item"><span class="m-k">${esc(h.k)}</span><span>${esc(h.v)}</span></div>`).join('')}
+      </div>` : ''}
+
+      <div class="doc-body ${o.dense ? 'dense' : ''}">${o.bodyHtml || ''}</div>
+
+      ${o.signatures && o.signatures.length ? `<div class="sig-band">
+        ${o.signatures.map((sig) => {
+          const label = typeof sig === 'string' ? sig : sig.label;
+          return `<div class="sig"><div class="line"></div><div class="nm">${esc(label)}</div><div class="sp">التوقيع</div><div class="line" style="height:6mm;border-bottom-style:dotted"></div></div>`;
+        }).join('')}
+      </div>` : ''}
+
       <footer class="doc-foot">
-        ${esc(o.footer || `تم الطباعة بواسطة ${APP_NAME} — ${WATERMARK}`)}
-        <br>${esc(new Date().toLocaleString('ar-EG-u-nu-latn'))}
-      </footer>
-      ${o.signatures ? `<div class="doc-foot" style="inset-inline-start:auto"><div class="sig-row">
-        ${o.signatures.map((s2) => `<div style="text-align:center"><div style="border-bottom:1px solid #333;width:38mm;margin-bottom:3mm">&nbsp;</div>${esc(s2)}</div>`).join('')}
-      </div></div>` : ''}
-    `;
+        <span>${esc(o.footer || `${APP_NAME} — ${WATERMARK}`)}</span>
+        <span class="f-left">تم الطباعة ${esc(now)}</span>
+      </footer>`;
     return s;
   }
 
   function tableHtml(cols, rows, totals) {
-    const th = cols.map((c) => `<th style="${c.align === 'start' ? 'text-align:right' : c.align === 'end' ? 'text-align:left' : ''}">${esc(c.label)}</th>`).join('');
-    const tr = rows.map((r) => `<tr>${cols.map((c) => `<td style="${c.align === 'end' ? 'text-align:left' : ''}">${esc(r[c.key])}</td>`).join('')}</tr>`).join('');
-    const tot = totals ? `<tr style="font-weight:800;background:#eef3fb"><td colspan="${cols.length - 1}">الإجمالي</td><td style="text-align:left">${esc(totals)}</td></tr>` : '';
-    return `<table class="tbl" style="font-size:10pt;border:1px solid #c9d6ee">
+    const th = cols.map((c) => `<th style="${c.align === 'start' ? 'text-align:right' : c.align === 'end' ? 'text-align:left' : c.align === 'center' ? 'text-align:center' : ''}">${esc(c.label)}</th>`).join('');
+    const tr = rows.map((r) => `<tr>${cols.map((c) => `<td style="${c.align === 'end' ? 'text-align:left' : c.align === 'center' ? 'text-align:center' : ''}">${esc(r[c.key])}</td>`).join('')}</tr>`).join('');
+    const tot = totals
+      ? `<tr class="tot-row"><td colspan="${cols.length - 1}">الإجمالي</td><td style="text-align:left">${esc(totals)}</td></tr>`
+      : '';
+    return `<table class="tbl" style="font-size:10pt">
       <thead><tr>${th}</tr></thead><tbody>${tr}${tot}</tbody></table>`;
   }
 
@@ -219,14 +401,11 @@
       const ov = el('div', 'pv no-print');
       const bar = el('div', 'pv-bar');
       bar.innerHTML = `<span class="t">معاينة قبل الطباعة</span>
-        <span class="pv-note">${esc(opts.title || '')} — A4 — علامة مائية في المنتصف</span>`;
+        <span class="pv-note">${esc(opts.title || '')} — ${opts.landscape ? 'A4 عرضي' : 'A4'} — علامة مائية خفيفة</span>`;
       const bPdf = el('button', 'btn btn-sm btn-ghost', `${icon('i-print')}<span>حفظ PDF</span>`);
-      const bXls = el('button', 'btn btn-sm btn-ghost', '<span>تصدير Excel</span>');
-      bXls.disabled = true;
-      bXls.title = 'متاح مع مركز التقارير في المرحلة 5';
-      const bPrint = el('button', 'btn btn-sm btn-gold', `${icon('i-print')}<span>طباعة</span>`);
+      const bPrint = el('button', 'btn btn-sm btn-primary', `${icon('i-print')}<span>طباعة</span><span class="kbd">Ctrl+P</span>`);
       const bClose = el('button', 'btn btn-sm btn-ghost', `${icon('i-x')}<span>إغلاق</span>`);
-      bar.append(bPrint, bPdf, bXls, bClose);
+      bar.append(bPrint, bPdf, bClose);
 
       const scroll = el('div', 'pv-scroll');
       scroll.appendChild(built);
@@ -241,20 +420,23 @@
       fit();
       global.addEventListener('resize', fit);
 
+      let pop = null;
       const close = () => {
         global.removeEventListener('resize', fit);
+        if (pop) pop();
         ov.remove();
         resolve(false);
       };
+      const doPrintNow = async () => { await doPrint(built, opts.landscape ? { landscape: true } : {}); };
+      pop = pushKeys({ save: null, print: doPrintNow });
       bClose.addEventListener('click', close);
-      bPrint.addEventListener('click', async () => {
-        await doPrint(built, opts.landscape ? { landscape: true } : {});
-      });
+      bPrint.addEventListener('click', doPrintNow);
       bPdf.addEventListener('click', async () => {
         const r = await global.sam.win.savePdf({ landscape: !!opts.landscape, fileName: `${opts.title || 'SAM'}.pdf` });
         if (r && r.ok) toast(`تم حفظ الملف: ${r.path}`, 'ok', 5200);
         else if (r && !r.canceled) toast('تعذّر حفظ الـ PDF', 'bad');
       });
+      document.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); }, true);
     });
   }
 
@@ -282,7 +464,7 @@
   /* ---------------- data bus ---------------- */
   const listeners = [];
   const bus = {
-    on(fn) { listeners.push(fn); return () => { const i = listeners.indexOf(fn); if (i >= 0) listeners.splice(i, 1); }; },
+    on(fn) { listeners.push(fn); return () => { const i = listeners.indexOf(fn); if (i >= 0) listeners.splice(i, 1); } },
     emit() { listeners.forEach((fn) => { try { fn(); } catch (e) { console.error(e); } }); }
   };
 
@@ -301,7 +483,7 @@
     box.appendChild(bodyWrap);
 
     const foot = el('div', 'modal-foot');
-    const save = el('button', `btn ${opts.submitKind || 'btn-gold'}`, `${icon('i-check')}<span>${esc(opts.submitLabel || 'حفظ')}</span>`);
+    const save = el('button', `btn ${opts.submitKind || 'btn-primary'}`, `${icon('i-check')}<span>${esc(opts.submitLabel || 'حفظ')}</span><span class="kbd">Ctrl+S</span>`);
     const cancel = el('button', 'btn btn-ghost', `<span>${esc(opts.cancelLabel || 'إلغاء')}</span>`);
     foot.append(save, cancel);
     box.appendChild(foot);
@@ -309,20 +491,24 @@
     document.body.appendChild(ov);
 
     let done = false;
+    let pop = null;
     const finish = (val) => {
       if (done) return;
       done = true;
       document.removeEventListener('keydown', onKey, true);
+      if (pop) pop();
       ov.remove();
       opts.onClose && opts.onClose(val);
       resolve(val);
     };
 
     async function submit() {
+      if (save.disabled) return;
       errBar.innerHTML = '';
       save.disabled = true;
       const label = save.querySelector('span').textContent;
       save.querySelector('span').textContent = 'جارٍ الحفظ…';
+      busy(true);
       try {
         const v = await opts.onSubmit();
         finish(v === undefined ? true : v);
@@ -330,6 +516,7 @@
         errBar.innerHTML = `${icon('i-warn')}<span>${esc(e && e.message ? e.message : String(e))}</span>`;
         opts.onError && opts.onError(e);
       } finally {
+        busy(false);
         save.disabled = false;
         save.querySelector('span').textContent = label;
       }
@@ -337,7 +524,7 @@
 
     function onKey(e) {
       if (e.key === 'Escape') finish(false);
-      if (e.key === 'Enter' && e.target && e.target.tagName === 'INPUT' && !e.target.classList.contains('combo-input')) {
+      if (e.key === 'Enter' && e.target && e.target.tagName === 'INPUT' && !e.target.classList.contains('combo-input') && e.target.type !== 'date') {
         e.preventDefault();
         submit();
       }
@@ -349,6 +536,7 @@
     cancel.addEventListener('click', () => finish(false));
     ov.addEventListener('mousedown', (e) => { if (e.target === ov) finish(false); });
     document.addEventListener('keydown', onKey, true);
+    pop = pushKeys({ save: submit });
     const first = box.querySelector('input, textarea, select');
     if (first) setTimeout(() => first.focus(), 60);
     return promise;
@@ -373,6 +561,25 @@
     return i;
   }
 
+  /** quantity box: text under the hood so commas are legal, grouped on blur */
+  function numInput(opts = {}) {
+    const i = el('input', 'input num-in');
+    i.type = 'text';
+    i.placeholder = opts.placeholder || '0';
+    if (opts.value != null && opts.value !== 0) i.value = groupNum(opts.value);
+    if (opts.center) i.style.textAlign = 'center';
+    makeNumInput(i, opts);
+    return i;
+  }
+
+  /** money / quantity box with a unit label stuck on the end (e.g. ريال يمني) */
+  function affixInput(i, unit) {
+    const wrap = el('span', 'affix');
+    wrap.appendChild(i);
+    wrap.appendChild(el('span', 'affix-txt', esc(unit)));
+    return wrap;
+  }
+
   function textarea(attrs = {}) {
     const t = el('textarea', attrs.class || 'input');
     t.rows = attrs.rows || 3;
@@ -387,9 +594,12 @@
   global.SamUI = {
     WATERMARK,
     APP_NAME,
+    CURRENCY,
     el, icon, esc,
-    toast, menu, bindRow, modal, confirmHardDelete,
-    form, field, input, textarea,
+    toast, busy, emptyState, toggleEmpty, menu, bindRow, modal, confirmHardDelete, confirmWarning,
+    form, field, input, textarea, numInput, affixInput,
+    parseNum, groupNum, numValue, makeNumInput,
+    pushKeys,
     sheet, tableHtml, printPreview, doPrint,
     bus
   };

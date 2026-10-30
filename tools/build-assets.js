@@ -426,12 +426,69 @@ function buildExplosion() {
   console.log('-> src/renderer/assets/sfx/tick.wav');
 }
 
+/* ------------------------------------------------------------------ *
+ * 5. Post-login success chime — three rising notes plus a soft bell top
+ * ------------------------------------------------------------------ */
+
+function buildSuccess() {
+  const rate = 44100;
+  const dur = 1.5;
+  const N = Math.floor(rate * dur);
+  const out = new Float64Array(N);
+
+  // C5 - E5 - G5 - C6, each a little later and a little brighter
+  const notes = [
+    { f: 523.25, at: 0.00, len: 0.62, gain: 0.34 },
+    { f: 659.25, at: 0.13, len: 0.66, gain: 0.32 },
+    { f: 783.99, at: 0.26, len: 0.74, gain: 0.30 },
+    { f: 1046.5, at: 0.42, len: 1.02, gain: 0.26 }
+  ];
+
+  for (const n of notes) {
+    const start = Math.floor(n.at * rate);
+    const len = Math.floor(n.len * rate);
+    for (let i = 0; i < len && start + i < N; i++) {
+      const t = i / rate;
+      // pluck-ish envelope: fast attack, long exponential tail
+      const attack = Math.min(1, t / 0.012);
+      const env = attack * Math.exp(-t * 3.1);
+      // fundamental + two quiet partials = bell, not beep
+      const s = Math.sin(2 * Math.PI * n.f * t)
+        + 0.28 * Math.sin(2 * Math.PI * n.f * 2 * t) * Math.exp(-t * 5.5)
+        + 0.12 * Math.sin(2 * Math.PI * n.f * 2.99 * t) * Math.exp(-t * 8);
+      out[start + i] += s * env * n.gain;
+    }
+  }
+
+  // a breath of noise under the last note so the chime feels airy
+  let seed = 775158;
+  const rnd = () => { seed = (seed * 1664525 + 1013904223) % 4294967296; return seed / 4294967296; };
+  let lp = 0;
+  for (let i = 0; i < N; i++) {
+    const t = i / rate;
+    if (t < 0.36 || t > 1.2) continue;
+    lp += ((rnd() * 2 - 1) - lp) * 0.35;
+    out[i] += lp * Math.exp(-Math.abs(t - 0.6) * 5) * 0.05;
+  }
+
+  for (let i = 0; i < N; i++) {
+    out[i] = Math.tanh(out[i] * 1.15) * 0.86;
+    const t = i / rate;
+    if (t > dur - 0.3) out[i] *= Math.max(0, (dur - t) / 0.3);
+    if (t < 0.008) out[i] *= t / 0.008;
+  }
+
+  writeWav(path.join(SFX_DIR, 'success.wav'), Array.from(out), rate);
+  console.log(`-> src/renderer/assets/sfx/success.wav (${dur}s)`);
+}
+
 /* ------------------------------------------------------------------ */
 
 (async () => {
   const bottle = buildBottle();
   await buildIcon(bottle);
   buildExplosion();
+  buildSuccess();
   try {
     const fs2 = require('fs');
     fs2.copyFileSync(path.join(BUILD, 'icon.png'), path.join(IMG_DIR, 'icon.png'));

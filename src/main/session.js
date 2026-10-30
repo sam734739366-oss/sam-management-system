@@ -14,7 +14,7 @@ const db = require('./db');
 const SCREEN_LABELS = {
   dashboard: 'لوحة التحكم',
   items: 'الأصناف',
-  warehouses: 'المخازن',
+  warehouses: 'الهناجر والمواقع',
   parties: 'العملاء والموردون',
   transactions: 'العمليات',
   production: 'الإنتاج',

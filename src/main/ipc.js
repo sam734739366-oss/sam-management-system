@@ -108,6 +108,24 @@ module.exports = function registerIpc(getWindow) {
     fs.writeFileSync(filePath, String(opts.content == null ? '' : opts.content), 'utf8');
     return { ok: true, path: filePath };
   });
+
+  /* Real .xlsx export — exceljs builds the workbook in this process. */
+  ipcMain.handle('app:saveXlsx', async (e, spec = {}) => {
+    const w = fromEvent(e);
+    const name = spec.fileName || `SAM-Report-${new Date().toISOString().slice(0, 10)}.xlsx`;
+    const { canceled, filePath } = await dialog.showSaveDialog(w, {
+      title: spec.title || 'تصدير Excel',
+      defaultPath: /\.xlsx$/i.test(name) ? name : name.replace(/\.[a-z0-9]+$/i, '') + '.xlsx',
+      filters: [{ name: 'Excel Workbook', extensions: ['xlsx'] }]
+    });
+    if (canceled || !filePath) return { ok: false, canceled: true };
+    try {
+      const info = await require('./xlsx').writeWorkbook({ ...spec, filePath });
+      return { ok: true, data: info };
+    } catch (err) {
+      return { ok: false, error: (err && err.message) || String(err) };
+    }
+  });
   ipcMain.handle('app:relaunch', () => {
     app.relaunch();
     app.exit(0);

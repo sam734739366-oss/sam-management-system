@@ -21,86 +21,66 @@
   <link rel="stylesheet" href="css/login.css" />
 </head>
 <body class="login-body">
-  <!-- deep gradient + slow aurora -->
-  <div class="bg-grad"></div>
-  <div class="aurora a1"></div>
-  <div class="aurora a2"></div>
-  <div class="aurora a3"></div>
-  <div class="bg-vignette"></div>
-
-  <!-- particle field (keeps running until login) -->
-  <canvas id="fx" class="fx"></canvas>
-  <div id="flash" class="flash"></div>
-
+  <!-- bright backdrop: two soft glows, no animation loop -->
+  <div class="lb-glow g1"></div>
+  <div class="lb-glow g2"></div>
   <div class="drag-strip top"></div>
-  <div class="drag-strip bottom"></div>
 
-  <button id="muteBtn" class="icon-btn mute" title="كتم / تشغيل الصوت">
-    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path class="wave" d="M16.5 8.5a4.5 4.5 0 0 1 0 7M19 6a8 8 0 0 1 0 12"/><path class="slash" d="M3 3l18 18"/></svg>
-  </button>
+  <div class="win-controls no-print">
+    <button class="wc" id="btnMin" title="تصغير"><svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg></button>
+    <button class="wc close" id="btnClose" title="إغلاق"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+  </div>
 
-  <main class="stage" id="stage">
-    <div class="intro" id="intro">
-      <div class="bottle-wrap" id="bottleWrap">
-        <div class="bottle-halo"></div>
-        <img id="bottle" class="bottle" src="assets/img/bottle.png" alt="زجاجة مياه SAM" draggable="false" />
-      </div>
-    </div>
-
-    <div class="panel" id="panel">
-      <div class="brand" id="brand">
-        <h1 class="brand-title">
-          <span class="t-en">SAM</span>
-          <span class="t-ar">Management System</span>
-        </h1>
-        <div class="brand-num">775158678</div>
-        <div class="brand-rule"></div>
-        <p class="brand-sub">نظام إدارة الأصناف والمخازن والإنتاج</p>
-      </div>
-
-    <form class="login-card" id="loginCard" autocomplete="off">
-      <div class="lc-head">
-        <img class="lc-icon" src="assets/img/icon.png" alt="" />
-        <div>
-          <h2>تسجيل الدخول</h2>
-          <p class="muted">أدخل بيانات المستخدم للمتابعة</p>
+  <main class="login-wrap">
+    <section class="login-card" id="loginCard" autocomplete="off">
+      <header class="lc-brand">
+        <img class="lc-bottle" src="assets/img/bottle.png" alt="زجاجة مياه SAM" draggable="false" />
+        <div class="lc-word">
+          <h1>SAM</h1>
+          <p>Management System</p>
         </div>
-      </div>
+      </header>
 
-      <label class="field">
-        <span>اسم المستخدم</span>
-        <input class="input" id="username" type="text" placeholder="admin" spellcheck="false" />
-      </label>
+      <div class="lc-rule"></div>
 
-      <label class="field">
-        <span>كلمة المرور</span>
-        <span class="pw-wrap">
-          <input class="input" id="password" type="password" placeholder="••••••••" />
-          <button type="button" class="pw-toggle" id="pwToggle" title="إظهار / إخفاء">
-            <svg viewBox="0 0 24 24"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="2.6"/></svg>
-          </button>
-        </span>
-      </label>
+      <h2 class="lc-title">تسجيل الدخول</h2>
+      <p class="lc-sub">أدخل بيانات المستخدم للمتابعة إلى لوحة التحكم</p>
 
-      <div class="err" id="loginError"></div>
+      <form id="loginForm" autocomplete="off">
+        <label class="field">
+          <span>اسم المستخدم</span>
+          <input class="input" id="username" type="text" placeholder="admin" spellcheck="false" />
+        </label>
 
-      <button type="submit" class="btn btn-gold btn-block" id="loginBtn">
-        <svg viewBox="0 0 24 24"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><path d="M10 17l5-5-5-5"/><path d="M15 12H3"/></svg>
-        دخول النظام
-      </button>
+        <label class="field">
+          <span>كلمة المرور</span>
+          <span class="pw-wrap">
+            <input class="input" id="password" type="password" placeholder="••••••••" />
+            <button type="button" class="pw-toggle" id="pwToggle" title="إظهار / إخفاء">
+              <svg viewBox="0 0 24 24"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="2.6"/></svg>
+            </button>
+          </span>
+        </label>
+
+        <div class="err" id="loginError" role="alert"></div>
+
+        <button type="submit" class="btn btn-primary btn-lg btn-block" id="loginBtn">
+          <svg viewBox="0 0 24 24"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><path d="M10 17l5-5-5-5"/><path d="M15 12H3"/></svg>
+          <span>دخول النظام</span>
+          <span class="kbd">Enter</span>
+        </button>
+      </form>
 
       <p class="hint">
         المدير الافتراضي: <b>admin</b> / <b>admin123</b>
         <span class="sep">—</span>
         غيّرها من «الإعدادات → المستخدمون والصلاحيات»
       </p>
-      </form>
-    </div>
+    </section>
+
+    <p class="lc-foot">SAM 775158678 · نظام إدارة الأصناف والمخازن والإنتاج</p>
   </main>
 
-  <button id="skipBtn" class="skip">تخطّي المقدمة</button>
-
-  <script src="js/particles.js"></script>
   <script src="js/login.js"></script>
 </body>
 </html>

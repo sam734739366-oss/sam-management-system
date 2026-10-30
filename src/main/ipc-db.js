@@ -43,7 +43,8 @@ const API = {
 
   DOC_KINDS: () => d.DOC_KINDS,
   nextDocNo: (kind) => d.nextDocNo(kind),
-  availablePieces: (itemId, warehouseId, bucket, ignoreDocId) => d.availablePieces(itemId, warehouseId, bucket, ignoreDocId),
+  availablePieces: (itemId, bucket, ignoreDocId) => d.availablePieces(itemId, bucket, ignoreDocId),
+  availableByLocation: (itemId, bucket, ignoreDocId) => d.availableByLocation(itemId, bucket, ignoreDocId),
   saveDocument: (payload) => d.saveDocument(payload),
   getDocument: (id) => d.getDocument(id),
   listDocuments: (filter) => d.listDocuments(filter || {}),
@@ -63,6 +64,19 @@ const API = {
   saveReceipt: (payload) => d.saveReceipt(payload),
   receiptImpact: (id) => d.receiptImpact(id),
   deleteReceipt: (id) => d.deleteReceipt(id),
+
+  listTolling: (limit) => d.listTolling(limit),
+  getTolling: (id) => d.getTolling(id),
+  saveTolling: (payload) => d.saveTolling(payload),
+  tollingImpact: (id) => d.tollingImpact(id),
+  deleteTolling: (id) => d.deleteTolling(id),
+  listScrap: (filters) => d.listScrap(filters || {}),
+  deleteScrap: (id) => d.deleteScrap(id),
+
+  listArchive: (limit) => d.listArchive(limit),
+  getArchive: (id) => d.getArchive(id),
+  saveArchive: (payload) => d.saveArchive(payload),
+  deleteArchive: (id) => d.deleteArchive(id),
 
   reportQuery: (filters) => d.reportQuery(filters || {}),
   reportFacets: () => d.reportFacets()
@@ -115,6 +129,19 @@ const PERMS = {
   saveReceipt: (a) => ['production', a[0] && a[0].id ? 'edit' : 'add'],
   deleteIssue: ['production', 'delete'],
   deleteReceipt: ['production', 'delete'],
+
+  listTolling: ['production', 'view'],
+  getTolling: ['production', 'view'],
+  tollingImpact: ['production', 'delete'],
+  saveTolling: (a) => ['production', a[0] && a[0].id ? 'edit' : 'add'],
+  deleteTolling: ['production', 'delete'],
+  listScrap: ['production', 'view'],
+  deleteScrap: ['production', 'delete'],
+
+  listArchive: ['production', 'view'],
+  getArchive: ['production', 'view'],
+  saveArchive: (a) => ['production', a[0] && a[0].id ? 'edit' : 'add'],
+  deleteArchive: ['production', 'delete'],
 
   reportQuery: ['reports', 'view'],
   reportFacets: ['reports', 'view']

@@ -6,7 +6,7 @@
    the searchable dropdown with a [+] shortcut.
    ===================================================================== */
 (function () {
-  const { el, esc, toast, bindRow, modal, form, field, input, textarea } = SamUI;
+  const { el, esc, toast, bindRow, modal, form, field, input, textarea, confirmHardDelete, emptyState, toggleEmpty } = SamUI;
   const TYPE_AR = { customer: 'عميل', supplier: 'مورد', both: 'عميل ومورد' };
   const TYPE_CHIP = { customer: 'main', supplier: 'sub', both: 'warn' };
 
@@ -38,7 +38,14 @@
       });
       tb.appendChild(tr);
     });
-    document.getElementById('partiesEmpty').style.display = state.rows.length ? 'none' : 'block';
+    emptyState('partiesEmpty', {
+      icon: 'i-users',
+      title: 'لا توجد أطراف',
+      hint: 'أضف عميلاً أو مورداً ليظهر في القوائم المنسدلة داخل المستندات مباشرة.',
+      actionLabel: 'إضافة طرف',
+      onAction: () => openForm(null)
+    });
+    toggleEmpty('partiesEmpty', state.rows.length > 0);
   }
 
   function openForm(p) {
@@ -112,7 +119,7 @@
         <dt>ملاحظات</dt><dd>${esc(p.notes || '—')}</dd>
         <dt>الحالة</dt><dd>${p.is_active ? 'نشط' : 'موقوف'}</dd>
       </dl>
-      <p class="foot-note">ربط الطرف بالفواتير يتم في المرحلة 3 عبر قائمة منسدلة searchable.</p>`,
+      <p class="foot-note">يظهر هذا الطرف في كل مستندات العمليات عبر القائمة المنسدلة البحثية، ويمكن إضافته مباشرة من داخل المستند بزر «+».</p>`,
       actions: [
         { label: 'تعديل', value: 'edit', kind: 'btn-ghost', icon: 'i-edit' },
         { label: 'إغلاق', value: 'close', kind: 'btn-ghost' }

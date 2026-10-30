@@ -1,308 +1,87 @@
 /* =====================================================================
-   Login / intro screen
-   Layer order: gradient -> aurora -> vignette -> particles -> flash
-   all of them sit BELOW the content (negative z-index) so the bottle can
-   blend straight into them with mix-blend-mode: screen.
+   Login screen — V2
+   Clean and fast: one bright card, no particle loop, no intro timeline.
+   The premium animation now runs once AFTER login (see js/intro.js).
    ===================================================================== */
 
 .login-body {
-  background: var(--navy-950);
-  color: #eaf0ff;
+  background: var(--bg);
+  color: var(--ink);
   font-family: var(--font-body);
+  position: relative;
+  overflow: hidden;
 }
 
-.bg-grad {
-  position: fixed;
-  inset: 0;
-  z-index: -5;
-  background:
-    radial-gradient(120% 85% at 50% 6%, #22407f 0%, #16295c 26%, #0d1a3f 52%, #070f28 78%, #04081c 100%),
-    linear-gradient(180deg, rgba(217, 164, 65, .07), transparent 40%);
-}
+/* two static soft glows — cheap to paint, no animation frames */
+.lb-glow { position: fixed; border-radius: 50%; filter: blur(80px); pointer-events: none; }
+.lb-glow.g1 { width: 46vw; height: 46vw; inset-inline-start: -12vw; top: -14vw; background: radial-gradient(circle, rgba(37, 99, 235, .14), transparent 66%); }
+.lb-glow.g2 { width: 40vw; height: 40vw; inset-inline-end: -10vw; bottom: -14vw; background: radial-gradient(circle, rgba(13, 148, 136, .13), transparent 68%); }
 
-.aurora {
-  position: fixed;
-  z-index: -4;
-  border-radius: 50%;
-  filter: blur(70px);
-  opacity: .5;
-  pointer-events: none;
-}
-.aurora.a1 { width: 58vw; height: 58vw; left: -14vw; top: -18vw; background: radial-gradient(circle, rgba(63, 106, 201, .55), transparent 66%); animation: drift1 26s ease-in-out infinite; }
-.aurora.a2 { width: 46vw; height: 46vw; right: -10vw; bottom: -14vw; background: radial-gradient(circle, rgba(217, 164, 65, .34), transparent 66%); animation: drift2 32s ease-in-out infinite; }
-.aurora.a3 { width: 34vw; height: 34vw; left: 34%; bottom: -12vw; background: radial-gradient(circle, rgba(38, 198, 255, .28), transparent 68%); animation: drift1 22s ease-in-out infinite reverse; }
-
-@keyframes drift1 { 0%, 100% { transform: translate3d(0, 0, 0) scale(1); } 50% { transform: translate3d(6vw, 4vh, 0) scale(1.12); } }
-@keyframes drift2 { 0%, 100% { transform: translate3d(0, 0, 0) scale(1.05); } 50% { transform: translate3d(-5vw, -5vh, 0) scale(.92); } }
-
-.bg-vignette {
-  position: fixed;
-  inset: 0;
-  z-index: -3;
-  pointer-events: none;
-  background: radial-gradient(110% 78% at 50% 44%, transparent 42%, rgba(3, 6, 20, .62) 100%);
-}
-
-.fx {
-  position: fixed;
-  inset: 0;
-  z-index: -2;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-}
-
-.flash {
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  opacity: 0;
-  background: radial-gradient(58% 52% at 50% 44%, rgba(255, 246, 220, .95), rgba(217, 164, 65, .35) 42%, transparent 72%);
-}
-.flash.on { animation: flashPop 620ms var(--ease) forwards; }
-@keyframes flashPop { 0% { opacity: 0; } 8% { opacity: .95; } 100% { opacity: 0; } }
-
-.drag-strip { position: fixed; inset-inline: 0; height: 40px; z-index: 1; -webkit-app-region: drag; pointer-events: auto; }
+.drag-strip { position: fixed; inset-inline: 0; height: 42px; z-index: 4; -webkit-app-region: drag; pointer-events: auto; }
 .drag-strip.top { top: 0; }
-.drag-strip.bottom { bottom: 0; }
 
-/* ---------- floating controls ---------- */
-.icon-btn {
-  position: fixed;
-  z-index: 7;
-  width: 40px; height: 40px;
-  display: grid; place-items: center;
-  border-radius: 12px;
-  border: 1px solid rgba(217, 164, 65, .34);
-  background: rgba(9, 17, 42, .55);
-  color: #d8e3ff;
-  cursor: pointer;
-  -webkit-app-region: no-drag;
-  transition: background var(--dur), transform var(--dur), border-color var(--dur);
+.win-controls {
+  position: fixed; z-index: 6; top: 8px; inset-inline-end: 8px;
+  display: flex; gap: 4px; -webkit-app-region: no-drag;
 }
-.icon-btn:hover { background: rgba(30, 58, 138, .7); transform: translateY(-2px); border-color: var(--gold); }
-.icon-btn svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
-.icon-btn.mute { top: 12px; inset-inline-start: 12px; }
-.icon-btn.muted { color: #93a3c9; }
-.icon-btn.muted .wave { opacity: 0; }
-.icon-btn .slash { opacity: 0; }
-.icon-btn.muted .slash { opacity: 1; }
-
-.skip {
-  position: fixed;
-  z-index: 7;
-  bottom: 14px;
-  inset-inline-end: 18px;
-  padding: 8px 16px;
-  border-radius: 999px;
-  border: 1px solid rgba(217, 164, 65, .38);
-  background: rgba(9, 17, 42, .6);
-  color: #f0d9a8;
-  font-family: var(--font-body);
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  -webkit-app-region: no-drag;
-  transition: all var(--dur);
-  backdrop-filter: blur(6px);
+.win-controls .wc {
+  width: 34px; height: 30px; display: grid; place-items: center;
+  border: 1px solid var(--line); border-radius: 9px;
+  background: rgba(255, 255, 255, .8); color: var(--ink-soft); cursor: pointer;
+  transition: background var(--dur), color var(--dur);
 }
-.skip:hover { background: rgba(217, 164, 65, .2); color: #fff; transform: translateY(-2px); }
-.skip.gone { opacity: 0; pointer-events: none; transform: translateY(10px); }
+.win-controls .wc svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; }
+.win-controls .wc:hover { background: var(--surface-2); color: var(--ink); }
+.win-controls .wc.close:hover { background: var(--bad); color: #fff; border-color: transparent; }
 
-/* ---------- stage ---------- */
-.stage { position: relative; height: 100%; }
-
-/* intro layer: must stay free of transform / opacity / filter so the
-   bottle keeps blending with the page instead of an isolated group */
-.intro {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-}
-.bottle-wrap {
+/* ---------------- layout ---------------- */
+.login-wrap {
   position: relative;
-  isolation: auto;
-  height: clamp(230px, 40vh, 420px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.bottle-halo {
-  position: absolute;
-  inset: -18% -70%;
-  border-radius: 50%;
-  background: radial-gradient(closest-side, rgba(126, 200, 255, .34), rgba(63, 106, 201, .12) 55%, transparent 74%);
-  filter: blur(14px);
-  animation: haloPulse 3.4s ease-in-out infinite;
-  pointer-events: none;
-}
-@keyframes haloPulse { 0%, 100% { opacity: .55; } 50% { opacity: 1; } }
-
-.bottle {
-  position: relative;
-  max-height: 100%;
-  max-width: 100%;
-  width: auto;
-  height: auto;
-  opacity: 0;
-  /* CRITICAL: a light PNG background can never show as a box over the
-     dark screen, and the glass gets a luminous edge */
-  mix-blend-mode: screen;
-  filter: drop-shadow(0 18px 30px rgba(0, 0, 0, .55));
-  will-change: transform, opacity;
-}
-
-/* --- timeline stages (added by login.js) --- */
-.bottle.s-enter { animation: bottleEnter 2100ms cubic-bezier(.16, .84, .28, 1) forwards; }
-@keyframes bottleEnter {
-  0% { opacity: 0; transform: translate3d(0, 118%, 0) rotate(-14deg) scale(.72); }
-  55% { opacity: 1; }
-  100% { opacity: 1; transform: translate3d(0, 0, 0) rotate(0deg) scale(1); }
-}
-.bottle.s-float { animation: bottleFloat 3600ms ease-in-out infinite; opacity: 1; }
-@keyframes bottleFloat {
-  0%, 100% { transform: translate3d(0, -8px, 0) rotate(-3.4deg); }
-  50% { transform: translate3d(0, 12px, 0) rotate(3.4deg); }
-}
-.bottle.s-spin { animation: bottleSpin 1500ms cubic-bezier(.4, 0, .2, 1) forwards; opacity: 1; }
-@keyframes bottleSpin {
-  0% { transform: perspective(900px) rotateY(0deg) translate3d(0, 0, 0) scale(1); }
-  60% { transform: perspective(900px) rotateY(230deg) translate3d(0, -16px, 0) scale(1.05); }
-  100% { transform: perspective(900px) rotateY(360deg) translate3d(0, 0, 0) scale(1.06); }
-}
-.bottle.s-charge { animation: bottleCharge 520ms ease-in forwards; }
-@keyframes bottleCharge {
-  0% { transform: scale(1.06); filter: brightness(1) drop-shadow(0 18px 30px rgba(0, 0, 0, .55)); }
-  35% { transform: scale(1.1) rotate(-1.5deg); filter: brightness(1.5); }
-  55% { transform: scale(1.08) rotate(1.5deg); filter: brightness(1.8); }
-  75% { transform: scale(1.16); filter: brightness(2.4); }
-  100% { transform: scale(1.5); filter: brightness(4.2) blur(2px); }
-}
-.bottle.s-gone { animation: bottleGone 260ms ease-out forwards; }
-@keyframes bottleGone { to { opacity: 0; transform: scale(2.1); filter: brightness(6) blur(9px); } }
-
-/* ---------- revealed panel ---------- */
-.panel {
-  position: absolute;
-  inset: 0;
+  height: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: clamp(12px, 2vh, 22px);
-  padding: 44px 20px 30px;
-  opacity: 0;
-  pointer-events: none;
-}
-.panel.revealed { animation: panelIn 500ms var(--ease) forwards; pointer-events: auto; }
-@keyframes panelIn { from { opacity: 0; } to { opacity: 1; } }
-
-.brand { display: flex; flex-direction: column; align-items: center; gap: clamp(4px, .8vh, 10px); text-align: center; }
-.brand.shake { animation: shake 480ms cubic-bezier(.36, .07, .19, .97); }
-@keyframes shake {
-  10%, 90% { transform: translate3d(-2px, 0, 0); }
-  20%, 80% { transform: translate3d(4px, 0, 0); }
-  30%, 50%, 70% { transform: translate3d(-7px, 1px, 0); }
-  40%, 60% { transform: translate3d(7px, -1px, 0); }
+  gap: 16px;
+  padding: 52px 20px 26px;
 }
 
-.brand-title { display: flex; flex-direction: column; align-items: center; gap: 2px; line-height: 1.1; }
-.t-en {
-  font-family: var(--font-display);
-  font-weight: 800;
-  font-size: clamp(38px, 7vh, 68px);
-  letter-spacing: .16em;
-  background: linear-gradient(180deg, #ffffff 8%, #e8f0ff 34%, var(--gold-300) 62%, var(--gold) 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  -webkit-text-fill-color: transparent;
-}
-.t-ar {
-  font-family: var(--font-display);
-  font-weight: 600;
-  font-size: clamp(15px, 2.3vh, 22px);
-  letter-spacing: .22em;
-  color: #b9c9ee;
-}
-.brand-num {
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: clamp(17px, 2.5vh, 25px);
-  letter-spacing: .34em;
-  color: var(--gold);
-  direction: ltr;
-}
-.brand-rule { width: 190px; height: 2px; margin: 2px 0; background: linear-gradient(90deg, transparent, var(--gold), transparent); }
-.brand-sub { font-size: 13.5px; color: #c2d2f2; letter-spacing: .04em; }
-
-.brand-title, .brand-num, .brand-rule, .brand-sub { opacity: 0; }
-.panel.revealed .brand-title { animation: glowIn 1100ms var(--ease) 120ms forwards; }
-.panel.revealed .brand-num { animation: numIn 1100ms var(--ease) 380ms forwards, numGlow 3.4s ease-in-out 1.6s infinite; }
-.panel.revealed .brand-rule { animation: ruleIn 900ms var(--ease) 560ms forwards; }
-.panel.revealed .brand-sub { animation: softIn 900ms var(--ease) 720ms forwards; }
-
-@keyframes glowIn {
-  0% { opacity: 0; transform: translateY(16px) scale(.96); filter: blur(8px); }
-  60% { opacity: 1; filter: blur(0); }
-  100% { opacity: 1; transform: none; filter: none; }
-}
-@keyframes numIn {
-  0% { opacity: 0; letter-spacing: .9em; filter: blur(6px); }
-  100% { opacity: 1; letter-spacing: .34em; filter: blur(0); }
-}
-@keyframes ruleIn { from { opacity: 0; transform: scaleX(0); } to { opacity: 1; transform: scaleX(1); } }
-@keyframes softIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
-@keyframes numGlow {
-  0%, 100% { text-shadow: 0 0 8px rgba(217, 164, 65, .35); }
-  50% { text-shadow: 0 0 22px rgba(217, 164, 65, .8), 0 0 40px rgba(217, 164, 65, .3); }
-}
-.panel.revealed .t-en { animation: glowIn 1100ms var(--ease) 120ms forwards, shine 4.6s ease-in-out 1.4s infinite; }
-@keyframes shine {
-  0%, 100% { filter: drop-shadow(0 0 10px rgba(217, 164, 65, .28)); }
-  50% { filter: drop-shadow(0 0 26px rgba(217, 164, 65, .62)) drop-shadow(0 0 44px rgba(126, 200, 255, .3)); }
-}
-
-/* ---------- login card ---------- */
 .login-card {
-  width: min(392px, 92vw);
+  width: min(420px, 94vw);
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 20px 22px 16px;
-  border-radius: 20px;
-  border: 1px solid rgba(217, 164, 65, .26);
-  background: linear-gradient(180deg, rgba(18, 30, 66, .78), rgba(9, 16, 40, .86));
-  box-shadow: 0 30px 70px rgba(2, 6, 22, .6), inset 0 1px 0 rgba(255, 255, 255, .07);
-  backdrop-filter: blur(12px);
+  gap: 13px;
+  padding: 26px 28px 20px;
+  border-radius: 22px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  box-shadow: 0 24px 60px rgba(15, 23, 42, .10), 0 2px 8px rgba(15, 23, 42, .05);
   -webkit-app-region: no-drag;
+  animation: cardIn 320ms var(--ease);
 }
-.panel.revealed .login-card { animation: cardUp 700ms var(--ease) 620ms backwards; }
-@keyframes cardUp { from { opacity: 0; transform: translateY(30px) scale(.98); } to { opacity: 1; transform: none; } }
-.login-card.shake { animation: shake 420ms cubic-bezier(.36, .07, .19, .97); }
+@keyframes cardIn { from { opacity: 0; transform: translateY(12px) scale(.99); } }
 
-.lc-head { display: flex; align-items: center; gap: 12px; margin-bottom: 2px; }
-.lc-head h2 { font-size: 19px; color: #fff; }
-.lc-head .muted { font-size: 12.5px; color: #b6c7ea; margin-top: 2px; }
-.lc-icon { width: 42px; height: 42px; border-radius: 12px; flex: none; box-shadow: 0 4px 14px rgba(0, 0, 0, .5); }
+.lc-brand { display: flex; align-items: center; gap: 16px; }
+.lc-bottle {
+  /* bottle art has a light background: multiply keeps it clean on white */
+  height: 62px; width: auto; max-width: 62px; object-fit: contain;
+  mix-blend-mode: multiply;
+  filter: saturate(1.05);
+}
+.lc-word { display: flex; flex-direction: column; }
+.lc-word h1 {
+  font-family: var(--font-display);
+  font-size: 34px; font-weight: 800; letter-spacing: .2em; line-height: 1;
+  color: var(--brand);
+}
+.lc-word p { font-size: 12.5px; font-weight: 700; letter-spacing: .18em; color: var(--muted-fg); margin-top: 5px; }
 
-.login-card .field > span:first-child { font-size: 12.5px; font-weight: 700; color: #d3e1ff; letter-spacing: .02em; }
-/* dark surface: swap the input contrast tokens instead of fighting !important */
-.login-card .input {
-  --input-fg: #f6faff;
-  --input-bg: rgba(255, 255, 255, .07);
-  --input-ph: #9fb3d9;
-  border: 1px solid rgba(160, 185, 235, .22);
-  font-size: 15px;
-  padding: 11px 13px;
-}
-.login-card .input:focus {
-  --input-bg: rgba(255, 255, 255, .12);
-  border-color: var(--gold);
-  box-shadow: 0 0 0 3px rgba(217, 164, 65, .18);
-}
+.lc-rule { height: 3px; border-radius: 2px; background: linear-gradient(90deg, var(--brand), var(--accent) 60%, transparent); }
+
+.lc-title { font-size: 20px; color: var(--ink); }
+.lc-sub { font-size: 13px; color: var(--muted-fg); font-weight: 600; margin-top: -8px; }
+
+form { display: flex; flex-direction: column; gap: 13px; }
 
 .pw-wrap { position: relative; display: block; }
 .pw-wrap .input { padding-inline-end: 44px; }
@@ -313,20 +92,33 @@
   width: 32px; height: 32px;
   display: grid; place-items: center;
   border: none; background: transparent;
-  color: #8ea3d0; cursor: pointer; border-radius: 8px;
+  color: var(--muted-fg); cursor: pointer; border-radius: 8px;
 }
-.pw-toggle:hover { color: var(--gold); background: rgba(217, 164, 65, .12); }
+.pw-toggle:hover { color: var(--brand); background: var(--brand-050); }
 .pw-toggle svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.6; }
 
-.err { min-height: 18px; font-size: 12.5px; color: #ffb1ab; font-weight: 600; }
+.err { min-height: 18px; font-size: 12.5px; color: var(--bad); font-weight: 700; }
 .err:empty { min-height: 0; }
 
-.hint { font-size: 12px; color: #a3b7e0; text-align: center; line-height: 1.9; }
-.hint b { color: var(--gold-300); font-weight: 700; }
-.hint .sep { margin: 0 6px; color: #4d5f85; }
+#loginBtn svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+#loginBtn[disabled] { cursor: progress; }
+#loginBtn .spin { border-color: rgba(255, 255, 255, .35); border-top-color: #fff; }
 
-/* ---------- exit ---------- */
-body.leaving .stage { animation: leave 520ms var(--ease) forwards; }
-body.leaving .bg-grad, body.leaving .aurora { animation: leaveBg 520ms var(--ease) forwards; }
-@keyframes leave { to { opacity: 0; transform: scale(1.06); filter: blur(6px); } }
-@keyframes leaveBg { to { opacity: .25; } }
+.hint { font-size: 12px; color: var(--muted-fg); text-align: center; line-height: 1.9; }
+.hint b { color: var(--brand-700); font-weight: 800; }
+.hint .sep { margin: 0 6px; color: var(--line-strong); }
+
+.lc-foot { font-size: 11.5px; color: var(--muted-fg); letter-spacing: .04em; text-align: center; }
+
+/* ---------------- error shake ---------------- */
+.login-card.shake { animation: shake 420ms cubic-bezier(.36, .07, .19, .97); }
+@keyframes shake {
+  10%, 90% { transform: translate3d(-2px, 0, 0); }
+  20%, 80% { transform: translate3d(4px, 0, 0); }
+  30%, 50%, 70% { transform: translate3d(-7px, 1px, 0); }
+  40%, 60% { transform: translate3d(7px, -1px, 0); }
+}
+
+/* ---------------- exit ---------------- */
+body.leaving .login-wrap { animation: leave 260ms var(--ease) forwards; }
+@keyframes leave { to { opacity: 0; transform: scale(.99); } }

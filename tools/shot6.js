@@ -103,12 +103,10 @@ app.whenReady().then(async () => {
   /* ---------- 1) wrong password must be rejected ---------- */
   await win.loadFile(path.join(RENDERER, 'login.html'));
   await sleep(1000);
-  await js(`document.getElementById('skipBtn').click()`);
-  await sleep(500);
   await step('wrong password', `(() => {
     document.getElementById('username').value = 'admin';
     document.getElementById('password').value = 'wrong';
-    document.getElementById('loginCard').dispatchEvent(new Event('submit',{cancelable:true,bubbles:true}));
+    document.getElementById('loginForm').dispatchEvent(new Event('submit',{cancelable:true,bubbles:true}));
     return 'submitted';
   })()`);
   await sleep(900);
@@ -140,7 +138,7 @@ app.whenReady().then(async () => {
     [...cells.querySelectorAll('input')].forEach(c => { c.checked = ['items','reports'].includes(c.value); });
     const permCells = [...m.querySelectorAll('.perm-grid')][1];
     [...permCells.querySelectorAll('input')].forEach(c => { c.checked = ['view','add'].includes(c.value); });
-    m.querySelector('.modal-foot .btn-gold').click();
+    m.querySelector('.modal-foot .btn-primary').click();
     return 'saved';
   })()`);
   await sleep(1200);

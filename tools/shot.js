@@ -114,11 +114,10 @@ app.whenReady().then(async () => {
   await win.loadFile(path.join(RENDERER, 'login.html'));
   await sleep(1200);
   await shot('p1-login-intro');
-  await js(`document.getElementById('skipBtn').click()`);
   await shot('p1-login-form', 600);
   await js(`document.getElementById('username').value='admin';
             document.getElementById('password').value='admin123';
-            document.getElementById('loginCard').dispatchEvent(new Event('submit',{cancelable:true,bubbles:true}));`);
+            document.getElementById('loginForm').dispatchEvent(new Event('submit',{cancelable:true,bubbles:true}));`);
   await sleep(1800);
   if (!win.webContents.getURL().includes('app.html')) await win.loadFile(path.join(RENDERER, 'app.html'));
   await shot('p2-01-dashboard-empty');
@@ -132,7 +131,7 @@ app.whenReady().then(async () => {
       const m = document.querySelector('.modal');
       m.querySelectorAll('input.input')[0].value = 'S02';
       m.querySelectorAll('input.input')[1].value = 'مخزن الإنتاج';
-      m.querySelector('.modal-foot .btn-gold').click();
+      m.querySelector('.modal-foot .btn-primary').click();
     })()`);
   await sleep(600);
   await js(`window.SamWarehouses.openForm(null); 1`);
@@ -141,7 +140,7 @@ app.whenReady().then(async () => {
       const m = document.querySelector('.modal');
       m.querySelectorAll('input.input')[0].value = 'S03';
       m.querySelectorAll('input.input')[1].value = 'مخزن المرتجعات';
-      m.querySelector('.modal-foot .btn-gold').click();
+      m.querySelector('.modal-foot .btn-primary').click();
     })()`);
   await shot('p2-02-warehouses');
 
@@ -168,7 +167,7 @@ app.whenReady().then(async () => {
       bal[1].value = ${mainDefect}; // main defect
       bal[2].value = ${mainHeld};   // main held
       bal[3].value = ${subGood};    // first sub good
-      m.querySelector('.modal-foot .btn-gold').click();
+      m.querySelector('.modal-foot .btn-primary').click();
       return bal.length;
     })()`);
     await sleep(500);
@@ -191,7 +190,7 @@ app.whenReady().then(async () => {
       const m = document.querySelector('.modal');
       m.querySelectorAll('input.input')[0].value = 'موزع الرياض';
       m.querySelectorAll('input.input')[1].value = '0555123456';
-      m.querySelector('.modal-foot .btn-gold').click();
+      m.querySelector('.modal-foot .btn-primary').click();
     })()`);
   await sleep(500);
   await js(`window.SamParties.openForm(null); 1`);
@@ -201,7 +200,7 @@ app.whenReady().then(async () => {
       m.querySelectorAll('input.input')[0].value = 'شركة البلاستيك المتحدة';
       m.querySelectorAll('input.input')[1].value = '0112233445';
       [...m.querySelectorAll('input[type=radio]')][1].checked = true;
-      m.querySelector('.modal-foot .btn-gold').click();
+      m.querySelector('.modal-foot .btn-primary').click();
     })()`);
   await shot('p2-05-parties');
 

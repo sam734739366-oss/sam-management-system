@@ -4,11 +4,11 @@
    Items screen — master data + opening balances (the piece is king)
    ===================================================================== */
 (function () {
-  const { el, icon, esc, toast, bindRow, modal, form, field, input, textarea, confirmHardDelete } = SamUI;
+  const { el, icon, esc, toast, bindRow, modal, form, field, input, numInput, textarea, confirmHardDelete, emptyState, toggleEmpty } = SamUI;
 
   const state = { items: [], warehouses: [], search: '' };
   const BUCKETS = ['good', 'defect', 'held'];
-  const AR = { good: 'سليم', defect: 'تالف', held: 'محجوز' };
+  const AR = { good: 'سليم', defect: 'تالف', held: 'محرز' };
 
   async function load() {
     try {
@@ -29,18 +29,19 @@
         ? '<span class="chip bad">تحت الحد الأدنى</span>'
         : it.alertHighDefect
           ? '<span class="chip warn">تالف تجاوز الحد</span>'
-          : '<span class="chip ok">سليم</span>';
+          : '<span class="chip ok">ضمن الحدود</span>';
+      const zero = (v) => (v ? SamDB.fmt(v) : '—');
       tr.innerHTML = `
         <td class="num">${idx + 1}</td>
         <td class="mono">${esc(it.code)}</td>
         <td>${esc(it.name)}${it.category ? ` <span class="chip sub">${esc(it.category)}</span>` : ''}${it.is_active ? '' : ' <span class="chip off">موقوف</span>'}</td>
-        <td>${esc(it.base_unit)}</td>
-        <td class="num">${SamDB.fmt(it.pieces_per_carton)}</td>
-        <td class="num">${SamDB.fmt(it.pieces_per_bag)}</td>
-        <td class="num qty">${SamDB.fmt(it.mainStock.good)}</td>
+        <td><span class="unit-chip">${esc(it.base_unit)}</span></td>
+        <td class="num">${zero(it.pieces_per_carton)}</td>
+        <td class="num">${zero(it.pieces_per_bag)}</td>
+        <td class="num qty ${it.mainStock.good < 0 ? 'minus' : ''}">${SamDB.fmt(it.mainStock.good)}</td>
         <td class="num qty">${SamDB.fmt(it.mainStock.defect)}</td>
         <td class="num qty">${SamDB.fmt(it.mainStock.held)}</td>
-        <td class="num qty">${SamDB.fmt(it.totalPieces)}</td>
+        <td class="num qty ${it.totalPieces < 0 ? 'minus' : ''}">${SamDB.fmt(it.totalPieces)}</td>
         <td>${alert}</td>`;
       bindRow(tr, {
         view: () => view(it),
@@ -49,7 +50,13 @@
       });
       tb.appendChild(tr);
     });
-    document.getElementById('itemsEmpty').style.display = state.items.length ? 'none' : 'block';
+    emptyState('itemsEmpty', {
+      title: 'لا توجد أصناف',
+      hint: 'أضف أول صنف مع وحدته الأساسية وأرصده الافتتاحي لتبدأ الحركات.',
+      actionLabel: 'إضافة صنف',
+      onAction: () => openForm(null)
+    });
+    toggleEmpty('itemsEmpty', state.items.length > 0);
   }
 
   /* ---------------- form ---------------- */
@@ -67,18 +74,19 @@
     const name = input({ placeholder: 'مثال: مياه جلدلة 1.5 لتر', value: item ? item.name : '' });
     const unit = input({ placeholder: 'حبة — اكتب قيمة جديدة أو اختر من المقترحات', value: item ? item.base_unit : 'حبة' });
     const cat = input({ placeholder: 'مثال: خام / منتج تام / ملحقات', value: item ? item.category || '' : '' });
-    const perCtn = input({ type: 'number', min: '0', step: '1', value: item ? item.pieces_per_carton : '' , placeholder:'0'});
-    const perBag = input({ type: 'number', min: '0', step: '1', value: item ? item.pieces_per_bag : '', placeholder: '0' });
-    const minGood = input({ type: 'number', min: '0', step: '1', value: item ? item.min_good_alert : '', placeholder: '0' });
-    const maxDefect = input({ type: 'number', min: '0', step: '1', value: item ? item.max_defect_alert : '', placeholder: '0' });
+    // never pre-filled with 0: empty box + "0" placeholder
+    const perCtn = numInput({ value: item ? item.pieces_per_carton : 0, placeholder: '0' });
+    const perBag = numInput({ value: item ? item.pieces_per_bag : 0, placeholder: '0' });
+    const minGood = numInput({ value: item ? item.min_good_alert : 0, placeholder: '0' });
+    const maxDefect = numInput({ value: item ? item.max_defect_alert : 0, placeholder: '0' });
 
     grid.append(
       field('كود الصنف', code),
       field('اسم الصنف', name),
       field('الوحدة الأساسية', unit, 'الوحدة التي يُحتسب بها المخزون'),
       field('الفئة', cat),
-      field('عدد حبات الكرتونة', perCtn, 'معلوماتي — لا يؤثر على الحساب'),
-      field('عدد حبات الكيس', perBag, 'معلوماتي'),
+      field('عدد الوحدات لكل كرتونة', perCtn, 'معلوماتي فقط — لا يدخل في أي حساب'),
+      field('عدد الوحدات لكل كيس', perBag, 'معلوماتي فقط'),
       field('حد التنبيه الأدنى للجيد', minGood, 'تنبيه إذا قلّ الجيد عن هذا الرقم'),
       field('حد التالف الأقصى', maxDefect, 'تنبيه إذا زاد التالف عن هذا الرقم')
     );
@@ -89,30 +97,29 @@
     SamSuggest.attach(cat, 'category');
 
     /* ---- opening balances ---- */
-    body.appendChild(el('div', 'form-sec', `${icon('i-wh')}<span>الأرصدة الافتتاحية (حبة)</span>`));
+    body.appendChild(el('div', 'form-sec', `${icon('i-pin')}<span>الأرصدة الافتتاحية (حبة)</span>`));
     const bal = el('div', 'bal-grid');
     bal.append(
-      el('div', 'hd', 'المخزن'),
+      el('div', 'hd', 'الموقع / الهنجر'),
       el('div', 'hd', 'سليم'),
       el('div', 'hd', 'تالف'),
-      el('div', 'hd', 'محجوز')
+      el('div', 'hd', 'محرز')
     );
     state.warehouses.forEach((w) => {
       const saved = openings[w.id] || {};
       const nameCell = el('div', 'wh-name',
-        `<span>${esc(w.name)}</span><span class="chip ${w.kind === 'main' ? 'main' : 'sub'}">${w.kind === 'main' ? 'رئيسي' : 'فرعي'}</span>`);
+        `<span>${esc(w.name)}</span><span class="chip ${w.kind === 'main' ? 'main' : 'sub'}">${w.kind === 'main' ? 'رئيسي' : 'هنجر'}</span>`);
       bal.appendChild(nameCell);
       for (const b of BUCKETS) {
-        const i = input({
-          type: 'number', min: '0', step: '1', class: 'input bal-in',
-          'data-wh': w.id, 'data-bucket': b,
-          value: saved[b] || 0, placeholder: '0'
-        });
-        bal.appendChild(i);
+        const cell = numInput({ value: saved[b] || 0, center: true, placeholder: '0' });
+        cell.classList.add('bal-in');
+        cell.dataset.wh = w.id;
+        cell.dataset.bucket = b;
+        bal.appendChild(cell);
       }
     });
     body.appendChild(bal);
-    body.appendChild(el('p', 'foot-note', 'الحبة هي وحدة الحساب. الكرتونة والكيس تُسجَّل لأغراض العرض فقط.'));
+    body.appendChild(el('p', 'foot-note', 'الحبة هي وحدة الحساب. الكرتونة والكيس تُسجَّل لأغراض العرض فقط، والحقول الفارغة تعني صفراً.'));
 
     const ok = await form({
       title: editing ? `تعديل الصنف: ${item.code}` : 'إضافة صنف جديد',
@@ -135,7 +142,7 @@
         if (!payload.name) throw new Error('اسم الصنف مطلوب');
 
         const balances = [];
-        bal.querySelectorAll('.bal-in').forEach((inp) => {
+        bal.querySelectorAll('[data-bucket]').forEach((inp) => {
           const v = SamDB.n(inp.value);
           const row = balances.find((x) => x.warehouseId === Number(inp.dataset.wh));
           if (v !== 0) {
@@ -167,17 +174,17 @@
   async function view(item) {
     let rows = [];
     try { rows = await SamDB.call('itemStock', item.id); } catch (e) { toast(e.message, 'bad'); return; }
-    const total = rows.reduce((a, r) => a + r.good + r.defect + r.held, 0);
+    const total = item.totalPieces;
     const table = SamUI.tableHtml(
       [
-        { key: 'name', label: 'المخزن' },
+        { key: 'name', label: 'الموقع / الهنجر' },
         { key: 'kind', label: 'النوع' },
         { key: 'good', label: 'سليم' },
         { key: 'defect', label: 'تالف' },
-        { key: 'held', label: 'محجوز' },
+        { key: 'held', label: 'محرز' },
         { key: 'tot', label: 'الإجمالي' }
       ],
-      rows.map((r, i) => ({ ...r, no: i + 1, kind: r.kind === 'main' ? 'رئيسي' : 'فرعي', tot: r.good + r.defect + r.held })),
+      rows.map((r, i) => ({ ...r, no: i + 1, kind: r.kind === 'main' ? 'رئيسي' : 'هنجر', tot: r.good + r.defect + r.held })),
       SamDB.fmt(total)
     );
     const body = `
@@ -186,12 +193,13 @@
         <dt>الاسم</dt><dd>${esc(item.name)}</dd>
         <dt>الفئة</dt><dd>${esc(item.category || '—')}</dd>
         <dt>الوحدة الأساسية</dt><dd>${esc(item.base_unit)}</dd>
-        <dt>حبة / كرتونة</dt><dd>${SamDB.fmt(item.pieces_per_carton)}</dd>
-        <dt>حبة / كيس</dt><dd>${SamDB.fmt(item.pieces_per_bag)}</dd>
-        <dt>حد الجيد الأدنى</dt><dd>${SamDB.fmt(item.min_good_alert)}</dd>
-        <dt>حد التالف الأقصى</dt><dd>${SamDB.fmt(item.max_defect_alert)}</dd>
+        <dt>وحدات / كرتونة</dt><dd>${item.pieces_per_carton ? SamDB.fmt(item.pieces_per_carton) : '—'}</dd>
+        <dt>وحدات / كيس</dt><dd>${item.pieces_per_bag ? SamDB.fmt(item.pieces_per_bag) : '—'}</dd>
+        <dt>حد الجيد الأدنى</dt><dd>${item.min_good_alert ? SamDB.fmt(item.min_good_alert) : '—'}</dd>
+        <dt>حد التالف الأقصى</dt><dd>${item.max_defect_alert ? SamDB.fmt(item.max_defect_alert) : '—'}</dd>
+        <dt>الرصيد الكلي</dt><dd>${SamDB.fmt(item.totalPieces)} ${esc(item.base_unit)}</dd>
       </dl>
-      <div style="margin-top:14px">${table}</div>`;
+      <div style="margin-top:14px">${rows.length ? table : '<p class="foot-note">لا رصيد مسجلاً لهذا الصنف في أي موقع.</p>'}</div>`;
     const v = await modal({
       title: `بطاقة الصنف — ${item.code}`,
       body,
@@ -209,10 +217,10 @@
   function printCard(item, rows, total) {
     const html = SamUI.tableHtml(
       [
-        { key: 'name', label: 'المخزن' },
+        { key: 'name', label: 'الموقع / الهنجر' },
         { key: 'good', label: 'سليم' },
         { key: 'defect', label: 'تالف' },
-        { key: 'held', label: 'محجوز' },
+        { key: 'held', label: 'محرز' },
         { key: 'tot', label: 'الإجمالي (حبة)' }
       ],
       rows.map((r) => ({ name: `${r.code} — ${r.name}`, good: SamDB.fmt(r.good), defect: SamDB.fmt(r.defect), held: SamDB.fmt(r.held), tot: SamDB.fmt(r.good + r.defect + r.held) })),
@@ -220,16 +228,17 @@
     );
     SamUI.printPreview({
       title: 'بطاقة رصيد صنف',
-      subtitle: 'كشف مخزون داخلي',
+      subtitle: 'كشف مخزون داخلي — الكميات بالوحدة الأساسية',
+      docRef: item.code,
+      docRefLabel: 'كود الصنف',
       head: [
-        { k: 'الكود', v: item.code },
         { k: 'الصنف', v: item.name },
         { k: 'الوحدة', v: item.base_unit },
         { k: 'التاريخ', v: new Date().toLocaleDateString('ar-EG-u-nu-latn') }
       ],
       bodyHtml: html,
-      footer: 'SAM Management System — الأرصدة بالحبة',
-      signatures: ['أمين المخزن', 'المراجع']
+      footer: 'SAM Management System — الأرصدة بالوحدة الأساسية',
+      signatures: ['أمين المخزن', 'المراجع', 'المدير']
     });
   }
 
@@ -260,20 +269,20 @@
   async function smartSearch() {
     const itemHost = el('div');
     const whHost = el('div');
-    const out = el('div', 'combo-result', '<span class="muted">اختر صنفاً ومخزناً لعرض الرصيد بالحبة.</span>');
+    const out = el('div', 'combo-result', '<span class="muted">اختر صنفاً لعرض رصيده بالحبة.</span>');
 
     const refresh = async () => {
       const itemId = itemCombo.getValue();
       const whId = whCombo.getValue();
-      if (!itemId || !whId) return;
+      if (!itemId) return;
       try {
-        const rows = await SamDB.call('itemStock', itemId);
-        const r = rows.find((x) => x.warehouseId === whId) || { good: 0, defect: 0, held: 0 };
+        const item = await SamDB.call('getItem', itemId);
+        const s = whId ? (item.stockByWarehouse[whId] || { good: 0, defect: 0, held: 0 }) : item.mainStock;
         out.innerHTML = `
-          <div class="cr-row"><span>سليم</span><b>${SamDB.fmt(r.good)}</b></div>
-          <div class="cr-row"><span>تالف</span><b>${SamDB.fmt(r.defect)}</b></div>
-          <div class="cr-row"><span>محجوز</span><b>${SamDB.fmt(r.held)}</b></div>
-          <div class="cr-row total"><span>الإجمالي (حبة)</span><b>${SamDB.fmt(r.good + r.defect + r.held)}</b></div>`;
+          <div class="cr-row"><span>سليم</span><b>${SamDB.fmt(s.good)}</b></div>
+          <div class="cr-row"><span>تالف</span><b>${SamDB.fmt(s.defect)}</b></div>
+          <div class="cr-row"><span>محرز</span><b>${SamDB.fmt(s.held)}</b></div>
+          <div class="cr-row total"><span>الإجمالي (${esc(item.base_unit)})</span><b>${SamDB.fmt(s.good + s.defect + s.held)}</b></div>`;
       } catch (e) { out.innerHTML = `<span class="muted">${esc(e.message)}</span>`; }
     };
 
@@ -281,22 +290,24 @@
       placeholder: 'اكتب جزءاً من الاسم أو الكود…',
       emptyText: 'لا يوجد صنف مطابق',
       onChange: refresh,
-      items: state.items.map((i) => ({ id: i.id, label: i.name, code: i.code, sub: i.base_unit }))
+      items: state.items.map((i) => ({ id: i.id, label: i.name, code: i.code, sub: `${SamDB.fmt(i.mainStock.good)} ${i.base_unit}` }))
     });
     const whCombo = SamUI.combo(whHost, {
-      placeholder: 'اختر المخزن…',
-      emptyText: 'لا توجد مخازن',
+      placeholder: 'كل المواقع (الإجمالي)…',
+      emptyText: 'لا توجد مواقع',
       onChange: refresh,
-      items: state.warehouses.map((w) => ({ id: w.id, label: w.name, code: w.kind === 'main' ? 'رئيسي' : 'فرعي' }))
+      items: [{ id: 0, label: 'كل المواقع — الإجمالي', code: 'كلي' }].concat(
+        state.warehouses.map((w) => ({ id: w.id, label: w.name, code: w.kind === 'main' ? 'رئيسي' : 'هنجر' }))
+      )
     });
 
     const grid = el('div', 'form-grid');
     const outWrap = el('div', 'full');
     outWrap.appendChild(out);
-    grid.append(field('الصنف', itemHost), field('المخزن', whHost), outWrap);
+    grid.append(field('الصنف', itemHost), field('الموقع', whHost), outWrap);
 
     const body = el('div');
-    body.appendChild(el('p', 'tip', 'هذه القائمة المنسدلة الذكية هي نفسها المستخدمة في الأصناف والعملاء والموردين والفلاتر: اكتب حرفين فقط، ثم Enter أو الفأرة.'));
+    body.appendChild(el('p', 'tip', 'اكتب حرفين من الاسم أو الكود ثم Enter — نفس القائمة المستخدمة في المستندات والفلاتر.'));
     body.appendChild(grid);
 
     await modal({ title: 'بحث ذكي عن رصيد صنف', body, width: 'min(560px, 94vw)' });

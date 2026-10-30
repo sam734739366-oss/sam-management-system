@@ -68,7 +68,7 @@ function createWindow() {
     minHeight: 680,
     show: false,
     frame: false,
-    backgroundColor: '#0b1433',
+    backgroundColor: '#f8fafc',
     title: 'SAM Management System',
     icon: windowIcon(),
     autoHideMenuBar: true,

@@ -1,26 +1,31 @@
 'use strict';
 
 /* =====================================================================
-   Main window behaviour — navigation, chrome, dashboard
+   Main window behaviour — navigation, chrome, dashboard, shortcuts
    ===================================================================== */
 
 const { el, icon, esc, toast, bindRow, modal, confirmHardDelete } = SamUI;
 
-const PHASES = [
-  { n: 1, t: 'الواجهة وشاشة الدخول المتحركة', view: 'dashboard', state: 'done' },
-  { n: 2, t: 'قاعدة البيانات + الأصناف + المخازن + العملاء والموردون', view: 'items', state: 'done' },
-  { n: 3, t: 'العمليات + تصريح الخروج + التحويلات', view: 'transactions', state: 'done' },
-  { n: 4, t: 'الإنتاج: صرف واستلام بتوجيه تلقائي', view: 'production', state: 'done' },
-  { n: 5, t: 'مركز التقارير الديناميكي', view: 'reports', state: 'done' },
-  { n: 6, t: 'المستخدمون + الصلاحيات + النسخ الاحتياطي + Google Drive', view: 'settings', state: 'now' },
-  { n: 7, t: 'البناء النهائي + التحديث التلقائي', view: null, state: 'next' }
+/** what V2 changed — shown on the dashboard so the update is self-documenting */
+const V2_CHANGES = [
+  { t: 'تصميم فاتح جديد: أزرق أساسي + تيل، بلا ثيم كحلي', view: 'dashboard' },
+  { t: 'الحركة التقديمية انتقلت إلى ما بعد تسجيل الدخول (ثانيتان)', view: 'dashboard' },
+  { t: 'مخزن واحد — المخازن السابقة أصبحت هناجر ومواقع للتفصيل', view: 'warehouses' },
+  { t: 'الوحدة الأساسية لكل صنف، والكرتونة/الكيس معلوماتيان فقط', view: 'items' },
+  { t: 'فواصل الآلاف في كل الحقول الرقمية، وقيمة الفاتورة بالريال اليمني', view: 'transactions' },
+  { t: 'النقص في الرصيد لا يمنع الحفظ — يظهر كتحذير يمكن متابعته', view: 'transactions' },
+  { t: 'النفخ للغير: استلام مادة العميل وتحويل التالف إلى سجل الهدر', view: 'production' },
+  { t: 'أرشيف الإنتاج: سجل بلا أي أثر على المخزون', view: 'production' },
+  { t: 'تقارير: السليم افتراضياً، والتالف والمحرز اختيارياً، والإجمالي للأعمدة الظاهرة', view: 'reports' },
+  { t: 'تصدير Excel حقيقي بصيغة xlsx بأرقام حقيقية وتنسيق رؤوس', view: 'reports' },
+  { t: 'طباعة بترويسة وسطية وتوقيعات السائق وأمين المخزن والمدير', view: 'transactions' },
+  { t: 'اختصارات: Ctrl+S حفظ · Ctrl+N جديد · Ctrl+P طباعة · Esc إغلاق', view: null }
 ];
 
-const VIEW_PHASE = { dashboard: 1, items: 2, warehouses: 2, parties: 2, transactions: 3, production: 4, reports: 5, settings: 2 };
 const VIEW_TITLE = {
   dashboard: 'لوحة التحكم',
   items: 'الأصناف',
-  warehouses: 'المخازن',
+  warehouses: 'الهناجر والمواقع',
   parties: 'العملاء والموردين',
   transactions: 'العمليات',
   production: 'الإنتاج',
@@ -34,8 +39,17 @@ const LOADERS = {
   transactions: () => window.SamDocs && window.SamDocs.load(),
   production: () => window.SamProd && window.SamProd.load(),
   reports: () => window.SamReports && window.SamReports.load(),
-  settings: () => window.SamSettings && SamSettings.showTab(SamSession.isAdmin() ? 'general' : 'general'),
+  settings: () => SamSettings.showTab('general'),
   dashboard: () => loadDashboard()
+};
+/** Ctrl+N target per screen */
+const NEW_ACTIONS = {
+  items: () => window.SamItems && window.SamItems.openForm(null),
+  warehouses: () => window.SamWarehouses && window.SamWarehouses.openForm(null),
+  parties: () => window.SamParties && window.SamParties.openForm(null),
+  transactions: () => window.SamDocs && window.SamDocs.openEditor(null),
+  production: () => window.SamProd && window.SamProd.newFromTab(),
+  reports: () => window.SamReports && window.SamReports.run()
 };
 
 /* ---------------- navigation ---------------- */
@@ -64,6 +78,17 @@ document.getElementById('nav').addEventListener('click', (e) => {
   go(btn.dataset.view);
 });
 
+/* global shortcuts: Ctrl+N follows the visible screen, F5 refreshes it */
+SamUI.pushKeys({
+  new: () => {
+    const fn = NEW_ACTIONS[currentView];
+    if (!fn) return toast('لا توجد شاشة «جديد» هنا', 'warn');
+    if (!SamSession.can(currentView, 'add') && currentView !== 'reports') return toast('لا تملك صلاحية الإضافة', 'bad');
+    fn();
+  },
+  refresh: () => { if (LOADERS[currentView]) LOADERS[currentView](); }
+});
+
 /* ---------------- permissions in the UI ---------------- */
 const PERM_BUTTONS = [
   ['#btnAddItem', 'items', 'add'],
@@ -72,6 +97,8 @@ const PERM_BUTTONS = [
   ['#btnAddParty', 'parties', 'add'],
   ['#btnNewDoc', 'transactions', 'add'],
   ['#btnNewIssue', 'production', 'add'],
+  ['#btnNewTolling', 'production', 'add'],
+  ['#btnNewArchive', 'production', 'add'],
   ['#btnNewReceipt', 'production', 'add'],
   ['#btnSaveRouting', 'production', 'edit'],
   ['#btnGoItems', 'items', 'add'],
@@ -105,35 +132,16 @@ function fillUserChip() {
   document.querySelector('#userChip .avatar').textContent = (u.full_name || u.username).trim().charAt(0);
 }
 
-/* ---------------- placeholder screens ---------------- */
-function renderPlaceholders() {
-  document.querySelectorAll('.soon').forEach((box) => {
-    const phase = box.dataset.phase;
-    const points = (box.dataset.points || '').split('|').filter(Boolean);
-    box.innerHTML = `
-      <div class="s-ic">${icon('i-warn')}</div>
-      <div>
-        <h3>${esc(box.dataset.title || '')}</h3>
-        <span class="s-phase">يتم بناؤها في المرحلة ${esc(phase)}</span>
-      </div>
-      <ul>${points.map((p) => `<li>${esc(p)}</li>`).join('')}</ul>`;
-  });
-
-  // every screen is live from phase 5 on: drop the "coming in phase N" badges
-  document.querySelectorAll('.nav-item .ph').forEach((n) => n.remove());
-}
-
-/* ---------------- roadmap ---------------- */
-function renderRoadmap() {
+/* ---------------- dashboard changelog ---------------- */
+function renderChanges() {
   const host = document.getElementById('roadmap');
   host.innerHTML = '';
-  PHASES.forEach((p) => {
-    const li = el('li', p.state === 'now' ? 'now' : p.state === 'done' ? 'done' : '');
-    const st = p.state === 'done' ? 'مكتملة' : p.state === 'now' ? 'قيد المراجعة الآن' : 'قادمة';
-    li.innerHTML = `<span class="n">${p.n}</span><span>${esc(p.t)}</span><span class="st">${st}</span>`;
-    if (p.view) {
+  V2_CHANGES.forEach((c, i) => {
+    const li = el('li', 'done');
+    li.innerHTML = `<span class="n">${i + 1}</span><span>${esc(c.t)}</span><span class="st">${c.view ? 'افتح الشاشة' : 'جاهز'}</span>`;
+    if (c.view) {
       li.style.cursor = 'pointer';
-      li.addEventListener('click', () => go(p.view));
+      li.addEventListener('click', () => go(c.view));
     }
     host.appendChild(li);
   });
@@ -146,16 +154,34 @@ async function loadDashboard() {
   document.getElementById('kpiItems').textContent = SamDB.fmt(s.items);
   document.getElementById('kpiStock').textContent = SamDB.fmt(s.mainPieces);
   document.getElementById('kpiStockNote').textContent =
-    `سليم ${SamDB.fmt(s.mainGood)} · تالف ${SamDB.fmt(s.mainDefect)} · محجوز ${SamDB.fmt(s.mainHeld)}`;
+    `سليم ${SamDB.fmt(s.mainGood)} · تالف ${SamDB.fmt(s.mainDefect)} · محرز ${SamDB.fmt(s.mainHeld)}`
+    + (s.customerPieces ? ` · مادة العملاء ${SamDB.fmt(s.customerPieces)}` : '');
   document.getElementById('kpiDocs').textContent = SamDB.fmt(s.todayMoves);
   document.getElementById('kpiAlerts').textContent = SamDB.fmt(s.alerts);
-  document.getElementById('sbDb').textContent = `الأصناف ${s.items} · المخازن ${s.warehouses} · الأطراف ${s.parties} · الحركات ${s.moves}`;
+  document.getElementById('sbDb').textContent =
+    `الأصناف ${s.items} · الهناجر ${s.warehouses} · الأطراف ${s.parties} · الحركات ${s.moves}`;
 
+  SamUI.emptyState('movesEmpty', {
+    icon: 'i-swap',
+    title: 'لا توجد حركات بعد',
+    hint: 'ابدأ من «الأصناف» بإضافة صنف مع رصيده الافتتاحي، أو أنشئ مستند مشتريات.',
+    actionLabel: 'إضافة صنف',
+    onAction: () => { go('items'); window.SamItems.openForm(null); }
+  });
+  SamUI.emptyState('alertsEmpty', {
+    icon: 'i-check',
+    title: 'لا توجد تنبيهات',
+    hint: 'كل الأصناف ضمن الحدود المحددة لها.'
+  });
   renderMoves();
   renderAlerts();
 }
 
-const DOC_AR = { opening: 'رصيد افتتاحي', purchase: 'مشتريات', sale: 'مبيعات', sale_return: 'مرتجع مبيعات', purchase_return: 'مرتجع مشتريات', transfer: 'تحويل', issue: 'صرف إنتاج', receipt: 'استلام إنتاج' };
+const DOC_AR = {
+  opening: 'رصيد افتتاحي', purchase: 'مشتريات', sale: 'مبيعات', sale_return: 'مرتجع مبيعات',
+  purchase_return: 'مرتجع مشتريات', transfer: 'نقل هناجر', issue: 'صرف إنتاج', receipt: 'استلام إنتاج',
+  bags: 'أكياس', tolling_in: 'استلام نفخ للغير', tolling_out: 'تسليم نفخ للغير', scrap: 'هدر'
+};
 
 async function renderMoves() {
   let rows = [];
@@ -169,7 +195,7 @@ async function renderMoves() {
       <td class="num">${idx + 1}</td>
       <td>${esc(m.itemCode)} — ${esc(m.itemName)}</td>
       <td>${esc(m.warehouseName)}</td>
-      <td>${esc(DOC_AR[m.doc_type] || m.doc_type)} <span class="chip sub">${esc(bucketAr(m.bucket))}</span></td>
+      <td>${esc(DOC_AR[m.doc_type] || m.doc_type)} <span class="chip sub">${esc(bucketAr(m.bucket))}</span>${m.is_customer ? ' <span class="chip accent">مادة العميل</span>' : ''}</td>
       <td class="num qty ${plus ? 'plus' : 'minus'}">${plus ? '+' : '−'}${SamDB.fmt(Math.abs(m.piece_delta))}</td>
       <td>${esc(m.created_at)}</td>`;
     bindRow(tr, {
@@ -178,11 +204,11 @@ async function renderMoves() {
     });
     tb.appendChild(tr);
   });
-  document.getElementById('movesEmpty').style.display = rows.length ? 'none' : 'block';
+  SamUI.toggleEmpty('movesEmpty', rows.length > 0);
 }
 
 function bucketAr(b) {
-  return { good: 'سليم', defect: 'تالف', held: 'محجوز' }[b] || b;
+  return { good: 'سليم', defect: 'تالف', held: 'محرز' }[b] || b;
 }
 
 function viewMove(m) {
@@ -191,12 +217,13 @@ function viewMove(m) {
     width: 'min(600px, 94vw)',
     body: `<dl class="info">
       <dt>الصنف</dt><dd>${esc(m.itemCode)} — ${esc(m.itemName)}</dd>
-      <dt>المخزن</dt><dd>${esc(m.warehouseName)}${m.warehouseKind === 'main' ? ' (رئيسي)' : ''}</dd>
+      <dt>الهنجر</dt><dd>${esc(m.warehouseName)}${m.warehouseKind === 'main' ? ' (المخزن الرئيسي)' : ''}</dd>
       <dt>النوع</dt><dd>${esc(DOC_AR[m.doc_type] || m.doc_type)}</dd>
       <dt>الحالة</dt><dd>${esc(bucketAr(m.bucket))}</dd>
-      <dt>الكمية (حبة)</dt><dd>${SamDB.fmt(m.piece_delta)}</dd>
+      <dt>الكمية (${esc(m.baseUnit || 'حبة')})</dt><dd>${SamDB.fmt(m.piece_delta)}</dd>
       <dt>كراتين</dt><dd>${SamDB.fmt(m.carton_qty)}</dd>
       <dt>أكياس</dt><dd>${SamDB.fmt(m.bag_qty)}</dd>
+      <dt>المالك</dt><dd>${m.is_customer ? 'العميل (نفخ للغير)' : 'المصنع'}</dd>
       <dt>رقم المستند</dt><dd>${esc(m.doc_no || '—')}</dd>
       <dt>التاريخ</dt><dd>${esc(m.created_at)}</dd>
       <dt>ملاحظة</dt><dd>${esc(m.note || '—')}</dd>
@@ -246,7 +273,7 @@ async function renderAlerts() {
     bindRow(tr, { view: () => go('items'), edit: () => { go('items'); window.SamItems.openForm(i); } });
     tb.appendChild(tr);
   });
-  document.getElementById('alertsEmpty').style.display = rows.length ? 'none' : 'block';
+  SamUI.toggleEmpty('alertsEmpty', rows.length > 0);
   document.getElementById('alertCount').textContent = rows.length;
 }
 
@@ -296,8 +323,8 @@ async function fillSysInfo() {
   document.getElementById('dbInfo').innerHTML = [
     ['الملف', info.dbPath || '—'],
     ['المحرك', 'SQLite (better-sqlite3)'],
-    ['الجداول', 'items · warehouses · stock_moves · parties · documents · doc_lines · production · users'],
-    ['وحدة الحساب', 'الحبة (الكرتونة والكيس معلوماتيتان)']
+    ['الجداول', 'items · warehouses · stock_moves · parties · documents · doc_lines · production · tolling · scrap · archive · users'],
+    ['وحدة الحساب', 'الوحدة الأساسية لكل صنف (الحبة) — الكرتونة والكيس معلوماتيان']
   ].map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('');
   document.getElementById('dbInfo').dataset.path = info.dbPath || '';
 
@@ -309,7 +336,16 @@ document.getElementById('btnOpenDbFolder').addEventListener('click', () => {
   const p = document.getElementById('dbInfo').dataset.path;
   if (p) sam.app.openPath(p.replace(/[\\/][^\\/]+$/, ''));
 });
-document.getElementById('btnReplayIntro').addEventListener('click', () => sam.nav.toLogin());
+document.getElementById('btnReplayIntro').addEventListener('click', () => {
+  if (!SamIntro.play({ force: true })) toast('المقدمة معطّلة لهذا الجهاز — فعّلها من نفس القائمة', 'warn');
+});
+document.getElementById('btnToggleSound').addEventListener('click', (e) => {
+  const muted = SamIntro.toggleMute();
+  e.currentTarget.textContent = muted ? 'تشغيل صوت المقدمة' : 'كتم صوت المقدمة';
+  toast(muted ? 'تم كتم صوت الحركة التقديمية' : 'تم تشغيل الصوت', 'ok');
+});
+document.getElementById('btnToggleSound').textContent =
+  SamIntro.isMuted() ? 'تشغيل صوت المقدمة' : 'كتم صوت المقدمة';
 
 /* ---------------- clock ---------------- */
 function tickClock() {
@@ -334,15 +370,21 @@ function tickClock() {
     return;
   }
   fillUserChip();
-  renderPlaceholders();
-  renderRoadmap();
   applyPermissions();
   fillSysInfo();
   tickClock();
   setInterval(tickClock, 1000);
-  if (SamSession.can('dashboard', 'view')) go('dashboard');
-  else {
-    const first = SamSession.meta.screens.find((s) => SamSession.can(s.key, 'view'));
-    go(first ? first.key : 'settings');
-  }
+
+  // the post-login transition paints over the first screen for ~2 seconds
+  const willAnimate = SamIntro.play();
+  const startData = () => {
+    renderChanges();
+    if (SamSession.can('dashboard', 'view')) go('dashboard');
+    else {
+      const first = SamSession.meta.screens.find((s) => SamSession.can(s.key, 'view'));
+      go(first ? first.key : 'settings');
+    }
+  };
+  if (willAnimate) setTimeout(startData, 1700);
+  else startData();
 })();

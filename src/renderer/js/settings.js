@@ -4,7 +4,7 @@
    Settings — users & roles, local backup, Google Drive sync
    ===================================================================== */
 (function () {
-  const { el, icon, esc, toast, bindRow, modal, form, field, input } = SamUI;
+  const { el, icon, esc, toast, bindRow, modal, form, field, input, emptyState, toggleEmpty } = SamUI;
 
   const state = { users: [], meta: { screens: [], perms: [] }, backup: null, sync: null, tab: 'general' };
 
@@ -55,6 +55,12 @@
       });
       tb.appendChild(tr);
     });
+    emptyState('usersEmpty', {
+      icon: 'i-users',
+      title: 'لا يوجد مستخدمون',
+      hint: 'أضف مستخدماً وحدّد شاشاته وصلاحياته — التحقق يتم في العملية الرئيسية.'
+    });
+    toggleEmpty('usersEmpty', state.users.length > 0);
   }
 
   const labelOf = (key) => (state.meta.screens.find((s) => s.key === key) || {}).label || key;

@@ -167,7 +167,7 @@ app.whenReady().then(async () => {
     return { cartons: nums[0].value, pieces: nums[1].value, hint: m.querySelector('.foot-note').textContent };
   })()`);
   await shot('p4-03-issue-form', 1200);
-  await js(`document.querySelector('.modal .modal-foot .btn-gold').click()`);
+  await js(`document.querySelector('.modal .modal-foot .btn-primary').click()`);
   await sleep(1100);
   await step('stock after issue', `SamDB.call('listItems','').then(r=>r.filter(i=>i.code==='0001').map(i=>i.mainStock))`);
 
