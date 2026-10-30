@@ -12,7 +12,9 @@
     "rebuild:native": "node tools/rebuild-sqlite.js",
     "test:ui": "electron tools/shot6.js",
     "dist": "electron-builder --win --x64",
-    "dist:publish": "electron-builder --win --x64 --publish always"
+    "dist:publish": "electron-builder --win --x64 --publish always",
+    "publish:gh": "node tools/publish-gh.js",
+    "release:notes": "node tools/set-release-meta.js"
   },
   "devDependencies": {
     "@electron/asar": "^4.3.1",
