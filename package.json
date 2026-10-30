@@ -14,7 +14,8 @@
     "dist": "electron-builder --win --x64",
     "dist:publish": "electron-builder --win --x64 --publish always",
     "publish:gh": "node tools/publish-gh.js",
-    "release:notes": "node tools/set-release-meta.js"
+    "release:notes": "node tools/set-release-meta.js",
+    "export:source": "node tools/export-source.js"
   },
   "devDependencies": {
     "@electron/asar": "^4.3.1",
