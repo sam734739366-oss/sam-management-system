@@ -193,7 +193,7 @@ app.whenReady().then(async () => {
   await js(`SamDocs.printInvoice(${dbMod.listDocuments({ kind: 'sale' })[0].id}); 1`);
   await shot('13-print-invoice');
   await js(`[...document.querySelectorAll('.pv')].pop().querySelectorAll('.pv-bar .btn-ghost')[1].click(); 1`);
-  await js(`SamDocs.printGatePass(${dbMod.listDocuments({ kind: 'sale' })[0].id}); 1`);
+  await js(`SamDocs.printPermits(${dbMod.listDocuments({ kind: 'sale' })[0].id}); 1`);
   await shot('14-print-gatepass');
   await js(`[...document.querySelectorAll('.pv')].pop().querySelectorAll('.pv-bar .btn-ghost')[1].click(); 1`);
 

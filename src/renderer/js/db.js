@@ -45,6 +45,8 @@ window.SamDB = {
 window.SamSession = {
   user: null,
   meta: { screens: [], perms: [] },
+  /** screens that borrow another screen's permission (daily ⊂ reports) */
+  ALIAS: { daily: 'reports' },
 
   async init() {
     const [cur, meta] = await Promise.all([sam.auth.current(), sam.auth.meta()]);
@@ -58,7 +60,8 @@ window.SamSession = {
   can(screen, action = 'view') {
     if (!this.user) return false;
     if (this.user.role === 'admin') return true;
-    if (!this.user.screens.includes(screen)) return false;
+    const s = this.ALIAS[screen] || screen;
+    if (!this.user.screens.includes(s)) return false;
     if (action === 'manage') return false;
     return !!(this.user.perms || {})[action];
   }

@@ -72,7 +72,7 @@
 
     const code = input({ placeholder: 'مثال: 0001', value: item ? item.code : '' });
     const name = input({ placeholder: 'مثال: مياه جلدلة 1.5 لتر', value: item ? item.name : '' });
-    const unit = input({ placeholder: 'حبة — اكتب قيمة جديدة أو اختر من المقترحات', value: item ? item.base_unit : 'حبة' });
+    const unit = input({ placeholder: 'مثال: حبة، علبة، أمبول', value: item ? item.base_unit : 'حبة' });
     const cat = input({ placeholder: 'مثال: خام / منتج تام / ملحقات', value: item ? item.category || '' : '' });
     // never pre-filled with 0: empty box + "0" placeholder
     const perCtn = numInput({ value: item ? item.pieces_per_carton : 0, placeholder: '0' });
@@ -83,7 +83,7 @@
     grid.append(
       field('كود الصنف', code),
       field('اسم الصنف', name),
-      field('الوحدة الأساسية', unit, 'الوحدة التي يُحتسب بها المخزون'),
+      field('الوحدة الأساسية', unit, 'هذه الوحدة تظهر في كل الفواتير والتقارير والتقرير اليومي'),
       field('الفئة', cat),
       field('عدد الوحدات لكل كرتونة', perCtn, 'معلوماتي فقط — لا يدخل في أي حساب'),
       field('عدد الوحدات لكل كيس', perBag, 'معلوماتي فقط'),
@@ -100,7 +100,7 @@
     body.appendChild(el('div', 'form-sec', `${icon('i-pin')}<span>الأرصدة الافتتاحية (حبة)</span>`));
     const bal = el('div', 'bal-grid');
     bal.append(
-      el('div', 'hd', 'الموقع / الهنجر'),
+      el('div', 'hd', 'المخزن'),
       el('div', 'hd', 'سليم'),
       el('div', 'hd', 'تالف'),
       el('div', 'hd', 'محرز')
@@ -108,7 +108,7 @@
     state.warehouses.forEach((w) => {
       const saved = openings[w.id] || {};
       const nameCell = el('div', 'wh-name',
-        `<span>${esc(w.name)}</span><span class="chip ${w.kind === 'main' ? 'main' : 'sub'}">${w.kind === 'main' ? 'رئيسي' : 'هنجر'}</span>`);
+        `<span>${esc(w.name)}</span><span class="chip sub">${esc(w.code)}</span>`);
       bal.appendChild(nameCell);
       for (const b of BUCKETS) {
         const cell = numInput({ value: saved[b] || 0, center: true, placeholder: '0' });
@@ -177,14 +177,14 @@
     const total = item.totalPieces;
     const table = SamUI.tableHtml(
       [
-        { key: 'name', label: 'الموقع / الهنجر' },
-        { key: 'kind', label: 'النوع' },
+        { key: 'name', label: 'المخزن' },
+        { key: 'code', label: 'الكود' },
         { key: 'good', label: 'سليم' },
         { key: 'defect', label: 'تالف' },
         { key: 'held', label: 'محرز' },
         { key: 'tot', label: 'الإجمالي' }
       ],
-      rows.map((r, i) => ({ ...r, no: i + 1, kind: r.kind === 'main' ? 'رئيسي' : 'هنجر', tot: r.good + r.defect + r.held })),
+      rows.map((r, i) => ({ ...r, no: i + 1, tot: r.good + r.defect + r.held })),
       SamDB.fmt(total)
     );
     const body = `
@@ -217,7 +217,7 @@
   function printCard(item, rows, total) {
     const html = SamUI.tableHtml(
       [
-        { key: 'name', label: 'الموقع / الهنجر' },
+        { key: 'name', label: 'المخزن' },
         { key: 'good', label: 'سليم' },
         { key: 'defect', label: 'تالف' },
         { key: 'held', label: 'محرز' },
@@ -293,18 +293,18 @@
       items: state.items.map((i) => ({ id: i.id, label: i.name, code: i.code, sub: `${SamDB.fmt(i.mainStock.good)} ${i.base_unit}` }))
     });
     const whCombo = SamUI.combo(whHost, {
-      placeholder: 'كل المواقع (الإجمالي)…',
-      emptyText: 'لا توجد مواقع',
+      placeholder: 'كل المخازن (الإجمالي)…',
+      emptyText: 'لا توجد مخازن',
       onChange: refresh,
-      items: [{ id: 0, label: 'كل المواقع — الإجمالي', code: 'كلي' }].concat(
-        state.warehouses.map((w) => ({ id: w.id, label: w.name, code: w.kind === 'main' ? 'رئيسي' : 'هنجر' }))
+      items: [{ id: 0, label: 'كل المخازن — الإجمالي', code: 'كلي' }].concat(
+        state.warehouses.map((w) => ({ id: w.id, label: w.name, code: w.code }))
       )
     });
 
     const grid = el('div', 'form-grid');
     const outWrap = el('div', 'full');
     outWrap.appendChild(out);
-    grid.append(field('الصنف', itemHost), field('الموقع', whHost), outWrap);
+    grid.append(field('الصنف', itemHost), field('المخزن', whHost), outWrap);
 
     const body = el('div');
     body.appendChild(el('p', 'tip', 'اكتب حرفين من الاسم أو الكود ثم Enter — نفس القائمة المستخدمة في المستندات والفلاتر.'));

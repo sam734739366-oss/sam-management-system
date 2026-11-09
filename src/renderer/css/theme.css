@@ -483,6 +483,10 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--brand); width:
 .sheet.landscape .sig-band { margin-inline: 2mm; }
 @media print { .sheet.landscape { width: auto; min-height: auto; } }
 
+/* multi-page documents (gate/transfer permits): one sheet per warehouse,
+   stacked in the preview. The printed page breaks live in app.css. */
+.pv-pages { display: flex; flex-direction: column; gap: 18px; align-items: center; }
+
 /* print tables: aligned, ruled, and always wrapping (never running together) */
 .sheet table.tbl { border: 1px solid #c7d0dd; }
 .sheet table.tbl th, .sheet table.tbl td { white-space: normal; overflow-wrap: anywhere; }

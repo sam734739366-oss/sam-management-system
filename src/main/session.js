@@ -14,7 +14,7 @@ const db = require('./db');
 const SCREEN_LABELS = {
   dashboard: 'لوحة التحكم',
   items: 'الأصناف',
-  warehouses: 'الهناجر والمواقع',
+  warehouses: 'المخازن',
   parties: 'العملاء والموردون',
   transactions: 'العمليات',
   production: 'الإنتاج',
@@ -22,6 +22,12 @@ const SCREEN_LABELS = {
   settings: 'الإعدادات'
 };
 const PERM_LABELS = { view: 'عرض', add: 'إضافة', edit: 'تعديل', delete: 'حذف نهائي' };
+/**
+ * screens that borrow another screen's permission.
+ * The daily report is part of «التقارير» — it is not a separate
+ * checkbox in the user screen, it follows the reports permission.
+ */
+const SCREEN_ALIASES = { daily: 'reports' };
 
 let current = null;
 
@@ -70,7 +76,8 @@ function currentUser() { return current; }
 function can(screen, action) {
   if (!current) return false;
   if (current.role === 'admin') return true;
-  if (!current.screens.includes(screen)) return false;
+  const s = SCREEN_ALIASES[screen] || screen;
+  if (!current.screens.includes(s)) return false;
   if (action === 'manage') return false;
   return !!current.perms[action];
 }

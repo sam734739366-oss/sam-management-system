@@ -3,7 +3,7 @@
 /* =====================================================================
    Report center — V2
      · one dynamic report, buckets picked by checkbox (Good only by default)
-     · IN / OUT columns, optional per-hangar breakdown
+     · IN / OUT columns, optional per-warehouse breakdown
      · footer totals sum ONLY the columns that are visible
      · real .xlsx export (exceljs in the main process), no CSV
    ===================================================================== */
@@ -11,19 +11,20 @@
   const { el, icon, esc, toast, combo, printPreview, tableHtml, emptyState, toggleEmpty } = SamUI;
 
   const COLUMNS = [
-    { key: 'createdAt', label: 'التاريخ والوقت', on: true },
+    { key: 'moveDate', label: 'التاريخ', on: true },
+    { key: 'createdAt', label: 'وقت التسجيل', on: false },
     { key: 'docNo', label: 'رقم المستند', on: true },
     { key: 'docTypeAr', label: 'نوع المستند', on: true },
     { key: 'partyName', label: 'العميل / المورد', on: true },
     { key: 'itemCode', label: 'كود الصنف', on: true },
     { key: 'itemName', label: 'اسم الصنف', on: true },
-    { key: 'baseUnit', label: 'الوحدة', on: false },
-    { key: 'warehouseName', label: 'الهنجر', on: true },
+    { key: 'baseUnit', label: 'الوحدة', on: true },
+    { key: 'warehouseName', label: 'المخزن', on: true },
     { key: 'bucketAr', label: 'الحالة', on: true },
     { key: 'cartons', label: 'كراتين', on: false, num: true },
     { key: 'bags', label: 'أكياس', on: false, num: true },
-    { key: 'inQty', label: 'وارد (حبة)', on: true, num: true },
-    { key: 'outQty', label: 'صادر (حبة)', on: true, num: true },
+    { key: 'inQty', label: 'وارد', on: true, num: true },
+    { key: 'outQty', label: 'صادر', on: true, num: true },
     { key: 'delta', label: 'صافي الحركة', on: true, num: true, signed: true, sum: 'net' },
     { key: 'mainBalance', label: 'الرصيد الحالي', on: true, num: true },
     { key: 'movingBalance', label: 'الرصيد المتحرك', on: true, num: true },
@@ -39,25 +40,69 @@
     { key: 'held', label: 'محرز', on: false }
   ];
   const OPTIONS = [
-    { key: 'byLocation', label: 'تفصيل حسب الهنجر', on: false },
+    { key: 'byLocation', label: 'تفصيل حسب المخزن', on: false },
     { key: 'includeCustomer', label: 'ضمّ مادة العملاء (النفخ للغير)', on: false }
   ];
 
+  /* period presets — the report is date-driven, so the period is one click */
+  const PERIODS = [
+    { key: 'today', label: 'اليوم' },
+    { key: 'd30', label: 'آخر ٣٠ يوم' },
+    { key: 'month', label: 'هذا الشهر' },
+    { key: 'all', label: 'كل الفترات' }
+  ];
+
+  /** shift a YYYY-MM-DD string by whole days, keeping it local */
+  function shiftDays(dateStr, days) {
+    const d = new Date(dateStr + 'T00:00:00');
+    d.setDate(d.getDate() + days);
+    return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  }
+
+  /** the date range each preset stands for ('' means "no bound") */
+  function periodRange(key) {
+    const today = SamUI.today();
+    if (key === 'today') return [today, today];
+    if (key === 'd30') return [shiftDays(today, -29), today];
+    if (key === 'month') return [today.slice(0, 8) + '01', today];
+    return ['', ''];
+  }
+
+  /** paint the period chips and reflect the current one as active */
+  function renderPeriods() {
+    const host = document.getElementById('periodWrap');
+    if (!host) return;
+    host.innerHTML = '';
+    PERIODS.forEach((p) => {
+      const b = el('button', `period-chip${state.period === p.key ? ' on' : ''}`, esc(p.label));
+      b.type = 'button';
+      b.addEventListener('click', () => {
+        state.period = p.key;
+        const [from, to] = periodRange(p.key);
+        document.getElementById('fFrom').value = from;
+        document.getElementById('fTo').value = to;
+        renderPeriods();
+        if (state.ran) run();
+      });
+      host.appendChild(b);
+    });
+  }
+
   const DOC_LABELS = {
     opening: 'رصيد افتتاحي', purchase: 'مشتريات', sale: 'مبيعات', sale_return: 'مرتجع مبيعات',
-    purchase_return: 'مرتجع مشتريات', transfer: 'نقل بين الهناجر', issue: 'صرف إنتاج',
+    purchase_return: 'مرتجع مشتريات', transfer: 'نقل بين المخازن', issue: 'صرف إنتاج',
     receipt: 'استلام إنتاج', bags: 'أكياس مستخدمة',
     tolling_in: 'استلام نفخ للغير', tolling_out: 'إصدار نفخ للغير', scrap: 'هدر'
   };
 
-  const state = { rows: [], totals: null, ran: false };
+  const state = { rows: [], totals: null, ran: false, period: 'd30' };
   let combos = null;
 
   /* ---------------- filter UI ---------------- */
   function initCombos() {
     if (combos) return;
     combos = {
-      wh: combo(document.getElementById('fWh'), { placeholder: 'كل الهناجر…', emptyText: 'لا توجد هناجر' }),
+      wh: combo(document.getElementById('fWh'), { placeholder: 'كل المخازن…', emptyText: 'لا توجد مخازن' }),
       kind: combo(document.getElementById('fKind'), { placeholder: 'كل الأنواع…', items: Object.entries(DOC_LABELS).map(([id, label]) => ({ id, label })) }),
       party: combo(document.getElementById('fParty'), { placeholder: 'كل الأطراف…', emptyText: 'لا توجد أطراف' }),
       item: combo(document.getElementById('fItem'), { placeholder: 'كل الأصناف…', emptyText: 'لا توجد أصناف' })
@@ -77,7 +122,7 @@
       ]);
       initCombos();
       combos.item.setItems(items.map((i) => ({ id: i.id, label: i.name, code: i.code, sub: i.base_unit })));
-      combos.wh.setItems(whs.map((w) => ({ id: w.id, label: w.name, code: w.kind === 'main' ? 'رئيسي' : 'هنجر' })));
+      combos.wh.setItems(whs.map((w) => ({ id: w.id, label: w.name, code: w.code })));
       combos.party.setItems(parties.map((p) => ({ id: p.id, label: p.name, code: p.phone || '', sub: SamParties.TYPE_AR[p.type] })));
     } catch (e) { toast(e.message, 'bad'); }
   }
@@ -200,11 +245,13 @@
       parts.push(`<span>${esc(c.label)}: <b class="${c.key === 'delta' ? 'big' : ''}">${SamDB.fmt(sums[c.key])}</b></span>`);
     });
     const bucketNote = (t.bucketLabels || []).join(' + ');
+    const unitNote = [...new Set(state.rows.map((r) => r.baseUnit).filter(Boolean))].join(' / ');
     document.getElementById('reportFoot').innerHTML = `
       <span>عدد الأسطر: <b>${SamDB.fmt(t.rows || 0)}</b></span>
       ${parts.join('')}
       <span>إجمالي القيمة: <b class="big">${SamDB.money(t.value || 0)}</b> <span class="chip sub">${esc(SamUI.CURRENCY)}</span></span>
-      <span class="dim">الحالات: ${esc(bucketNote || '—')}${t.locations && t.locations.length ? ' · تفصيل هناجر مفعّل' : ''}</span>
+      <span class="dim">الحالات: ${esc(bucketNote || '—')}${t.locations && t.locations.length ? ' · تفصيل المخازن مفعّل' : ''}</span>
+      ${unitNote ? `<span class="dim">الوحدة: ${esc(unitNote)}</span>` : ''}
       ${t.nonNumeric ? `<span class="warn-note">${t.nonNumeric} قيمة فاتورة نصية غير رقمية لم تُحتسب</span>` : ''}`;
   }
 
@@ -279,8 +326,8 @@
         { k: 'عدد الأسطر', v: SamDB.fmt(t.rows || 0) }
       ],
       bodyHtml: `${html}
-        ${locs.length ? `<div style="margin-top:6mm"><b>تفصيل حسب الهنجر (وارد / صادر / صافي)</b>${tableHtml(
-    [{ key: 'name', label: 'الهنجر' }, { key: 'inQty', label: 'وارد', align: 'end' }, { key: 'outQty', label: 'صادر', align: 'end' }, { key: 'net', label: 'صافي', align: 'end' }],
+        ${locs.length ? `<div style="margin-top:6mm"><b>تفصيل حسب المخزن (وارد / صادر / صافي)</b>${tableHtml(
+    [{ key: 'name', label: 'المخزن' }, { key: 'inQty', label: 'وارد', align: 'end' }, { key: 'outQty', label: 'صادر', align: 'end' }, { key: 'net', label: 'صافي', align: 'end' }],
     locs.map((l) => ({ name: `${l.code} — ${l.name}`, inQty: SamDB.fmt(l.inQty), outQty: SamDB.fmt(l.outQty), net: SamDB.fmt(l.net) }))
   )}</div>` : ''}`,
       dense: true,
@@ -297,20 +344,26 @@
     if (f || t) parts.push(`${f || 'البداية'} → ${t || 'اليوم'}`);
     if (combos && combos.wh.getValue()) {
       const w = combos.wh.items.find((x) => x.id === combos.wh.getValue());
-      if (w) parts.push(`الهنجر: ${w.label}`);
+      if (w) parts.push(`المخزن: ${w.label}`);
     }
     if (combos && combos.kind.getValue()) parts.push(`النوع: ${DOC_LABELS[combos.kind.getValue()]}`);
-    return parts.length ? parts.join(' · ') : 'كل الفترات وكل الهناجر';
+    return parts.length ? parts.join(' · ') : 'كل الفترات وكل المخازن';
   }
 
   /* ---------------- wiring ---------------- */
   document.getElementById('btnRunReport').addEventListener('click', run);
+  // typing a date by hand means "a custom period" — no preset chip stays lit
+  ['fFrom', 'fTo'].forEach((id) => document.getElementById(id).addEventListener('change', () => {
+    if (state.period) { state.period = null; renderPeriods(); }
+  }));
   document.getElementById('btnPrintReport').addEventListener('click', printReport);
   document.getElementById('btnExcelReport').addEventListener('click', exportExcel);
   document.getElementById('btnAllCols').addEventListener('click', () => { COLUMNS.forEach((c) => (c.on = true)); renderColumns(); if (state.ran) renderTable(); });
   document.getElementById('btnNoCols').addEventListener('click', () => { COLUMNS.forEach((c) => (c.on = false)); renderColumns(); if (state.ran) renderTable(); });
   document.getElementById('btnResetFilters').addEventListener('click', async () => {
     ['fFrom', 'fTo'].forEach((id) => (document.getElementById(id).value = ''));
+    state.period = 'all';
+    renderPeriods();
     if (combos) Object.values(combos).forEach((c) => c.setValue(null, false));
     BUCKETS.forEach((b) => { b.on = b.key === 'good'; });
     OPTIONS.forEach((o) => { o.on = false; });
@@ -326,10 +379,13 @@
     renderOptions();
     await refreshComboData();
     if (!state.ran) {
-      // sensible default: today
-      const today = new Date().toISOString().slice(0, 10);
-      document.getElementById('fFrom').value = today;
-      document.getElementById('fTo').value = today;
+      // sensible default: the last 30 days (local dates, not UTC) — a stock
+      // report that opens on a single day is useless on the 1st of a month.
+      state.period = 'd30';
+      const [from, to] = periodRange('d30');
+      document.getElementById('fFrom').value = from;
+      document.getElementById('fTo').value = to;
+      renderPeriods();
     }
   }
 

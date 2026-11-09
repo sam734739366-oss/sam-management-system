@@ -44,6 +44,7 @@ const API = {
   DOC_KINDS: () => d.DOC_KINDS,
   nextDocNo: (kind) => d.nextDocNo(kind),
   availablePieces: (itemId, bucket, ignoreDocId) => d.availablePieces(itemId, bucket, ignoreDocId),
+  availableInLocation: (itemId, whId, bucket, ignoreDocId) => d.availableInLocation(itemId, whId, bucket, ignoreDocId),
   availableByLocation: (itemId, bucket, ignoreDocId) => d.availableByLocation(itemId, bucket, ignoreDocId),
   saveDocument: (payload) => d.saveDocument(payload),
   getDocument: (id) => d.getDocument(id),
@@ -79,7 +80,8 @@ const API = {
   deleteArchive: (id) => d.deleteArchive(id),
 
   reportQuery: (filters) => d.reportQuery(filters || {}),
-  reportFacets: () => d.reportFacets()
+  reportFacets: () => d.reportFacets(),
+  dailyReport: (filters) => d.dailyReport(filters || {})
 };
 
 /** [screen, action] required per operation; a function gets the call arguments */
@@ -144,7 +146,8 @@ const PERMS = {
   deleteArchive: ['production', 'delete'],
 
   reportQuery: ['reports', 'view'],
-  reportFacets: ['reports', 'view']
+  reportFacets: ['reports', 'view'],
+  dailyReport: ['reports', 'view']
 };
 
 module.exports = function registerDbIpc() {

@@ -20,7 +20,7 @@
   const itemById = (id) => state.items.find((i) => i.id === Number(id)) || null;
   const whName = (id) => (state.warehouses.find((w) => w.id === Number(id)) || {}).name || 'غير محدد';
   const whOptions = () => state.warehouses.filter((w) => w.is_active)
-    .map((w) => ({ id: w.id, label: w.name, code: w.kind === 'main' ? 'رئيسي' : 'هنجر' }));
+    .map((w) => ({ id: w.id, label: w.name, code: w.code }));
   const itemOptions = (onlyRaw) => state.items
     .filter((i) => i.is_active)
     .filter((i) => !onlyRaw || (i.pieces_per_carton > 0))
@@ -54,11 +54,11 @@
   function initRoutingUI() {
     if (!rt) {
       rt = {
-        fgGood: combo(document.getElementById('rtFgGood'), { placeholder: 'هنجر المنتج التام السليم…', items: whOptions() }),
-        fgDefect: combo(document.getElementById('rtFgDefect'), { placeholder: 'هنجر المنتج التام التالف…', items: whOptions() }),
-        rawDefect: combo(document.getElementById('rtRawDefect'), { placeholder: 'هنجر الخام التالف…', items: whOptions() }),
+        fgGood: combo(document.getElementById('rtFgGood'), { placeholder: 'مخزن المنتج التام السليم…', items: whOptions() }),
+        fgDefect: combo(document.getElementById('rtFgDefect'), { placeholder: 'مخزن المنتج التام التالف…', items: whOptions() }),
+        rawDefect: combo(document.getElementById('rtRawDefect'), { placeholder: 'مخزن الخام التالف…', items: whOptions() }),
         bagItem: combo(document.getElementById('rtBagItem'), { placeholder: 'صنف الأكياس (اختياري)…', items: itemOptions(false) }),
-        bagWh: combo(document.getElementById('rtBagWh'), { placeholder: 'موقع خصم الأكياس…', items: whOptions() })
+        bagWh: combo(document.getElementById('rtBagWh'), { placeholder: 'مخزن خصم الأكياس…', items: whOptions() })
       };
     } else {
       Object.values(rt).forEach((c) => c.setItems(c === rt.bagItem ? itemOptions(false) : whOptions()));
@@ -99,9 +99,9 @@
     const itemHost = el('div');
     const whHost = el('div');
     const itemCombo = combo(itemHost, { placeholder: 'اكتب جزءاً من اسم المادة الخام…', emptyText: 'لا يوجد صنف مطابق', items: itemOptions(true) });
-    const whCombo = combo(whHost, { placeholder: 'هنجر المصدر…', items: whOptions() });
+    const whCombo = combo(whHost, { placeholder: 'مخزن المصدر…', items: whOptions() });
     itemCombo.setValue(editing ? row.item_id : null, false);
-    whCombo.setValue(editing ? row.warehouse_id : (state.warehouses.find((w) => w.kind === 'main') || {}).id || null, false);
+    whCombo.setValue(editing ? row.warehouse_id : (state.warehouses[0] || {}).id || null, false);
 
     const hint = el('p', 'foot-note');
     const syncPieces = () => {
@@ -123,7 +123,7 @@
       field('رقم الصرف', docNo),
       field('التاريخ', docDate),
       field('المادة الخام', itemHost),
-      field('هنجر المصدر', whHost),
+      field('مخزن المصدر', whHost),
       field('عدد الكراتين', cartons, 'معلوماتي'),
       field('الكمية بالوحدة الأساسية', pieces),
       noteField
@@ -204,7 +204,7 @@
       body: `<dl class="info">
         <dt>التاريخ</dt><dd>${esc(i.doc_date)}</dd>
         <dt>المادة الخام</dt><dd>${esc(i.itemCode)} — ${esc(i.itemName)}</dd>
-        <dt>هنجر المصدر</dt><dd>${esc(i.warehouseName)}</dd>
+        <dt>مخزن المصدر</dt><dd>${esc(i.warehouseName)}</dd>
         <dt>الكراتين (معلوماتي)</dt><dd>${i.cartons ? SamDB.fmt(i.cartons) : '—'}</dd>
         <dt>الكمية المصروفة</dt><dd>${SamDB.fmt(i.pieces)} حبة</dd>
         <dt>ملاحظة</dt><dd>${esc(i.note || '—')}</dd>
@@ -664,15 +664,15 @@
     partyCombo.setValue(doc ? doc.party_id : null, false);
     const rawCombo = combo(rawHost, { placeholder: 'صنف المادة الخام المستلمة…', emptyText: 'لا يوجد صنف مطابق', items: itemOptions(false) });
     rawCombo.setValue(doc ? doc.raw_item_id : null, false);
-    const whCombo = combo(whHost, { placeholder: 'هنجر الاستلام…', items: whOptions() });
-    whCombo.setValue(doc ? doc.warehouse_id : (state.warehouses.find((w) => w.kind === 'main') || {}).id || null, false);
+    const whCombo = combo(whHost, { placeholder: 'مخزن الاستلام…', items: whOptions() });
+    whCombo.setValue(doc ? doc.warehouse_id : (state.warehouses[0] || {}).id || null, false);
 
     grid.append(
       field('رقم المستند', docNo),
       field('التاريخ', docDate),
       field('العميل (صاحب المادة)', partyHost),
       field('المادة الخام', rawHost),
-      field('هنجر الاستلام', whHost),
+      field('مخزن الاستلام', whHost),
       field('الحبات المستلمة', piecesIn),
       field('الأكياس المستلمة', bagsIn, 'معلوماتي'),
       (() => { const f = field('ملاحظات', note); f.classList.add('full'); return f; })()
@@ -843,7 +843,7 @@
           <dt>التاريخ</dt><dd>${esc(t.doc_date)}</dd>
           <dt>العميل</dt><dd>${esc(t.partyName)}${t.partyPhone ? ` — ${esc(t.partyPhone)}` : ''}</dd>
           <dt>المادة الخام</dt><dd>${esc(t.rawCode)} — ${esc(t.rawName)}</dd>
-          <dt>الهنجر</dt><dd>${esc(t.warehouseName || '—')}</dd>
+          <dt>المخزن</dt><dd>${esc(t.warehouseName || '—')}</dd>
           <dt>المستلم</dt><dd>${SamDB.fmt(t.pieces_in)} ${esc(t.rawUnit)}</dd>
           <dt>المُسلَّم للعميل</dt><dd>${SamDB.fmt(t.totalGood)}</dd>
           <dt>الهدر (مادة العميل)</dt><dd>${SamDB.fmt(t.totalDefect)}</dd>

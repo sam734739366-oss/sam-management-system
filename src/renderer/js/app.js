@@ -7,37 +7,48 @@
 const { el, icon, esc, toast, bindRow, modal, confirmHardDelete } = SamUI;
 
 /** what V2 changed — shown on the dashboard so the update is self-documenting */
-const V2_CHANGES = [
-  { t: 'تصميم فاتح جديد: أزرق أساسي + تيل، بلا ثيم كحلي', view: 'dashboard' },
-  { t: 'الحركة التقديمية انتقلت إلى ما بعد تسجيل الدخول (ثانيتان)', view: 'dashboard' },
-  { t: 'مخزن واحد — المخازن السابقة أصبحت هناجر ومواقع للتفصيل', view: 'warehouses' },
-  { t: 'الوحدة الأساسية لكل صنف، والكرتونة/الكيس معلوماتيان فقط', view: 'items' },
-  { t: 'فواصل الآلاف في كل الحقول الرقمية، وقيمة الفاتورة بالريال اليمني', view: 'transactions' },
-  { t: 'النقص في الرصيد لا يمنع الحفظ — يظهر كتحذير يمكن متابعته', view: 'transactions' },
-  { t: 'النفخ للغير: استلام مادة العميل وتحويل التالف إلى سجل الهدر', view: 'production' },
-  { t: 'أرشيف الإنتاج: سجل بلا أي أثر على المخزون', view: 'production' },
-  { t: 'تقارير: السليم افتراضياً، والتالف والمحرز اختيارياً، والإجمالي للأعمدة الظاهرة', view: 'reports' },
-  { t: 'تصدير Excel حقيقي بصيغة xlsx بأرقام حقيقية وتنسيق رؤوس', view: 'reports' },
-  { t: 'طباعة بترويسة وسطية وتوقيعات السائق وأمين المخزن والمدير', view: 'transactions' },
+/** what V3 changed — shown on the dashboard so the update is self-documenting */
+const V3_CHANGES = [
+  { t: 'لا يوجد مخزن رئيسي: كل مخزن متساوٍ، وأنت من يعرّف المخازن', view: 'warehouses' },
+  { t: 'التقرير اليومي: صنف × مخزن — دخل اليوم والمتبقي، مع إجمالي كل المخازن', view: 'daily' },
+  { t: 'الوحدة الأساسية للصنف مرتبطة به في كل شيء: الفواتير والتقارير والطباعة', view: 'items' },
+  { t: 'الكمية تُحسب بالوحدة الأساسية دائماً، والكرتونة والكيس معلوماتيان فقط', view: 'items' },
+  { t: 'الفاتورة: رقم خارجي من نظام آخر + اسم العميل + التاريخ — إلزامية', view: 'transactions' },
+  { t: 'مخزن لكل سطر صنف: يمكن أن تخرج الفاتورة من مخزنين في آن واحد', view: 'transactions' },
+  { t: 'تصريح خروج لكل مخزن عند الحفظ — بمخزنه وحارسه وأرقامه فقط بلا أسعار', view: 'transactions' },
+  { t: 'تصريح انتقال من مخزن إلى مخزن لكل عملية نقل', view: 'transactions' },
+  { t: 'الكمية في التصاريح مطابقة تماماً لِمجموع الفاتورة', view: 'transactions' },
+  { t: 'كل حركة لها تاريخ عمل مستقل — التقارير تُصفّى بتاريخ الفاتورة لا بتاريخ الإدخال', view: 'reports' },
+  { t: 'تحذير النقص يذكر المخزن والكمية المتوفرة فيه', view: 'transactions' },
+  { t: 'تصدير Excel حقيقي للفاتورة والتقرير اليومي', view: 'reports' },
   { t: 'اختصارات: Ctrl+S حفظ · Ctrl+N جديد · Ctrl+P طباعة · Esc إغلاق', view: null }
 ];
 
 const VIEW_TITLE = {
   dashboard: 'لوحة التحكم',
   items: 'الأصناف',
-  warehouses: 'الهناجر والمواقع',
+  warehouses: 'المخازن',
   parties: 'العملاء والموردين',
   transactions: 'العمليات',
   production: 'الإنتاج',
+  daily: 'التقرير اليومي',
   reports: 'التقارير',
   settings: 'الإعدادات'
 };
+/**
+ * screens that borrow another screen's permission.
+ * the daily report is part of «التقارير» — whoever may see the reports
+ * may see the daily report, with no new checkbox in the user screen.
+ */
+const PERM_SCREEN = { daily: 'reports' };
+const permScreen = (view) => PERM_SCREEN[view] || view;
 const LOADERS = {
   items: () => window.SamItems && window.SamItems.load(),
   warehouses: () => window.SamWarehouses && window.SamWarehouses.load(),
   parties: () => window.SamParties && window.SamParties.load(),
   transactions: () => window.SamDocs && window.SamDocs.load(),
   production: () => window.SamProd && window.SamProd.load(),
+  daily: () => window.SamDaily && window.SamDaily.load(),
   reports: () => window.SamReports && window.SamReports.load(),
   settings: () => SamSettings.showTab('general'),
   dashboard: () => loadDashboard()
@@ -49,6 +60,7 @@ const NEW_ACTIONS = {
   parties: () => window.SamParties && window.SamParties.openForm(null),
   transactions: () => window.SamDocs && window.SamDocs.openEditor(null),
   production: () => window.SamProd && window.SamProd.newFromTab(),
+  daily: () => window.SamDaily && window.SamDaily.run(),
   reports: () => window.SamReports && window.SamReports.run()
 };
 
@@ -57,7 +69,7 @@ let currentView = 'dashboard';
 
 function go(view) {
   if (!VIEW_TITLE[view]) return false;
-  if (SamSession.user && !SamSession.can(view, 'view')) {
+  if (SamSession.user && !SamSession.can(permScreen(view), 'view')) {
     toast(`لا تملك صلاحية الدخول إلى «${VIEW_TITLE[view]}»`, 'bad');
     return false;
   }
@@ -83,7 +95,7 @@ SamUI.pushKeys({
   new: () => {
     const fn = NEW_ACTIONS[currentView];
     if (!fn) return toast('لا توجد شاشة «جديد» هنا', 'warn');
-    if (!SamSession.can(currentView, 'add') && currentView !== 'reports') return toast('لا تملك صلاحية الإضافة', 'bad');
+    if (!SamSession.can(currentView, 'add') && currentView !== 'reports' && currentView !== 'daily') return toast('لا تملك صلاحية الإضافة', 'bad');
     fn();
   },
   refresh: () => { if (LOADERS[currentView]) LOADERS[currentView](); }
@@ -109,7 +121,7 @@ const PERM_BUTTONS = [
 function applyPermissions() {
   document.querySelectorAll('.nav-item').forEach((b) => {
     const view = b.dataset.view;
-    b.style.display = SamSession.can(view, 'view') ? '' : 'none';
+    b.style.display = SamSession.can(permScreen(view), 'view') ? '' : 'none';
   });
   PERM_BUTTONS.forEach(([sel, screen, action]) => {
     const node = document.querySelector(sel);
@@ -136,7 +148,7 @@ function fillUserChip() {
 function renderChanges() {
   const host = document.getElementById('roadmap');
   host.innerHTML = '';
-  V2_CHANGES.forEach((c, i) => {
+  V3_CHANGES.forEach((c, i) => {
     const li = el('li', 'done');
     li.innerHTML = `<span class="n">${i + 1}</span><span>${esc(c.t)}</span><span class="st">${c.view ? 'افتح الشاشة' : 'جاهز'}</span>`;
     if (c.view) {
@@ -159,7 +171,7 @@ async function loadDashboard() {
   document.getElementById('kpiDocs').textContent = SamDB.fmt(s.todayMoves);
   document.getElementById('kpiAlerts').textContent = SamDB.fmt(s.alerts);
   document.getElementById('sbDb').textContent =
-    `الأصناف ${s.items} · الهناجر ${s.warehouses} · الأطراف ${s.parties} · الحركات ${s.moves}`;
+    `الأصناف ${s.items} · المخازن ${s.warehouses} · الأطراف ${s.parties} · الحركات ${s.moves}`;
 
   SamUI.emptyState('movesEmpty', {
     icon: 'i-swap',
@@ -179,7 +191,7 @@ async function loadDashboard() {
 
 const DOC_AR = {
   opening: 'رصيد افتتاحي', purchase: 'مشتريات', sale: 'مبيعات', sale_return: 'مرتجع مبيعات',
-  purchase_return: 'مرتجع مشتريات', transfer: 'نقل هناجر', issue: 'صرف إنتاج', receipt: 'استلام إنتاج',
+  purchase_return: 'مرتجع مشتريات', transfer: 'نقل بين المخازن', issue: 'صرف إنتاج', receipt: 'استلام إنتاج',
   bags: 'أكياس', tolling_in: 'استلام نفخ للغير', tolling_out: 'تسليم نفخ للغير', scrap: 'هدر'
 };
 
@@ -197,7 +209,7 @@ async function renderMoves() {
       <td>${esc(m.warehouseName)}</td>
       <td>${esc(DOC_AR[m.doc_type] || m.doc_type)} <span class="chip sub">${esc(bucketAr(m.bucket))}</span>${m.is_customer ? ' <span class="chip accent">مادة العميل</span>' : ''}</td>
       <td class="num qty ${plus ? 'plus' : 'minus'}">${plus ? '+' : '−'}${SamDB.fmt(Math.abs(m.piece_delta))}</td>
-      <td>${esc(m.created_at)}</td>`;
+      <td>${esc(m.move_date || m.created_at)}</td>`;
     bindRow(tr, {
       view: () => viewMove(m),
       del: () => removeMove(m)
@@ -217,7 +229,7 @@ function viewMove(m) {
     width: 'min(600px, 94vw)',
     body: `<dl class="info">
       <dt>الصنف</dt><dd>${esc(m.itemCode)} — ${esc(m.itemName)}</dd>
-      <dt>الهنجر</dt><dd>${esc(m.warehouseName)}${m.warehouseKind === 'main' ? ' (المخزن الرئيسي)' : ''}</dd>
+      <dt>المخزن</dt><dd>${esc(m.warehouseName)}</dd>
       <dt>النوع</dt><dd>${esc(DOC_AR[m.doc_type] || m.doc_type)}</dd>
       <dt>الحالة</dt><dd>${esc(bucketAr(m.bucket))}</dd>
       <dt>الكمية (${esc(m.baseUnit || 'حبة')})</dt><dd>${SamDB.fmt(m.piece_delta)}</dd>
@@ -225,7 +237,7 @@ function viewMove(m) {
       <dt>أكياس</dt><dd>${SamDB.fmt(m.bag_qty)}</dd>
       <dt>المالك</dt><dd>${m.is_customer ? 'العميل (نفخ للغير)' : 'المصنع'}</dd>
       <dt>رقم المستند</dt><dd>${esc(m.doc_no || '—')}</dd>
-      <dt>التاريخ</dt><dd>${esc(m.created_at)}</dd>
+      <dt>التاريخ</dt><dd>${esc(m.move_date || m.created_at)}</dd>
       <dt>ملاحظة</dt><dd>${esc(m.note || '—')}</dd>
     </dl>`,
     actions: [

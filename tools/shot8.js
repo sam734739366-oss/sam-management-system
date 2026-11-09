@@ -234,9 +234,13 @@ app.whenReady().then(async () => {
   })()`);
   const pickCombo = (query) => `(() => {
     const ed = [...document.querySelectorAll('.modal.editor')].pop();
-    const inputs = [...ed.querySelectorAll('.combo-input')];
     const host = ${JSON.stringify(query)};
-    const inp = host === 'party' ? inputs[0] : inputs[inputs.length - 1];
+    // V3: a line now carries three combos (item, warehouse, destination), so
+    // the item combo is found by its cell, not by its position in the list.
+    const inp = host === 'party'
+      ? ed.querySelector('.party-cell .combo-input')
+      : ed.querySelector('.lines-tbl tbody tr td:first-child .combo-input');
+    if (!inp) return -1;
     inp.focus(); inp.value = host === 'party' ? 'موزع' : 'أمبولة';
     inp.dispatchEvent(new Event('input', { bubbles: true }));
     const pop = [...document.querySelectorAll('.combo-pop')].filter(x => x.style.display !== 'none').pop();
@@ -280,6 +284,17 @@ app.whenReady().then(async () => {
   })()`);
   await sleep(400);
   const ampBefore = dbMod.availablePieces(AMPOULE, 'good');
+  // V3: an external invoice number is mandatory, so the editor refuses to
+  // save without it — the harness has to fill it like a real user would.
+  await step('fill the external invoice number', `(() => {
+    const ed = [...document.querySelectorAll('.modal.editor')].pop();
+    const inp = [...ed.querySelectorAll('input')].find(i => /رقم الفاتورة/.test(i.placeholder || ''));
+    if (!inp) return 'no invoice-number field';
+    inp.focus(); inp.value = 'EXT-1001';
+    inp.dispatchEvent(new Event('input', { bubbles: true }));
+    return inp.value;
+  })()`);
+  await sleep(250);
   await step('click save', `[...document.querySelectorAll('.modal.editor')].pop().querySelector('.modal-foot .btn-primary').click()`);
   await sleep(900);
   const warnUi = await step('warning dialog shown', `(() => {
@@ -408,11 +423,16 @@ app.whenReady().then(async () => {
   await sleep(900);
   const buckets = await step('bucket checkboxes default', `[...document.querySelectorAll('#bucketWrap .col-check')].map(l => [l.textContent.trim(), l.querySelector('input').checked])`);
   check('only Good ticked by default', JSON.stringify(buckets) === JSON.stringify([['سليم', true], ['تالف', false], ['محرز', false]]), buckets);
+  await step('widen the report period to cover the harness history', `(() => {
+    document.getElementById('fFrom').value = '2026-10-01';
+    document.getElementById('fTo').value = '2026-12-31';
+    return [document.getElementById('fFrom').value, document.getElementById('fTo').value];
+  })()`);
   await js(`document.getElementById('btnRunReport').click()`);
   await sleep(1200);
   const rep1 = await step('good-only report', `({ rows: SamReports ? undefined : undefined, count: document.querySelectorAll('#reportTbl tbody tr').length, foot: document.getElementById('reportFoot').textContent.replace(/\\s+/g,' ').slice(0,180) })`);
   check('report ran and shows rows', rep1.count > 0, rep1.count);
-  check('footer sums visible numeric columns only', /وارد \(حبة\)/.test(rep1.foot) && /صادر \(حبة\)/.test(rep1.foot) && /صافي الحركة/.test(rep1.foot), rep1.foot);
+  check('footer sums visible numeric columns only', /وارد/.test(rep1.foot) && /صادر/.test(rep1.foot) && /صافي الحركة/.test(rep1.foot) && /الوحدة:/.test(rep1.foot), rep1.foot);
   await shot('v2-08-report-good-only');
 
   await shot('v2-08b-report-grid');
@@ -431,7 +451,7 @@ app.whenReady().then(async () => {
     cb.checked = false;
     cb.dispatchEvent(new Event('change', { bubbles: true }));
     return document.getElementById('reportFoot').textContent.replace(/\\s+/g,' ');
-  })()`).then((foot) => check('footer drops the hidden column total', !/وارد \(حبة\):/.test(foot), foot.slice(0, 160)));
+  })()`).then((foot) => check('footer drops the hidden column total', !/وارد:/.test(foot), foot.slice(0, 160)));
 
   // optional per-hangar breakdown
   await step('enable breakdown by hangar', `(() => {
@@ -455,7 +475,7 @@ app.whenReady().then(async () => {
       signatures: [...s.querySelectorAll('.sig .nm')].map(n => n.textContent),
       wm: s.querySelector('.wm').textContent,
       wmColor: getComputedStyle(s.querySelector('.wm')).color,
-      locationTable: /تفصيل حسب الهنجر/.test(s.textContent)
+      locationTable: /تفصيل حسب المخزن/.test(s.textContent)
     };
   })()`);
   check('print preview renders the premium sheet', pv.present && pv.landscape, pv.present && pv.landscape);
@@ -484,7 +504,7 @@ app.whenReady().then(async () => {
 
   /* ================= 11) gate pass + invoice printing ================= */
   const saleDoc = dbMod.listDocuments({ kind: 'sale' })[0];
-  await step('open gate pass preview', `SamDocs.printGatePass(${saleDoc.id})`);
+  await step('open gate pass preview', `SamDocs.printPermits(${saleDoc.id})`);
   await sleep(1200);
   const gp = await step('gate pass fields', `(() => {
     const s = [...document.querySelectorAll('.pv .sheet')].pop();
@@ -495,7 +515,7 @@ app.whenReady().then(async () => {
       hasPriceWords: /سعر|قيمة|ريال/.test(s.textContent)
     };
   })()`);
-  check('gate pass titled and centred', gp.title === 'تصريح خروج' && gp.meta.length === 3, gp);
+  check('gate pass titled and centred', /تصريح خروج/.test(gp.title || '') && gp.meta.length === 4, gp);
   check('gate pass signatures include السائق', gp.sigs.includes('السائق'), gp.sigs);
   check('gate pass shows no prices', gp.hasPriceWords === false, gp.hasPriceWords);
   await shot('v2-10-gate-pass');
@@ -548,7 +568,7 @@ app.whenReady().then(async () => {
     heads: [...document.querySelectorAll('#whTbl thead th')].map(t => t.textContent.trim()),
     rows: document.querySelectorAll('#whTbl tbody tr').length
   })`);
-  check('warehouses screen renamed to hangars', /الهناجر/.test(whScreen.title), whScreen.title);
+  check('warehouses screen named المخازن', /المخازن/.test(whScreen.title), whScreen.title);
   await shot('v2-11-hangars');
 
   const shortcuts = await step('Ctrl+N on the hangars screen', `(() => {
@@ -561,7 +581,7 @@ app.whenReady().then(async () => {
     const m = document.querySelector('.modal');
     return { any: !!m, editor: !!document.querySelector('.modal.editor'), title: m ? m.querySelector('h3').textContent : null };
   })()`);
-  check('Ctrl+N opens the screen-specific "new" form', hangarForm.any === true && /هنجر|موقع/.test(hangarForm.title || ''), hangarForm);
+  check('Ctrl+N opens the screen-specific "new" form', hangarForm.any === true && /مخزن/.test(hangarForm.title || ''), hangarForm);
   await step('Esc closes it', `(() => {
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     return 'sent';

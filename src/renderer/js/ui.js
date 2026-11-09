@@ -396,12 +396,25 @@
 
   /* ---------------- print preview ---------------- */
   function printPreview(opts) {
-    const built = sheet(opts);
+    /* opts.pages = array of sheet options → one printed page per entry
+       (used for per-warehouse gate/transfer permits). Otherwise a single sheet. */
+    let built;
+    if (Array.isArray(opts.pages) && opts.pages.length) {
+      built = el('div', 'pv-pages');
+      opts.pages.forEach((p) => {
+        const wrap = el('div', 'print-page');
+        wrap.appendChild(sheet(p));
+        built.appendChild(wrap);
+      });
+    } else {
+      built = sheet(opts);
+    }
+    const pageCount = Array.isArray(opts.pages) && opts.pages.length ? opts.pages.length : 1;
     return new Promise((resolve) => {
       const ov = el('div', 'pv no-print');
       const bar = el('div', 'pv-bar');
       bar.innerHTML = `<span class="t">معاينة قبل الطباعة</span>
-        <span class="pv-note">${esc(opts.title || '')} — ${opts.landscape ? 'A4 عرضي' : 'A4'} — علامة مائية خفيفة</span>`;
+        <span class="pv-note">${esc(opts.title || '')} — ${opts.landscape ? 'A4 عرضي' : 'A4'}${pageCount > 1 ? ` — ${pageCount} صفحات` : ''} — علامة مائية خفيفة</span>`;
       const bPdf = el('button', 'btn btn-sm btn-ghost', `${icon('i-print')}<span>حفظ PDF</span>`);
       const bPrint = el('button', 'btn btn-sm btn-primary', `${icon('i-print')}<span>طباعة</span><span class="kbd">Ctrl+P</span>`);
       const bClose = el('button', 'btn btn-sm btn-ghost', `${icon('i-x')}<span>إغلاق</span>`);
@@ -414,7 +427,7 @@
 
       const fit = () => {
         const avail = scroll.clientWidth - 60;
-        const natural = built.offsetWidth || 794;
+        const natural = (built.querySelector('.sheet') || built).offsetWidth || 794;
         built.style.transform = `scale(${Math.min(1, Math.max(0.4, avail / natural))})`;
       };
       fit();
@@ -432,22 +445,47 @@
       bClose.addEventListener('click', close);
       bPrint.addEventListener('click', doPrintNow);
       bPdf.addEventListener('click', async () => {
-        const r = await global.sam.win.savePdf({ landscape: !!opts.landscape, fileName: `${opts.title || 'SAM'}.pdf` });
-        if (r && r.ok) toast(`تم حفظ الملف: ${r.path}`, 'ok', 5200);
-        else if (r && !r.canceled) toast('تعذّر حفظ الـ PDF', 'bad');
+        /* the PDF is captured from the live page, so the document must be
+           staged in the print host first — same path as the printer. */
+        const release = stageForPrint(built);
+        if (!release) return toast('تعذّر تجهيز الملف للطباعة', 'bad');
+        try {
+          const r = await global.sam.win.savePdf({
+            landscape: !!opts.landscape,
+            fileName: `${opts.title || 'SAM'}${pageCount > 1 ? `-${pageCount} صفحات` : ''}.pdf`
+          });
+          if (r && r.ok) toast(`تم حفظ الملف: ${r.path}`, 'ok', 5200);
+          else if (r && !r.canceled) toast('تعذّر حفظ الـ PDF', 'bad');
+        } finally {
+          release();
+        }
       });
       document.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); }, true);
     });
   }
 
-  /** print only the given sheet, hiding the whole app chrome */
-  async function doPrint(node, opts = {}) {
+  /** stage the document in the print host so print / PDF capture only the sheet.
+      returns a release function that restores the page. */
+  function stageForPrint(node) {
     const host = document.getElementById('printHost');
-    if (!host) return { ok: false };
+    if (!host) return null;
     const clone = node.cloneNode(true);
+    /* the preview scales the sheet to fit the window — that must not follow
+       the document into the printed output */
+    clone.style.transform = '';
     host.innerHTML = '';
     host.appendChild(clone);
     document.body.classList.add('is-printing');
+    return () => {
+      document.body.classList.remove('is-printing');
+      host.innerHTML = '';
+    };
+  }
+
+  /** print only the given sheet, hiding the whole app chrome */
+  async function doPrint(node, opts = {}) {
+    const release = stageForPrint(node);
+    if (!release) return { ok: false };
     try {
       const printOpts = opts.landscape
         ? { pageSize: { width: 29700, height: 21000 } }
@@ -456,8 +494,7 @@
       if (r && !r.ok && r.error !== 'canceled') toast('الطباعة أُلغيت أو فشلت', 'bad');
       return r;
     } finally {
-      document.body.classList.remove('is-printing');
-      setTimeout(() => { host.innerHTML = ''; }, 400);
+      setTimeout(release, 400);
     }
   }
 
@@ -591,10 +628,21 @@
     return t;
   }
 
+  /**
+   * today's date in the LOCAL timezone (YYYY-MM-DD).
+   * toISOString() returns UTC, which in Yemen (UTC+3) would give the
+   * previous day after 21:00 — every default date must be local.
+   */
+  function today() {
+    const d = new Date();
+    return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  }
+
   global.SamUI = {
     WATERMARK,
     APP_NAME,
     CURRENCY,
+    today,
     el, icon, esc,
     toast, busy, emptyState, toggleEmpty, menu, bindRow, modal, confirmHardDelete, confirmWarning,
     form, field, input, textarea, numInput, affixInput,

@@ -15,6 +15,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const errors = [];
 
 const dbMod = require(path.join(ROOT, 'src', 'main', 'db.js'));
+const session = require(path.join(ROOT, 'src', 'main', 'session.js'));
 
 async function rmRetry(target, { tries = 8, base = 100, label = target } = {}) {
   for (let attempt = 1; attempt <= tries; attempt++) {
@@ -52,6 +53,7 @@ app.on('will-quit', (e) => { if (!cleanedUp) { e.preventDefault(); shutdown(erro
 process.env.SAM_DATA_DIR = DATA;
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 require(path.join(ROOT, 'src', 'main', 'ipc-db.js'))();
+require(path.join(ROOT, 'src', 'main', 'ipc-auth.js'))(() => win);
 require(path.join(ROOT, 'src', 'main', 'ipc.js'))(() => win);
 
 async function shot(name, settle = 700) {
@@ -83,6 +85,10 @@ app.whenReady().then(async () => {
   );
   const cust = dbMod.addParty({ name: 'موزع الرياض', phone: '0555123456', type: 'customer' });
   const supp = dbMod.addParty({ name: 'شركة البلاستيك المتحدة', phone: '0112233445', type: 'supplier' });
+  /* V3: app.html boots through the session layer — log in before the window loads */
+  session.ensureSeed();
+  session.login('admin', 'admin123');
+
   console.log('seeded:', itemA.code, itemB.code, main.code, prod.code, cust.name, supp.name);
 
   /* ---------- UI ---------- */
@@ -100,6 +106,7 @@ app.whenReady().then(async () => {
   const js = (code) => win.webContents.executeJavaScript(code, true);
 
   await win.loadFile(path.join(RENDERER, 'app.html'));
+  await win.webContents.executeJavaScript(`window.__errStack=[]; window.addEventListener('error', e => window.__errStack.push((e.error && e.error.stack) || e.message)); 1`, true);
   await sleep(1200);
 
   /* 1) items form — label wording + input contrast with typed text */
@@ -160,13 +167,16 @@ app.whenReady().then(async () => {
     const nums = [...tr.querySelectorAll('input.num-in')];
     nums[0].value = '2400'; nums[0].dispatchEvent(new Event('input', {bubbles:true}));
     nums[1].value = '200';  nums[1].dispatchEvent(new Event('input', {bubbles:true}));
-    const inv = document.querySelector('.ed-grid input[placeholder^="نص حر"]');
-    inv.value = '٣٥٠٠ ريال (نص حر)';
+    const vc = [...document.querySelectorAll('.ed-grid .ed-cell')].find(c => /قيمة الفاتورة/.test(c.textContent || ''));
+    const inv = vc ? vc.querySelector('input') : null;
+    if (inv) { inv.value = '3500'; inv.dispatchEvent(new Event('input', {bubbles:true})); }
     return 'qty+value';
   })()`);
   await sleep(400);
   await shot('p3-04-sale-editor', 1400);
 
+  await js(`(() => { const i=[...document.querySelectorAll('.ed-grid input')].find(x=>/رقم الفاتورة/.test(x.placeholder||'')); if(i){ i.value='EXT-3001'; i.dispatchEvent(new Event('input',{bubbles:true})); } return i? 'invoice filled':'no invoice input'; })()`);
+  await sleep(150);
   await js(`document.querySelector('.modal-foot [data-act="save"]').click()`);
   await sleep(900);
   await shot('p3-05-docs-list');
@@ -206,6 +216,8 @@ app.whenReady().then(async () => {
     const tr = document.querySelector('.lines-tbl tbody tr');
     const nums = [...tr.querySelectorAll('input.num-in')];
     nums[0].value = '5000'; nums[0].dispatchEvent(new Event('input', {bubbles:true}));
+    const inv=[...document.querySelectorAll('.ed-grid input')].find(x=>/رقم الفاتورة/.test(x.placeholder||''));
+    if(inv){ inv.value='EXT-3002'; inv.dispatchEvent(new Event('input',{bubbles:true})); }
     const btn = document.querySelector('.modal-foot [data-act="save"]');
     if (!btn) return 'NO SAVE BTN';
     btn.click();
@@ -218,7 +230,7 @@ app.whenReady().then(async () => {
   await js(`window.SamDocs.openEditor(null); 1`);
   await sleep(600);
   await step('switch to transfer mode', `(() => {
-    const b = [...document.querySelectorAll('.seg-btn')].find(x => x.textContent.trim() === 'تحويل مخزن');
+    const b = [...document.querySelectorAll('.seg-btn')].find(x => x.textContent.trim() === 'نقل بين المخازن');
     if (!b) return 'NO TRANSFER TAB';
     b.click();
     return 'party hidden=' + (document.querySelector('.party-cell').style.display === 'none')
@@ -251,15 +263,19 @@ app.whenReady().then(async () => {
     return 'clicked save';
   })()`);
   await sleep(1300);
-  await step('stock per warehouse after transfer',
+  const whStock = await step('stock per warehouse after transfer',
     `SamDB.call('listItems','').then(r => r.filter(i=>i.code==='0001').map(i => Object.entries(i.stockByWarehouse).map(([w,s]) => 'wh'+w+':'+[s.good,s.defect,s.held].join('/'))))`);
+  const trDocs = await js(`SamDB.call('listDocuments', {}).then(r => r.map(x => x.kind))`);
+  const errText = await js(`(document.querySelector('.modal.editor .form-err') || {}).textContent || ''`);
+  console.log('  transfer saved ->', trDocs.includes('transfer'), '| editor error:', errText.trim() || 'none');
+  if (!trDocs.includes('transfer')) errors.push('the transfer document did not save: ' + errText.trim());
   await shot('p3-05c-after-transfer', 1200);
 
   /* 4) gate pass print preview from the sale document */
   const ids = await js(`SamDB.call('listDocuments', {}).then(r => r.map(x => [x.id, x.kind, x.doc_no]))`);
   console.log('documents:', JSON.stringify(ids));
   const sale = ids.find((r) => r[1] === 'sale');
-  await js(`window.SamDocs.printGatePass(${sale[0]})`);
+  await js(`window.SamDocs.printPermits(${sale[0]})`);
   await shot('p3-06-gate-pass-preview', 1500);
   await shot('p3-06b-gate-pass-settled', 1200);
   await js(`document.querySelector('.pv .btn-ghost:last-child').click()`);

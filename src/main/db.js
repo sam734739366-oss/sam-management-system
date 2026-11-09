@@ -85,6 +85,7 @@ CREATE TABLE IF NOT EXISTS stock_moves (
   party_id INTEGER REFERENCES parties(id) ON DELETE RESTRICT,
   is_customer INTEGER NOT NULL DEFAULT 0,
   note TEXT,
+  move_date TEXT NOT NULL DEFAULT (date('now','localtime')),
   created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
 );
 
@@ -251,8 +252,30 @@ function migrate() {
   const cols = db.prepare('PRAGMA table_info(stock_moves)').all().map((c) => c.name);
   if (!cols.includes('party_id')) db.exec('ALTER TABLE stock_moves ADD COLUMN party_id INTEGER REFERENCES parties(id) ON DELETE RESTRICT');
   if (!cols.includes('is_customer')) db.exec('ALTER TABLE stock_moves ADD COLUMN is_customer INTEGER NOT NULL DEFAULT 0');
+  if (!cols.includes('move_date')) {
+    // SQLite refuses a non-constant default in ALTER TABLE — add it empty,
+    // then fill every row from the business date of its source document.
+    db.exec("ALTER TABLE stock_moves ADD COLUMN move_date TEXT NOT NULL DEFAULT ''");
+    db.exec(`
+      UPDATE stock_moves SET move_date = COALESCE(
+        (SELECT d.doc_date FROM documents d WHERE d.id = stock_moves.doc_id AND d.kind = stock_moves.doc_type),
+        (SELECT pi.doc_date FROM prod_issues pi WHERE pi.id = stock_moves.doc_id AND stock_moves.doc_type='issue'),
+        (SELECT pr.doc_date FROM prod_receipts pr WHERE pr.id = stock_moves.doc_id AND stock_moves.doc_type IN ('receipt','bags')),
+        (SELECT t.doc_date FROM tolling_orders t WHERE t.id = stock_moves.doc_id AND stock_moves.doc_type IN ('tolling_in','tolling_out','scrap')),
+        substr(stock_moves.created_at,1,10)
+      )
+    `);
+    db.exec("UPDATE stock_moves SET move_date = date('now','localtime') WHERE move_date IS NULL OR move_date=''");
+  }
+  // the index can only be built once the column exists (old databases)
+  db.exec('CREATE INDEX IF NOT EXISTS idx_moves_date ON stock_moves(move_date)');
   const whCols = db.prepare('PRAGMA table_info(warehouses)').all().map((c) => c.name);
   if (!whCols.includes('location')) db.exec('ALTER TABLE warehouses ADD COLUMN location TEXT');
+  // V3: every warehouse is equal — normalize any legacy 'main' rows
+  db.exec("UPDATE warehouses SET kind='sub' WHERE kind<>'sub'");
+  // the old seed called the first warehouse "المخزن الرئيسي"; there is no main
+  // warehouse in V3, so the legacy seed keeps only a neutral name.
+  db.exec("UPDATE warehouses SET name='المخزن 1' WHERE name='المخزن الرئيسي'");
   const rlCols = db.prepare('PRAGMA table_info(prod_receipt_lines)').all().map((c) => c.name);
   if (!rlCols.includes('breaks')) db.exec('ALTER TABLE prod_receipt_lines ADD COLUMN breaks INTEGER NOT NULL DEFAULT 0');
 }
@@ -300,11 +323,12 @@ function init(userDataDir) {
   return { path: dbPath };
 }
 
-/** first run: the single main warehouse, so the opening-balance flow always works */
+/** first run: one plain default warehouse so the opening-balance flow works.
+ *  All warehouses are equal — the user adds/renames/deletes them freely. */
 function seedDefaults() {
   const count = db.prepare('SELECT COUNT(*) AS c FROM warehouses').get().c;
   if (count === 0) {
-    db.prepare("INSERT INTO warehouses(code,name,kind,location,note) VALUES('M01','المخزن الرئيسي','main','الموقع الأساسي','مخزن واحد — المخازن الفرعية هناجر داخله')").run();
+    db.prepare("INSERT INTO warehouses(code,name,kind,location,note) VALUES('W01','المخزن 1','sub','','مخزن افتراضي — لا يوجد مخزن رئيسي: سمّه أو احذفه وأضف مخازنك من شاشة المخازن')").run();
   }
 }
 
@@ -357,22 +381,22 @@ function listWarehouses() {
       (SELECT COUNT(DISTINCT m.item_id) FROM stock_moves m WHERE m.warehouse_id = w.id) AS item_count,
       (SELECT COALESCE(SUM(m.piece_delta),0) FROM stock_moves m WHERE m.warehouse_id = w.id) AS total_pieces
     FROM warehouses w
-    ORDER BY (w.kind='main') DESC, w.id
+    ORDER BY w.id
   `).all();
 }
 
+/** compatibility helper: the first active warehouse. There is no "main"
+ *  warehouse anymore — every warehouse is equal; this only gives callers a
+ *  sensible default id. */
 function getMainWarehouse() {
-  return db.prepare("SELECT * FROM warehouses WHERE kind='main' AND is_active=1 LIMIT 1").get() || null;
+  return db.prepare('SELECT * FROM warehouses WHERE is_active=1 ORDER BY id LIMIT 1').get() || null;
 }
 
 function addWarehouse(w) {
   validateWarehouse(w);
-  if (w.kind === 'main' && getMainWarehouse()) {
-    throw new Error('النظام يعمل بمخزن رئيسي واحد فقط — الهناجر الأخرى مواقع داخل نفس المخزن.');
-  }
   const info = db
     .prepare('INSERT INTO warehouses(code,name,kind,location,note,is_active) VALUES(?,?,?,?,?,?)')
-    .run(w.code.trim(), w.name.trim(), w.kind, str(w.location), w.note || null, w.is_active === false ? 0 : 1);
+    .run(w.code.trim(), w.name.trim(), 'sub', str(w.location), w.note || null, w.is_active === false ? 0 : 1);
   return getWarehouse(info.lastInsertRowid);
 }
 
@@ -380,12 +404,8 @@ function updateWarehouse(id, w) {
   validateWarehouse(w);
   const current = getWarehouse(id);
   if (!current) throw new Error('المخزن غير موجود');
-  if (w.kind === 'main' && current.kind !== 'main') {
-    const other = db.prepare("SELECT id FROM warehouses WHERE kind='main' AND id<>?").get(id);
-    if (other) throw new Error('لا يمكن تعيين هنجر رئيسي آخر — المخزن الرئيسي موجود بالفعل.');
-  }
   db.prepare('UPDATE warehouses SET code=?, name=?, kind=?, location=?, note=?, is_active=? WHERE id=?').run(
-    w.code.trim(), w.name.trim(), w.kind, str(w.location), w.note || null, w.is_active === false ? 0 : 1, id
+    w.code.trim(), w.name.trim(), 'sub', str(w.location), w.note || null, w.is_active === false ? 0 : 1, id
   );
   return getWarehouse(id);
 }
@@ -404,7 +424,7 @@ function deleteWarehouse(id) {
   const impact = warehouseImpact(id);
   if (impact.moves > 0) {
     throw new Error(
-      `لا يمكن حذف الهنجر: لديه ${impact.moves} حركة مخزون بإجمالي ${impact.pieces} حبة. ` +
+      `لا يمكن حذف المخزن: لديه ${impact.moves} حركة مخزون بإجمالي ${impact.pieces} حبة. ` +
       'احذف المستندات المرتبطة به أولاً (الحذف النهائي يعكس المخزون).'
     );
   }
@@ -413,9 +433,8 @@ function deleteWarehouse(id) {
 }
 
 function validateWarehouse(w) {
-  if (!w || !String(w.code || '').trim()) throw new Error('كود الهنجر مطلوب');
-  if (!String(w.name || '').trim()) throw new Error('اسم الهنجر مطلوب');
-  if (!['main', 'sub'].includes(w.kind)) throw new Error('نوع الموقع غير صالح');
+  if (!w || !String(w.code || '').trim()) throw new Error('كود المخزن مطلوب');
+  if (!String(w.name || '').trim()) throw new Error('اسم المخزن مطلوب');
 }
 
 /* ------------------------------------------------------------------ *
@@ -541,8 +560,8 @@ function updateItem(id, item, balances = null) {
 
 function writeOpening(itemId, balances) {
   const ins = db.prepare(
-    `INSERT INTO stock_moves(item_id,warehouse_id,bucket,piece_delta,carton_qty,bag_qty,doc_type,doc_no,note)
-     VALUES(?,?,?,0,0,0,'opening',?,?)`
+    `INSERT INTO stock_moves(item_id,warehouse_id,bucket,piece_delta,carton_qty,bag_qty,doc_type,doc_no,note,move_date)
+     VALUES(?,?,?,0,0,0,'opening',?,?,date('now','localtime'))`
   );
   const upd = db.prepare('UPDATE stock_moves SET piece_delta=? WHERE id=?');
   for (const b of balances || []) {
@@ -767,7 +786,7 @@ function availableByLocation(itemId, bucket, ignoreDocId) {
      FROM stock_moves m JOIN warehouses w ON w.id = m.warehouse_id
      WHERE m.item_id=? AND m.bucket=? AND (? IS NULL OR NOT (m.doc_type<>'opening' AND m.doc_id=?))
      GROUP BY m.warehouse_id, w.name, w.code, w.kind
-     ORDER BY (w.kind='main') DESC, w.name`
+     ORDER BY w.name`
   ).all(itemId, bucket, ignoreDocId || null, ignoreDocId || null);
 }
 
@@ -776,8 +795,8 @@ function validateDocument(payload) {
   if (!meta) throw new Error('نوع المستند غير صالح');
   if (!payload.doc_date) throw new Error('تاريخ المستند مطلوب');
   if (payload.kind === 'transfer') {
-    if (!payload.warehouse_id || !payload.dest_warehouse_id) throw new Error('اختر هنجر المصدر وهنجر الوجهة');
-    if (Number(payload.warehouse_id) === Number(payload.dest_warehouse_id)) throw new Error('لا يمكن النقل إلى نفس الهنجر');
+    if (!payload.warehouse_id || !payload.dest_warehouse_id) throw new Error('اختر مخزن المصدر ومخزن الوجهة');
+    if (Number(payload.warehouse_id) === Number(payload.dest_warehouse_id)) throw new Error('لا يمكن النقل إلى نفس المخزن');
   } else {
     if (payload.kind === 'sale' || payload.kind === 'purchase') {
       if (!payload.party_id) throw new Error('اختر العميل / المورد من القائمة');
@@ -844,8 +863,8 @@ function saveDocument(payload) {
     );
     const warnings = [];
     const insMove = db.prepare(
-      `INSERT INTO stock_moves(item_id,warehouse_id,bucket,piece_delta,carton_qty,bag_qty,doc_type,doc_id,doc_no,party_id,note)
-       VALUES(?,?,?,?,?,?,?,?,?,?,?)`
+      `INSERT INTO stock_moves(item_id,warehouse_id,bucket,piece_delta,carton_qty,bag_qty,doc_type,doc_id,doc_no,party_id,note,move_date)
+       VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`
     );
     const docNo = (payload.doc_no || '').trim() || nextDocNo(payload.kind);
 
@@ -863,22 +882,23 @@ function saveDocument(payload) {
         const dst = int(l.dest_warehouse_id || payload.dest_warehouse_id);
         const here = availableInLocation(itemId, src, bucket, docId);
         if (pieces > here) {
-          warnings.push(`«${item.name}» في ${whName(src)} ${here} ${item.base_unit} فقط، والهنجر سيتجاوز الحد إلى ${here - pieces}.`);
+          warnings.push(`«${item.name}» في ${whName(src)} ${here} ${item.base_unit} فقط، والمخزن سيتجاوز الحد إلى ${here - pieces}.`);
         }
         insLine.run(docId, itemId, src, dst, bucket, pieces, cartons, bags, l.note || null);
-        insMove.run(itemId, src, bucket, -pieces, cartons, bags, payload.kind, docId, docNo, null, l.note || 'نقل صادر');
-        insMove.run(itemId, dst, bucket, pieces, cartons, bags, payload.kind, docId, docNo, null, l.note || 'نقل وارد');
+        insMove.run(itemId, src, bucket, -pieces, cartons, bags, payload.kind, docId, docNo, null, l.note || 'نقل صادر', payload.doc_date);
+        insMove.run(itemId, dst, bucket, pieces, cartons, bags, payload.kind, docId, docNo, null, l.note || 'نقل وارد', payload.doc_date);
       } else {
-        const wh = int(l.warehouse_id || payload.warehouse_id) || (getMainWarehouse() || {}).id || null;
+        const wh = int(l.warehouse_id || payload.warehouse_id) || null;
+        if (!wh) throw new Error(`اختر المخزن للسطر ${payload.lines.indexOf(l) + 1}`);
         if (meta.sign < 0) {
-          const avail = availablePieces(itemId, bucket, docId);
+          const avail = availableInLocation(itemId, wh, bucket, docId);
           if (pieces > avail) {
-            warnings.push(`رصيد «${item.name}» ${avail} ${item.base_unit} فقط والإصدار ${pieces} — الرصيد بعد الحفظ ${avail - pieces}.`);
+            warnings.push(`رصيد «${item.name}» في ${whName(wh)} ${avail} ${item.base_unit} فقط والإصدار ${pieces} — الرصيد بعد الحفظ ${avail - pieces}.`);
           }
         }
         insLine.run(docId, itemId, wh, null, bucket, pieces, cartons, bags, l.note || null);
         insMove.run(itemId, wh, bucket, meta.sign * pieces, cartons, bags, payload.kind, docId, docNo,
-          int(payload.party_id) || null, l.note || null);
+          int(payload.party_id) || null, l.note || null, payload.doc_date);
       }
     }
     savedWarnings[docId] = warnings;
@@ -918,7 +938,8 @@ function getDocument(id) {
   const lines = db.prepare(
     `SELECT l.*, i.code AS itemCode, i.name AS itemName, i.base_unit AS baseUnit,
             i.pieces_per_carton AS perCarton, i.pieces_per_bag AS perBag,
-            w.name AS warehouseName, dw.name AS destWarehouseName
+            w.name AS warehouseName, w.code AS warehouseCode, w.location AS warehouseLocation,
+            dw.name AS destWarehouseName, dw.code AS destWarehouseCode, dw.location AS destWarehouseLocation
      FROM doc_lines l
      JOIN items i ON i.id = l.item_id
      LEFT JOIN warehouses w ON w.id = l.warehouse_id
@@ -933,6 +954,12 @@ function listDocuments(filter = {}) {
   const search = `%${String(filter.search || '').trim()}%`;
   const rows = db.prepare(
     `SELECT d.*, p.name AS partyName, w.name AS warehouseName, dw.name AS destWarehouseName,
+            (SELECT GROUP_CONCAT(DISTINCT iw.name)
+               FROM doc_lines l JOIN warehouses iw ON iw.id = l.warehouse_id
+              WHERE l.document_id = d.id) AS warehouseNames,
+            (SELECT GROUP_CONCAT(DISTINCT idw.name)
+               FROM doc_lines l JOIN warehouses idw ON idw.id = l.dest_warehouse_id
+              WHERE l.document_id = d.id) AS destWarehouseNames,
             (SELECT COALESCE(SUM(l.pieces),0) FROM doc_lines l WHERE l.document_id=d.id) AS totalPieces,
             (SELECT COUNT(*) FROM doc_lines l WHERE l.document_id=d.id) AS lineCount
      FROM documents d
@@ -1166,9 +1193,9 @@ function saveIssue(payload) {
     }
     const no = db.prepare('SELECT doc_no FROM prod_issues WHERE id=?').get(docId).doc_no;
     db.prepare(
-      `INSERT INTO stock_moves(item_id,warehouse_id,bucket,piece_delta,carton_qty,bag_qty,doc_type,doc_id,doc_no,note)
-       VALUES(?,?,?,?,?,?,?,?,?,?)`
-    ).run(itemId, whId, 'good', -pieces, cartons, 0, 'issue', docId, no, str(payload.note) || 'صرف للمنتج');
+      `INSERT INTO stock_moves(item_id,warehouse_id,bucket,piece_delta,carton_qty,bag_qty,doc_type,doc_id,doc_no,note,move_date)
+       VALUES(?,?,?,?,?,?,?,?,?,?,?)`
+    ).run(itemId, whId, 'good', -pieces, cartons, 0, 'issue', docId, no, str(payload.note) || 'صرف للمنتج', payload.doc_date);
     return docId;
   });
 
@@ -1309,23 +1336,23 @@ function saveReceipt(payload) {
       'INSERT INTO prod_receipt_lines(receipt_id,item_id,good,defect_cans,defect_ampoules,bags_used,breaks,note) VALUES(?,?,?,?,?,?,?,?)'
     );
     const insMove = db.prepare(
-      `INSERT INTO stock_moves(item_id,warehouse_id,bucket,piece_delta,carton_qty,bag_qty,doc_type,doc_id,doc_no,note)
-       VALUES(?,?,?,?,?,?,?,?,?,?)`
+      `INSERT INTO stock_moves(item_id,warehouse_id,bucket,piece_delta,carton_qty,bag_qty,doc_type,doc_id,doc_no,note,move_date)
+       VALUES(?,?,?,?,?,?,?,?,?,?,?)`
     );
 
     for (const l of lines) {
       insLine.run(receiptId, l.item_id, l.good, l.defect_cans, l.defect_ampoules, l.bags_used, l.breaks, str(l.note));
       // good -> finished-goods GOOD warehouse
-      if (l.good) insMove.run(l.item_id, routing.fgGoodWh, 'good', l.good, 0, 0, 'receipt', receiptId, docNo, 'إنتاج جيد');
+      if (l.good) insMove.run(l.item_id, routing.fgGoodWh, 'good', l.good, 0, 0, 'receipt', receiptId, docNo, 'إنتاج جيد', payload.doc_date);
       // defect cans -> finished-goods DEFECT warehouse
-      if (l.defect_cans) insMove.run(l.item_id, routing.fgDefectWh, 'defect', l.defect_cans, 0, 0, 'receipt', receiptId, docNo, 'تالف علب');
+      if (l.defect_cans) insMove.run(l.item_id, routing.fgDefectWh, 'defect', l.defect_cans, 0, 0, 'receipt', receiptId, docNo, 'تالف علب', payload.doc_date);
       // defect ampoules -> RAW MATERIAL defect warehouse, on the raw item
-      if (l.defect_ampoules) insMove.run(rawItemId, routing.rawDefectWh, 'defect', l.defect_ampoules, 0, 0, 'receipt', receiptId, docNo, 'تالف أمبولة');
+      if (l.defect_ampoules) insMove.run(rawItemId, routing.rawDefectWh, 'defect', l.defect_ampoules, 0, 0, 'receipt', receiptId, docNo, 'تالف أمبولة', payload.doc_date);
     }
     // bags consumed, deducted from the bag item when configured
     if (bagsTotal > 0 && routing.bagItemId) {
       const wh = routing.bagWhId || routing.fgGoodWh;
-      insMove.run(routing.bagItemId, wh, 'good', -bagsTotal, 0, bagsTotal, 'bags', receiptId, docNo, 'أكياس مستخدمة في الإنتاج');
+      insMove.run(routing.bagItemId, wh, 'good', -bagsTotal, 0, bagsTotal, 'bags', receiptId, docNo, 'أكياس مستخدمة في الإنتاج', payload.doc_date);
     }
     return receiptId;
   });
@@ -1484,8 +1511,8 @@ function saveTolling(payload) {
     const docNo = db.prepare('SELECT doc_no FROM tolling_orders WHERE id=?').get(orderId).doc_no;
 
     const insMove = db.prepare(
-      `INSERT INTO stock_moves(item_id,warehouse_id,bucket,piece_delta,carton_qty,bag_qty,doc_type,doc_id,doc_no,party_id,is_customer,note)
-       VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`
+      `INSERT INTO stock_moves(item_id,warehouse_id,bucket,piece_delta,carton_qty,bag_qty,doc_type,doc_id,doc_no,party_id,is_customer,note,move_date)
+       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`
     );
     const insLine = db.prepare(
       'INSERT INTO tolling_lines(order_id,item_id,good,defect,bags,note) VALUES(?,?,?,?,?,?)'
@@ -1497,7 +1524,7 @@ function saveTolling(payload) {
 
     // 1) the customer's raw material arrives
     insMove.run(rawItemId, whId, 'good', piecesIn, 0, int(payload.bags_in), 'tolling_in', orderId, docNo,
-      partyId, 1, str(payload.note) || 'استلام مادة للعميل');
+      partyId, 1, str(payload.note) || 'استلام مادة للعميل', payload.doc_date);
 
     // 2) good output leaves to the customer, defects stay as customer-owned scrap
     for (const l of lines) {
@@ -1505,11 +1532,11 @@ function saveTolling(payload) {
       insLine.run(orderId, l.item_id, l.good, l.defect, l.bags, str(l.note));
       if (l.good) {
         insMove.run(rawItemId, whId, 'good', -l.good, 0, l.bags, 'tolling_out', orderId, docNo,
-          partyId, 1, `نفخ للغير: ${product ? product.name : ''} × ${l.good}`);
+          partyId, 1, `نفخ للغير: ${product ? product.name : ''} × ${l.good}`, payload.doc_date);
       }
       if (l.defect) {
         insMove.run(rawItemId, whId, 'defect', l.defect, 0, 0, 'scrap', orderId, docNo,
-          partyId, 1, `هدر نفخ للغير: ${product ? product.name : ''} × ${l.defect}`);
+          partyId, 1, `هدر نفخ للغير: ${product ? product.name : ''} × ${l.defect}`, payload.doc_date);
         insScrap.run(partyId, rawItemId, whId, l.defect, 'defect', 'tolling_order', orderId, docNo,
           product ? `${product.code} — ${product.name}` : null);
       }
@@ -1521,7 +1548,7 @@ function saveTolling(payload) {
       warnings.push(`المُسلَّم والهدر (${used}) يتجاوز المستلم (${piecesIn}) — الرصيد سيصبح سالباً.`);
     }
     if (goodOut + defectOut < piecesIn) {
-      warnings.push(`بقي ${piecesIn - used} حبة من مادة العميل داخل الهنجر بدون تسليم.`);
+      warnings.push(`بقي ${piecesIn - used} حبة من مادة العميل داخل المخزن بدون تسليم.`);
     }
     return orderId;
   });
@@ -1697,11 +1724,13 @@ function reportQuery(filters = {}) {
   if (itemId) { where.push('m.item_id = ?'); params.push(itemId); }
   if (partyId) { where.push('m.party_id = ?'); params.push(partyId); }
   if (kind) { where.push('m.doc_type = ?'); params.push(kind); }
+  if (from) { where.push('m.move_date >= ?'); params.push(from); }
+  if (to) { where.push('m.move_date <= ?'); params.push(to); }
   if (onlyCustomer) where.push('m.is_customer = 1');
   else if (!includeCustomer) where.push('m.is_customer = 0');
 
   const sql = `
-    SELECT m.id, m.created_at AS createdAt, m.piece_delta AS delta, m.carton_qty AS cartons,
+    SELECT m.id, m.created_at AS createdAt, m.move_date AS moveDate, m.piece_delta AS delta, m.carton_qty AS cartons,
            m.bag_qty AS bags, m.bucket AS bucket, m.doc_type AS docType, m.doc_id AS docId,
            m.doc_no AS docNo, m.note AS note, m.party_id AS partyId, m.is_customer AS isCustomer,
            m.warehouse_id AS warehouseId,
@@ -1716,7 +1745,7 @@ function reportQuery(filters = {}) {
     LEFT JOIN parties p ON p.id = m.party_id
     LEFT JOIN documents d ON d.id = m.doc_id AND d.kind = m.doc_type
     WHERE ${where.join(' AND ')}
-    ORDER BY m.created_at, m.id`;
+    ORDER BY m.move_date, m.id`;
 
   const rows = db.prepare(sql).all(...params);
 
@@ -1733,14 +1762,10 @@ function reportQuery(filters = {}) {
     seenDoc.add(key);
   }
 
-  const inRange = rows.filter((r) => {
-    const day = String(r.createdAt).slice(0, 10);
-    if (from && day < from) return false;
-    if (to && day > to) return false;
-    return true;
-  });
+  // date filtering now happens in SQL on move_date (the document's business date)
+  const inRange = rows;
 
-  // current balance per item, over every hangar (one warehouse = one balance)
+  // current balance per item, over every warehouse (all warehouses are equal)
   const mainBal = {};
   const mb = db.prepare(
     `SELECT item_id AS id,
@@ -1780,7 +1805,7 @@ function reportQuery(filters = {}) {
               COALESCE(SUM(m.piece_delta),0) AS net
        FROM stock_moves m JOIN warehouses w ON w.id = m.warehouse_id
        WHERE m.bucket IN (${buckets.map(() => '?').join(',')})
-       GROUP BY m.warehouse_id, w.name, w.code ORDER BY (w.kind='main') DESC, w.name`
+       GROUP BY m.warehouse_id, w.name, w.code ORDER BY w.name`
     ).all(...buckets);
     loc.forEach((l) => (locationTotals[l.id] = l));
   }
@@ -1848,13 +1873,12 @@ function sumBucket(bucket) {
 
 function summary() {
   const items = db.prepare('SELECT COUNT(*) AS c FROM items WHERE is_active=1').get().c;
-  const main = getMainWarehouse();
   const mainPieces = sumBucket(null);
   const mainGood = sumBucket('good');
   const mainDefect = sumBucket('defect');
   const mainHeld = sumBucket('held');
   const customerPieces = db.prepare('SELECT COALESCE(SUM(piece_delta),0) AS p FROM stock_moves WHERE is_customer=1').get().p;
-  const today = db.prepare("SELECT COUNT(*) AS c FROM stock_moves WHERE date(created_at)=date('now','localtime')").get().c;
+  const today = db.prepare("SELECT COUNT(*) AS c FROM stock_moves WHERE move_date=date('now','localtime')").get().c;
   const docs = db.prepare('SELECT COUNT(*) AS c FROM documents').get().c;
   const todayDocs = db.prepare("SELECT COUNT(*) AS c FROM documents WHERE doc_date=date('now','localtime')").get().c;
   const all = listItems('');
@@ -1862,7 +1886,7 @@ function summary() {
   return {
     items,
     warehouses: db.prepare('SELECT COUNT(*) AS c FROM warehouses').get().c,
-    hangars: db.prepare("SELECT COUNT(*) AS c FROM warehouses WHERE kind='sub'").get().c,
+    hangars: 0,
     parties: db.prepare('SELECT COUNT(*) AS c FROM parties').get().c,
     documents: docs,
     todayDocs,
@@ -1872,7 +1896,7 @@ function summary() {
     todayMoves: today,
     alerts,
     dbPath,
-    mainWarehouse: main ? main.name : null
+    mainWarehouse: null
   };
 }
 
@@ -1883,6 +1907,64 @@ function stats() {
 function int(v) {
   const n = Number(v);
   return Number.isFinite(n) ? Math.trunc(n) : 0;
+}
+
+/**
+ * Daily report: every active item × every warehouse, with what entered on the
+ * chosen day (move_date) and the current remaining balance. Per-warehouse
+ * subtotals plus a grand total across all warehouses. Quantities are in each
+ * item's base unit; buckets default to good only.
+ */
+function dailyReport(filters = {}) {
+  const day = (filters.date || '').trim() || db.prepare("SELECT date('now','localtime') AS d").get().d;
+  const wanted = Array.isArray(filters.buckets) && filters.buckets.length
+    ? filters.buckets.filter((b) => BUCKETS.includes(b)) : ['good'];
+  const buckets = wanted.length ? wanted : BUCKETS.slice();
+  const ph = buckets.map(() => '?').join(',');
+  const custWhere = filters.includeCustomer === true ? '' : 'AND m.is_customer = 0';
+
+  const moves = db.prepare(`
+    SELECT m.item_id AS itemId, m.warehouse_id AS warehouseId,
+           SUM(CASE WHEN m.piece_delta>0 THEN m.piece_delta ELSE 0 END) AS inQty,
+           SUM(CASE WHEN m.piece_delta<0 THEN -m.piece_delta ELSE 0 END) AS outQty
+    FROM stock_moves m
+    WHERE m.move_date = ? AND m.bucket IN (${ph}) ${custWhere}
+    GROUP BY m.item_id, m.warehouse_id
+  `).all(day, ...buckets);
+
+  const bal = db.prepare(`
+    SELECT m.item_id AS itemId, m.warehouse_id AS warehouseId,
+           SUM(m.piece_delta) AS balance
+    FROM stock_moves m
+    WHERE m.bucket IN (${ph}) ${custWhere}
+    GROUP BY m.item_id, m.warehouse_id
+  `).all(...buckets);
+
+  const mvMap = {}; moves.forEach((r) => (mvMap[`${r.itemId}:${r.warehouseId}`] = r));
+  const balMap = {}; bal.forEach((r) => (balMap[`${r.itemId}:${r.warehouseId}`] = r.balance));
+
+  const whs = listWarehouses().map((w) => ({ id: w.id, code: w.code, name: w.name, location: w.location || '' }));
+  const items = db.prepare('SELECT id, code, name, base_unit FROM items WHERE is_active=1 ORDER BY code').all();
+
+  const warehouseTotals = {}; whs.forEach((w) => (warehouseTotals[w.id] = { inQty: 0, outQty: 0, balance: 0 }));
+  const grand = { inQty: 0, outQty: 0, balance: 0 };
+
+  const rows = items.map((it) => {
+    const cells = {}; let totalIn = 0, totalOut = 0, totalBalance = 0;
+    for (const w of whs) {
+      const mv = mvMap[`${it.id}:${w.id}`] || { inQty: 0, outQty: 0 };
+      const balance = balMap[`${it.id}:${w.id}`] || 0;
+      cells[w.id] = { inQty: mv.inQty, outQty: mv.outQty, balance };
+      totalIn += mv.inQty; totalOut += mv.outQty; totalBalance += balance;
+      warehouseTotals[w.id].inQty += mv.inQty;
+      warehouseTotals[w.id].outQty += mv.outQty;
+      warehouseTotals[w.id].balance += balance;
+    }
+    grand.inQty += totalIn; grand.outQty += totalOut; grand.balance += totalBalance;
+    return { itemId: it.id, itemCode: it.code, itemName: it.name, baseUnit: it.base_unit, cells, totalIn, totalOut, totalBalance };
+  });
+
+  return { date: day, buckets, bucketLabels: buckets.map((b) => AR_BUCKET[b]), warehouses: whs, rows, warehouseTotals, grand };
 }
 
 module.exports = {
@@ -1956,6 +2038,7 @@ module.exports = {
   distinctValues,
   reportQuery,
   reportFacets,
+  dailyReport,
   ALL_SCREENS,
   ALL_PERMS,
   listUsers,

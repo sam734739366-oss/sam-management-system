@@ -1,11 +1,17 @@
 'use strict';
 
 /* =====================================================================
-   Transactions — purchase / sale / returns / hangar transfers + gate pass
+   Transactions — purchase / sale / returns / warehouse transfers + permits
    Every quantity is in the item's BASE UNIT. invoice_value is a free,
    comma-formatted amount labelled in ريال يمني and never used in math.
-   Parties, items and hangars are always picked with the searchable combo.
-   Short stock warns instead of blocking the save.
+   Parties, items and warehouses are always picked with the searchable combo.
+
+   V3:
+   · the document mirrors an invoice coming from another system — the
+     external invoice number and the party name are mandatory.
+   · EVERY LINE carries its own warehouse, so one invoice may leave from
+     several warehouses at once (each with its own keeper and gate).
+   · each warehouse involved gets its own permit printed from the document.
    ===================================================================== */
 (function () {
   const {
@@ -15,14 +21,19 @@
 
   const state = {
     docs: [], items: [], warehouses: [], parties: [],
-    kinds: { purchase: 'مشتريات', sale: 'مبيعات', sale_return: 'مرتجع مبيعات', purchase_return: 'مرتجع مشتريات', transfer: 'نقل بين الهناجر' },
+    kinds: { purchase: 'مشتريات', sale: 'مبيعات', sale_return: 'مرتجع مبيعات', purchase_return: 'مرتجع مشتريات', transfer: 'نقل بين المخازن' },
     filter: { kind: '', search: '' }
   };
   const BUCKETS = [['good', 'سليم'], ['defect', 'تالف'], ['held', 'محرز']];
   const bucketAr = (b) => ({ good: 'سليم', defect: 'تالف', held: 'محرز' }[b] || b);
+  /** kinds that ADD stock — a shortage warning makes no sense for them */
+  const ADDS_STOCK = ['purchase', 'sale_return'];
+  /** kinds that need an external invoice number + a party */
+  const isExternal = (kind) => kind !== 'transfer';
 
   const itemById = (id) => state.items.find((i) => i.id === Number(id)) || null;
   const unitOf = (id) => (itemById(id) || {}).base_unit || 'حبة';
+  const whById = (id) => state.warehouses.find((w) => w.id === Number(id)) || null;
 
   /* ---------------- data ---------------- */
   async function load() {
@@ -42,6 +53,7 @@
   }
 
   const activeWh = () => state.warehouses.filter((w) => w.is_active);
+  const whOptions = () => activeWh().map((w) => ({ id: w.id, label: w.name, code: w.code }));
   const itemOptions = () => state.items
     .filter((i) => i.is_active)
     .map((i) => ({ id: i.id, label: i.name, code: i.code, sub: `${SamDB.fmt(i.mainStock.good)} ${i.base_unit}` }));
@@ -58,9 +70,11 @@
     tb.innerHTML = '';
     state.docs.forEach((d, idx) => {
       const tr = el('tr');
-      const whCell = d.kind === 'transfer'
-        ? `${esc(d.warehouseName || '—')} ← ${esc(d.destWarehouseName || '—')}`
-        : esc(d.warehouseName || '—');
+      const srcs = d.warehouseNames || d.warehouseName || '';
+      const dests = d.destWarehouseNames || '';
+      const whCell = d.kind === 'transfer' && dests
+        ? `${esc(srcs)} ← ${esc(dests)}`
+        : esc(srcs || '—');
       tr.innerHTML = `
         <td class="num">${idx + 1}</td>
         <td class="mono">${esc(d.doc_no)}</td>
@@ -75,9 +89,7 @@
         view: () => viewDoc(d.id),
         edit: () => openEditor(d.id),
         del: () => removeDoc(d),
-        extra: d.kind === 'sale'
-          ? [{ label: 'طباعة تصريح خروج', icon: 'i-print', onClick: () => printGatePass(d.id) }]
-          : [{ label: 'طباعة المستند', icon: 'i-print', onClick: () => printInvoice(d.id) }]
+        extra: permitMenuItems(d)
       });
       tb.appendChild(tr);
     });
@@ -93,6 +105,13 @@
 
   function kindChip(kind) {
     return { purchase: 'ok', sale: 'main', sale_return: 'warn', purchase_return: 'warn', transfer: 'sub' }[kind] || 'sub';
+  }
+
+  /** the context-menu entry that prints the permits of a document */
+  function permitMenuItems(d) {
+    if (d.kind === 'sale') return [{ label: 'طباعة تصاريح الخروج', icon: 'i-print', onClick: () => printPermits(d.id) }];
+    if (d.kind === 'transfer') return [{ label: 'طباعة تصريح الانتقال', icon: 'i-print', onClick: () => printPermits(d.id) }];
+    return [{ label: 'طباعة المستند', icon: 'i-print', onClick: () => printInvoice(d.id) }];
   }
 
   /* ---------------- editor ---------------- */
@@ -126,8 +145,13 @@
       seg.appendChild(b);
     });
 
-    const docNo = input({ class: 'input', value: doc ? doc.doc_no : '', placeholder: 'يُولَّد تلقائياً' });
-    const docDate = input({ class: 'input', type: 'date', value: doc ? doc.doc_date : new Date().toISOString().slice(0, 10) });
+    /* the external invoice number — the one printed on the customer's paper */
+    const docNo = input({
+      class: 'input',
+      value: doc ? doc.doc_no : '',
+      placeholder: 'رقم الفاتورة من النظام الآخر'
+    });
+    const docDate = input({ class: 'input', type: 'date', value: doc ? doc.doc_date : SamUI.today() });
     // empty by default, grouped with commas, currency spelled out beside it
     const invoiceValue = numInput({ value: doc ? doc.invoice_value : 0, placeholder: '0' });
     const notes = textarea({ rows: 2, value: doc ? doc.notes || '' : '', placeholder: 'ملاحظات المستند' });
@@ -150,16 +174,29 @@
     });
     partyCombo.setValue(doc ? doc.party_id : null, false);
 
+    /* the top combos are DEFAULTS for newly added lines — every line keeps
+       its own warehouse so one invoice can leave from several of them. */
     const whCombo = combo(whHost, {
-      placeholder: 'اختر الموقع…',
-      items: activeWh().map((w) => ({ id: w.id, label: w.name, code: w.kind === 'main' ? 'رئيسي' : 'هنجر' })),
-      onChange: () => lines.forEach((l) => refreshAvail(l))
+      placeholder: 'المخزن الافتراضي…',
+      emptyText: 'لا توجد مخازن',
+      items: whOptions(),
+      onChange: (v) => {
+        /* a line that has no warehouse of its own follows the document default */
+        lines.forEach((l) => { if (l.whCombo && l.whCombo.getValue() == null) l.whCombo.setValue(v, false); });
+      }
     });
-    whCombo.setValue(doc ? doc.warehouse_id : (activeWh().find((w) => w.kind === 'main') || {}).id || null, false);
+    whCombo.setValue(doc ? doc.warehouse_id : (activeWh()[0] || {}).id || null, false);
 
     const destCombo = combo(destHost, {
-      placeholder: 'هنجر الوجهة…',
-      items: activeWh().map((w) => ({ id: w.id, label: w.name, code: w.kind === 'main' ? 'رئيسي' : 'هنجر' }))
+      placeholder: 'الوجهة الافتراضية…',
+      emptyText: 'لا توجد مخازن',
+      items: whOptions(),
+      onChange: (v) => {
+        /* the editor opens with one empty line, so the destination picked here
+           must reach it — otherwise saving a transfer fails with a confusing
+           "الوجهة في السطر 1" and the user has to guess why */
+        lines.forEach((l) => { if (l.destCombo && l.destCombo.getValue() == null) l.destCombo.setValue(v, false); });
+      }
     });
     destCombo.setValue(doc ? doc.dest_warehouse_id : null, false);
 
@@ -169,26 +206,48 @@
       c.appendChild(node);
       return c;
     };
+    /* a "apply to every line" button under a default combo */
+    const defaultCell = (label, node, cls, pick, what) => {
+      const c = cell(label, node, cls);
+      const b = el('button', 'btn btn-sm btn-ghost', `${icon('i-swap')}<span>تطبيق على كل الأسطر</span>`);
+      b.type = 'button';
+      b.addEventListener('click', () => {
+        const v = pick();
+        if (v == null) return toast(`اختر ${what} أولاً`, 'warn');
+        lines.forEach((l) => {
+          if (l.whCombo) l.whCombo.setValue(v, false);
+          refreshAvail(l);
+        });
+        toast(`تم تطبيق ${what} على كل الأسطر`, 'ok');
+      });
+      c.appendChild(b);
+      return c;
+    };
+
     const grid = el('div', 'ed-grid');
     grid.append(
-      cell('رقم المستند', docNo),
+      cell('رقم الفاتورة', docNo),
       cell('التاريخ', docDate),
       cell('العميل / المورد', partyHost, 'party-cell'),
-      cell('الموقع / الهنجر', whHost),
-      cell('هنجر الوجهة', destHost, 'dest-cell'),
+      defaultCell('المخزن (للسطور الجديدة)', whHost, 'wh-default', () => whCombo.getValue(), 'المخزن'),
+      defaultCell('الوجهة (للسطور الجديدة)', destHost, 'dest-cell', () => destCombo.getValue(), 'الوجهة'),
       cell(`قيمة الفاتورة (${CURRENCY})`, affixInput(invoiceValue, CURRENCY)),
       cell('ملاحظات', notes, 'full')
     );
     body.appendChild(grid);
 
     /* --- lines table --- */
-    body.appendChild(el('div', 'ed-sec', `${icon('i-box')}<span>أسطر المستند — الكمية بالوحدة الأساسية</span>`));
+    body.appendChild(el('div', 'ed-sec', `${icon('i-box')}<span>أسطر المستند — لكل سطر مخزنه، والكمية بالوحدة الأساسية</span>`));
     const linesTbl = el('table', 'tbl lines-tbl');
     linesTbl.innerHTML = `<thead><tr>
-        <th style="width:31%">الصنف</th><th style="width:74px">الوحدة</th><th>الحالة</th>
-        <th style="width:104px">الكمية</th>
-        <th style="width:86px" title="معلوماتي فقط">كراتين</th><th style="width:86px" title="معلوماتي فقط">أكياس</th>
-        <th style="width:96px">المتاح</th><th style="width:40px"></th></tr></thead><tbody></tbody>`;
+        <th>الصنف</th>
+        <th style="width:152px">المخزن</th>
+        <th style="width:152px" class="dest-col">الوجهة</th>
+        <th class="unit-h" style="width:74px">الوحدة</th>
+        <th style="width:138px">الحالة</th>
+        <th style="width:100px">الكمية</th>
+        <th style="width:80px" title="معلوماتي فقط">كراتين</th><th style="width:80px" title="معلوماتي فقط">أكياس</th>
+        <th style="width:88px">المتاح</th><th style="width:36px"></th></tr></thead><tbody></tbody>`;
     const linesBody = linesTbl.querySelector('tbody');
     body.appendChild(linesTbl);
 
@@ -199,7 +258,7 @@
     addRow.type = 'button';
     addRow.addEventListener('click', () => addLine());
     body.appendChild(el('div', 'row-add').appendChild(addRow).parentNode);
-    body.appendChild(el('p', 'foot-note', 'حقنا كراتين وأكياس للتوثيق فقط — الحساب كله على الكمية بالوحدة الأساسية. الكمية أكبر من المتاح؟ سيظهر تحذير ويمكن الحفظ.'));
+    body.appendChild(el('p', 'foot-note', 'الرقم والعميل مطلوبان لأن المستند يعكس فاتورة نظام آخر. لكل سطر مخزنه — قد تخرج فاتورة واحدة من عدة مخازن. الكمية أكبر من المتاح؟ يظهر تحذير ويمكن الحفظ.'));
 
     const foot = el('div', 'modal-foot');
     box.appendChild(body);
@@ -225,11 +284,16 @@
       if (!l.piecesEl.placeholder || !has) l.piecesEl.placeholder = '0';
     }
 
+    /** availability inside the line's own warehouse */
     async function refreshAvail(l) {
       setUnit(l);
-      if (!l.itemCombo.getValue()) { l.availEl.textContent = '—'; l.availEl.className = 'avail'; return; }
+      const itemId = l.itemCombo.getValue();
+      if (!itemId) { l.availEl.textContent = '—'; l.availEl.className = 'avail'; l.avail = null; return; }
+      const whId = l.whCombo ? l.whCombo.getValue() : null;
       try {
-        const avail = await SamDB.call('availablePieces', l.itemCombo.getValue(), l.bucket, doc ? doc.id : null);
+        const avail = whId
+          ? await SamDB.call('availableInLocation', itemId, whId, l.bucket, doc ? doc.id : null)
+          : await SamDB.call('availablePieces', itemId, l.bucket, doc ? doc.id : null);
         l.avail = avail;
         l.availEl.textContent = SamDB.fmt(avail);
         l.availEl.className = SamDB.n(l.piecesEl.value) > avail ? 'avail low' : 'avail';
@@ -239,6 +303,8 @@
     function addLine(data) {
       const tr = el('tr');
       const itemHost = el('div');
+      const whLineHost = el('div');
+      const destLineHost = el('div');
       const unitBox = el('div');
       const bucketBox = el('div', 'bucket-seg');
       const piecesEl = numInput({ value: data ? data.pieces : 0, placeholder: '0' });
@@ -248,7 +314,7 @@
       const del = el('button', 'row-del', '×');
       del.type = 'button';
 
-      const l = { itemCombo: null, bucket: data ? data.bucket : 'good', piecesEl, cartonsEl, bagsEl, availEl, unitEl: unitBox };
+      const l = { itemCombo: null, whCombo: null, destCombo: null, bucket: data ? data.bucket : 'good', piecesEl, cartonsEl, bagsEl, availEl, unitEl: unitBox };
       l.itemCombo = combo(itemHost, {
         placeholder: 'اكتب حرفين من اسم الصنف أو الكود…',
         emptyText: 'لا يوجد صنف مطابق',
@@ -256,6 +322,23 @@
         onChange: () => refreshAvail(l)
       });
       if (data) l.itemCombo.setValue(data.item_id, false);
+
+      /* the line's own warehouse — the heart of V3 */
+      l.whCombo = combo(whLineHost, {
+        placeholder: 'المخزن…',
+        emptyText: 'لا توجد مخازن',
+        items: whOptions(),
+        onChange: () => refreshAvail(l)
+      });
+      l.whCombo.setValue(data ? data.warehouse_id : (whCombo.getValue() || (activeWh()[0] || {}).id || null), false);
+
+      /* the destination of this line (transfers only) */
+      l.destCombo = combo(destLineHost, {
+        placeholder: 'الوجهة…',
+        emptyText: 'لا توجد مخازن',
+        items: whOptions()
+      });
+      l.destCombo.setValue(data ? data.dest_warehouse_id : (destCombo.getValue() || null), false);
 
       BUCKETS.forEach(([val, label]) => {
         const b = el('button', `b-btn ${l.bucket === val ? 'on' : ''}`, label);
@@ -281,6 +364,8 @@
       });
 
       tr.append(el('td', '', '').appendChild(itemHost).parentNode,
+        el('td', '').appendChild(whLineHost).parentNode,
+        el('td', 'dest-col').appendChild(destLineHost).parentNode,
         el('td', 'unit-c').appendChild(unitBox).parentNode,
         el('td').appendChild(bucketBox).parentNode,
         el('td').appendChild(piecesEl).parentNode,
@@ -301,10 +386,18 @@
       const isTransfer = kind === 'transfer';
       grid.querySelector('.party-cell').style.display = isTransfer ? 'none' : '';
       grid.querySelector('.dest-cell').style.display = isTransfer ? '' : 'none';
+      /* the destination column of the lines table exists only for transfers */
+      linesTbl.querySelectorAll('.dest-col').forEach((n) => { n.style.display = isTransfer ? '' : 'none'; });
       const wantCustomer = kind === 'sale' || kind === 'sale_return';
       partyCombo.setItems(partyOptions(wantCustomer));
+      docNo.placeholder = isTransfer ? 'رقم مستند النقل (اختياري)' : 'رقم الفاتورة من النظام الآخر';
       const gateBtn = foot.querySelector('[data-act="gate"]');
-      if (gateBtn) gateBtn.classList.toggle('hidden', kind !== 'sale');
+      if (gateBtn) {
+        const show = kind === 'sale' || kind === 'transfer';
+        gateBtn.classList.toggle('hidden', !show);
+        const span = gateBtn.querySelector('span');
+        if (span) span.textContent = kind === 'transfer' ? 'حفظ وطباعة تصريح الانتقال' : 'حفظ وطباعة تصاريح الخروج';
+      }
       errBar.innerHTML = '';
       lines.forEach((l) => refreshAvail(l));
     }
@@ -320,7 +413,7 @@
     };
     mkBtn('save', doc ? 'حفظ التعديلات' : 'حفظ المستند', 'btn-primary', 'Ctrl+S');
     mkBtn('print', 'حفظ وطباعة المستند', 'btn-gold');
-    mkBtn('gate', 'حفظ وطباعة تصريح خروج', 'btn-ghost');
+    mkBtn('gate', 'حفظ وطباعة تصاريح الخروج', 'btn-ghost');
     mkBtn('cancel', 'إغلاق', 'btn-ghost');
 
     /* --- what would go negative if we save as typed --- */
@@ -330,16 +423,39 @@
         const id = l.itemCombo.getValue();
         const qty = SamDB.n(l.piecesEl.value);
         if (!id || qty <= 0) continue;
-        if (kind === 'transfer' || kind === 'purchase' || kind === 'sale_return') continue; // these add stock
+        if (ADDS_STOCK.includes(kind)) continue; // these add stock
         if (l.avail == null) continue;
         if (qty > l.avail) {
+          const w = whById(l.whCombo ? l.whCombo.getValue() : null);
           out.push({
             item: `${(itemById(id) || {}).code || ''} — ${(itemById(id) || {}).name || ''}`,
-            text: `المتاح ${SamDB.fmt(l.avail)} والكمية ${SamDB.fmt(qty)} → الرصيد يصبح ${SamDB.fmt(l.avail - qty)}`
+            text: `المخزن «${w ? w.name : '—'}» — المتاح ${SamDB.fmt(l.avail)} والكمية ${SamDB.fmt(qty)} → الرصيد يصبح ${SamDB.fmt(l.avail - qty)}`
           });
         }
       }
       return out;
+    }
+
+    /* --- missing fields the user must fill before saving --- */
+    function missingFields() {
+      const miss = [];
+      if (isExternal(kind)) {
+        if (!docNo.value.trim()) miss.push('رقم الفاتورة (من النظام الآخر)');
+        if (!partyCombo.getValue()) miss.push(kind === 'purchase' || kind === 'purchase_return' ? 'اسم المورد' : 'اسم العميل');
+      }
+      if (!docDate.value) miss.push('التاريخ');
+      lines.forEach((l, i) => {
+        const at = i + 1;
+        if (!l.itemCombo.getValue()) miss.push(`الصنف في السطر ${at}`);
+        if (!l.whCombo || !l.whCombo.getValue()) miss.push(`المخزن في السطر ${at}`);
+        if (kind === 'transfer') {
+          const dst = l.destCombo ? l.destCombo.getValue() : null;
+          if (!dst) miss.push(`الوجهة في السطر ${at}`);
+          else if (dst === l.whCombo.getValue()) miss.push(`الوجهة في السطر ${at} (نفس المخزن)`);
+        }
+        if (SamDB.n(l.piecesEl.value) <= 0) miss.push(`الكمية في السطر ${at}`);
+      });
+      return miss;
     }
 
     /* --- submit --- */
@@ -349,6 +465,11 @@
       errBar.innerHTML = '';
       if (!lines.length) {
         errBar.innerHTML = `${icon('i-warn')}<span>أضف سطراً واحداً على الأقل</span>`;
+        return;
+      }
+      const miss = missingFields();
+      if (miss.length) {
+        errBar.innerHTML = `${icon('i-warn')}<span>أكمل الحقول التالية: ${esc(miss.join(' · '))}</span>`;
         return;
       }
       if (!skipWarning) {
@@ -371,8 +492,9 @@
         doc_no: docNo.value.trim(),
         doc_date: docDate.value,
         party_id: kind === 'transfer' ? null : partyCombo.getValue(),
-        warehouse_id: whCombo.getValue(),
-        dest_warehouse_id: kind === 'transfer' ? destCombo.getValue() : null,
+        /* the header keeps the first line's warehouse — the lines carry the truth */
+        warehouse_id: lines[0] ? lines[0].whCombo.getValue() : null,
+        dest_warehouse_id: kind === 'transfer' && lines[0] ? lines[0].destCombo.getValue() : null,
         invoice_value: SamDB.n(invoiceValue.value) ? SamDB.money(invoiceValue.value) : '',
         notes: notes.value,
         lines: lines.map((l) => ({
@@ -381,8 +503,8 @@
           pieces: SamDB.n(l.piecesEl.value),
           cartons: SamDB.n(l.cartonsEl.value),
           bags: SamDB.n(l.bagsEl.value),
-          warehouse_id: whCombo.getValue(),
-          dest_warehouse_id: kind === 'transfer' ? destCombo.getValue() : null
+          warehouse_id: l.whCombo.getValue(),
+          dest_warehouse_id: kind === 'transfer' ? l.destCombo.getValue() : null
         }))
       };
       foot.querySelectorAll('.btn').forEach((b) => (b.disabled = true));
@@ -395,7 +517,7 @@
         SamUI.bus.emit();
         close(saved);
         if (action === 'print') printInvoice(saved.id);
-        if (action === 'gate') printGatePass(saved.id);
+        if (action === 'gate') printPermits(saved.id);
       } catch (e) {
         errBar.innerHTML = `${icon('i-warn')}<span>${esc(e.message)}</span>`;
       } finally {
@@ -446,7 +568,8 @@
       pieces: SamDB.fmt(l.pieces),
       cartons: SamDB.fmt(l.cartons),
       bags: SamDB.fmt(l.bags),
-      wh: l.warehouseName + (l.destWarehouseName ? ` ← ${l.destWarehouseName}` : '')
+      wh: l.warehouseName || '—',
+      dest: l.destWarehouseName ? `← ${l.destWarehouseName}` : ''
     }));
     const html = SamUI.tableHtml(
       [
@@ -456,31 +579,34 @@
         { key: 'cartons', label: 'كراتين' },
         { key: 'bags', label: 'أكياس' },
         { key: 'pieces', label: 'الكمية' },
-        { key: 'wh', label: 'الموقع' }
+        { key: 'wh', label: 'المخزن' },
+        { key: 'dest', label: 'الوجهة' }
       ],
       rows,
       SamDB.fmt(d.totalPieces)
     );
+    const whSummary = [...new Set(d.lines.map((l) => l.warehouseName).filter(Boolean))].join(' · ');
     const v = await modal({
       title: `${d.kindAr} — ${d.doc_no}`,
-      width: 'min(820px, 95vw)',
+      width: 'min(860px, 95vw)',
       body: `<dl class="info">
           <dt>التاريخ</dt><dd>${esc(d.doc_date)}</dd>
           <dt>العميل / المورد</dt><dd>${esc(d.partyName || '—')}</dd>
-          <dt>الموقع</dt><dd>${esc(d.warehouseName || '—')}${d.destWarehouseName ? ` ← ${esc(d.destWarehouseName)}` : ''}</dd>
+          <dt>المخازن</dt><dd>${esc(whSummary || '—')}</dd>
           <dt>قيمة الفاتورة</dt><dd>${d.invoice_value ? `${esc(d.invoice_value)} ${esc(CURRENCY)}` : '—'}</dd>
           <dt>ملاحظات</dt><dd>${esc(d.notes || '—')}</dd>
         </dl><div style="margin-top:14px">${html}</div>`,
       actions: [
         { label: 'طباعة المستند', value: 'print', kind: 'btn-primary', icon: 'i-print' },
-        ...(d.kind === 'sale' ? [{ label: 'تصريح خروج', value: 'gate', kind: 'btn-gold', icon: 'i-print' }] : []),
+        ...(d.kind === 'sale' ? [{ label: 'تصاريح الخروج', value: 'gate', kind: 'btn-gold', icon: 'i-print' }] : []),
+        ...(d.kind === 'transfer' ? [{ label: 'تصريح الانتقال', value: 'gate', kind: 'btn-gold', icon: 'i-print' }] : []),
         { label: 'تعديل', value: 'edit', kind: 'btn-ghost', icon: 'i-edit' },
         { label: 'إغلاق', value: 'close', kind: 'btn-ghost' }
       ]
     });
     if (v === 'edit') openEditor(id);
     if (v === 'print') printInvoice(id);
-    if (v === 'gate') printGatePass(id);
+    if (v === 'gate') printPermits(id);
   }
 
   /* ---------------- printing ---------------- */
@@ -490,11 +616,15 @@
     return 'الجهة';
   }
 
+  /** the invoice itself — every line shows its own warehouse */
   async function printInvoice(id) {
     const d = await SamDB.call('getDocument', id);
+    const isTransfer = d.kind === 'transfer';
     const rows = d.lines.map((l, i) => ({
       no: i + 1,
       item: `${l.itemCode} — ${l.itemName}`,
+      warehouse: l.warehouseName || '—',
+      dest: l.destWarehouseName || '',
       unit: l.baseUnit,
       cartons: SamDB.fmt(l.cartons),
       bags: SamDB.fmt(l.bags),
@@ -503,6 +633,8 @@
     const cols = [
       { key: 'no', label: 'م', align: 'center' },
       { key: 'item', label: 'الصنف' },
+      { key: 'warehouse', label: 'المخزن' },
+      ...(isTransfer ? [{ key: 'dest', label: 'الوجهة' }] : []),
       { key: 'unit', label: 'الوحدة', align: 'center' },
       { key: 'cartons', label: 'كراتين', align: 'center' },
       { key: 'bags', label: 'أكياس', align: 'center' },
@@ -512,17 +644,16 @@
       title: d.kindAr,
       subtitle: `مستند رقم ${d.doc_no}`,
       docRef: d.doc_no,
-      docRefLabel: 'رقم المستند',
+      docRefLabel: 'رقم الفاتورة',
       // centred block above the table: party, document number, date
       head: [
         { k: partyLabel(d), v: d.partyName || '—' },
-        { k: 'رقم المستند', v: d.doc_no },
+        { k: 'رقم الفاتورة', v: d.doc_no },
         { k: 'التاريخ', v: d.doc_date }
       ],
       bodyHtml: `${tableHtml(cols, rows, SamDB.fmt(d.totalPieces))}
         <p class="doc-note" style="margin-top:4mm">
-          <b>الموقع:</b> ${esc(d.warehouseName || '—')}${d.destWarehouseName ? ` ← ${esc(d.destWarehouseName)}` : ''}
-          &nbsp;·&nbsp; <b>قيمة الفاتورة:</b> ${d.invoice_value ? `${esc(d.invoice_value)} ${esc(CURRENCY)}` : '—'}
+          <b>قيمة الفاتورة:</b> ${d.invoice_value ? `${esc(d.invoice_value)} ${esc(CURRENCY)}` : '—'}
           ${d.notes ? `<br><b>ملاحظات:</b> ${esc(d.notes)}` : ''}
         </p>`,
       footer: 'SAM Management System — جميع الكميات بالوحدة الأساسية',
@@ -530,48 +661,99 @@
     });
   }
 
-  /** تصريح خروج — quantities only, never prices */
-  async function printGatePass(id) {
-    const d = await SamDB.call('getDocument', id);
-    const rows = d.lines.map((l, i) => ({
-      no: i + 1,
-      item: `${l.itemCode} — ${l.itemName}`,
-      unit: l.baseUnit,
-      cartons: SamDB.fmt(l.cartons),
-      bags: SamDB.fmt(l.bags),
-      pieces: SamDB.fmt(l.pieces)
-    }));
-    const html = tableHtml(
-      [
+  /**
+   * One permit page per warehouse involved in the document.
+   *  · sale     → exit permit (customer + that warehouse's quantities)
+   *  · transfer → movement permit (source warehouse → destination)
+   * The quantities on all permits add up to the document total, and no
+   * price ever appears on a permit.
+   */
+  function permitPages(d) {
+    const isTransfer = d.kind === 'transfer';
+    const groups = new Map();
+    d.lines.forEach((l) => {
+      const key = l.warehouse_id || 0;
+      if (!groups.has(key)) {
+        groups.set(key, {
+          name: l.warehouseName || '—',
+          location: l.warehouseLocation || '',
+          dests: new Map(),
+          lines: []
+        });
+      }
+      const g = groups.get(key);
+      g.lines.push(l);
+      if (isTransfer && l.dest_warehouse_id) {
+        g.dests.set(l.dest_warehouse_id, `${l.destWarehouseName || '—'}${l.destWarehouseLocation ? ' — ' + l.destWarehouseLocation : ''}`);
+      }
+    });
+
+    const count = groups.size;
+    const pages = [...groups.values()].map((g, gi) => {
+      const rows = g.lines.map((l, i) => ({
+        no: i + 1,
+        item: `${l.itemCode} — ${l.itemName}`,
+        unit: l.baseUnit,
+        cartons: SamDB.fmt(l.cartons),
+        bags: SamDB.fmt(l.bags),
+        pieces: SamDB.fmt(l.pieces)
+      }));
+      const total = g.lines.reduce((a, l) => a + SamDB.n(l.pieces), 0);
+      const cols = [
         { key: 'no', label: 'م', align: 'center' },
         { key: 'item', label: 'الصنف' },
         { key: 'unit', label: 'الوحدة', align: 'center' },
         { key: 'cartons', label: 'كراتين', align: 'center' },
         { key: 'bags', label: 'أكياس', align: 'center' },
         { key: 'pieces', label: 'الكمية', align: 'end' }
-      ],
-      rows,
-      SamDB.fmt(d.totalPieces)
-    );
+      ];
+      const head = isTransfer
+        ? [
+          { k: 'من مخزن', v: `${g.name}${g.location ? ' — ' + g.location : ''}` },
+          { k: 'إلى مخزن', v: [...g.dests.values()].join(' / ') || '—' },
+          { k: 'رقم المستند', v: d.doc_no },
+          { k: 'التاريخ', v: d.doc_date }
+        ]
+        : [
+          { k: 'العميل / الجهة', v: d.partyName || '—' },
+          { k: 'رقم المستند', v: d.doc_no },
+          { k: 'التاريخ', v: d.doc_date },
+          { k: 'المخزن', v: `${g.name}${g.location ? ' — ' + g.location : ''}` }
+        ];
+      return {
+        title: isTransfer ? 'تصريح انتقال بين المخازن' : 'تصريح خروج للبوابة',
+        subtitle: `مرفق بمستند ${d.kindAr || ''} رقم ${d.doc_no} — تصريح ${gi + 1} من ${count}`,
+        docRef: `GP-${d.doc_no}-${gi + 1}`,
+        docRefLabel: 'رقم التصريح',
+        head,
+        bodyHtml: `
+          <p class="doc-note">${isTransfer
+            ? 'صرح بانتقال الكميات المذكورة من المخزن المصدر أعلاه إلى الوجهة المذكورة، ويمنع الخروج بأي كمية غير مذكورة.'
+            : 'صرح بخروج الكميات المذكورة من هذا المخزن فقط إلى العميل أعلاه، ويمنع الخروج بأي بضاعة غير مذكورة.'}
+            <b>لا تظهر الأسعار في هذا التصريح.</b></p>
+          <p class="doc-note">وسيلة النقل: .......................... &nbsp;&nbsp; اسم السائق: .......................... &nbsp;&nbsp; رقم اللوحة: .................</p>
+          ${tableHtml(cols, rows, SamDB.fmt(total))}
+          <p class="doc-note" style="margin-top:3mm"><b>إجمالي هذا التصريح:</b> ${SamDB.fmt(total)} · <b>إجمالي المستند:</b> ${SamDB.fmt(d.totalPieces)}</p>`,
+        footer: 'SAM Management System — تصريح (كميات فقط)',
+        signatures: ['أمين المخازن', 'السائق', 'حارس البوابة']
+      };
+    });
+
+    /* the permits must add up to the document — never silently differ */
+    const sum = [...groups.values()].reduce((a, g) => a + g.lines.reduce((x, l) => x + SamDB.n(l.pieces), 0), 0);
+    if (sum !== SamDB.n(d.totalPieces)) console.warn('permit reconciliation mismatch', sum, d.totalPieces);
+    return pages;
+  }
+
+  /** print the permits of a document — one page per warehouse */
+  async function printPermits(id) {
+    const d = await SamDB.call('getDocument', id);
+    if (!d) return toast('المستند غير موجود', 'bad');
+    const pages = permitPages(d);
+    if (!pages.length) return toast('لا توجد أصناف في المستند', 'warn');
     printPreview({
-      title: 'تصريح خروج',
-      subtitle: `مرفق بمستند مبيعات رقم ${d.doc_no}`,
-      docRef: `GP-${d.doc_no}`,
-      docRefLabel: 'رقم التصريح',
-      head: [
-        { k: 'العميل / الجهة', v: d.partyName || '—' },
-        { k: 'رقم التصريح', v: `GP-${d.doc_no}` },
-        { k: 'التاريخ', v: d.doc_date }
-      ],
-      bodyHtml: `
-        <p class="doc-note">
-          صرح بخروج الكميات التالية فقط، ويمنع خروج أي بضاعة غير مذكورة في هذا التصريح.
-          <b>لا تظهر الأسعار في هذا المستند.</b>
-        </p>
-        <p class="doc-note">وسيلة النقل: .......................... &nbsp;&nbsp; اسم السائق: .......................... &nbsp;&nbsp; رقم اللوحة: .................</p>
-        ${html}`,
-      footer: 'SAM Management System — تصريح خروج (كميات فقط)',
-      signatures: ['السائق', 'أمين المخزن', 'حراسة البوابة', 'المدير']
+      title: `${d.kind === 'transfer' ? 'تصاريح انتقال' : 'تصاريح خروج'} (${pages.length})`,
+      pages
     });
   }
 
@@ -610,6 +792,6 @@
     load();
   });
 
-  window.SamDocs = { load, openEditor, viewDoc, printInvoice, printGatePass };
+  window.SamDocs = { load, openEditor, viewDoc, printInvoice, printPermits, permitPages };
   SamUI.bus.on(load);
 })();
