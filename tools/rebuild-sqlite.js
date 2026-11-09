@@ -17,7 +17,9 @@ const fs = require('fs');
 
 const ROOT = path.resolve(__dirname, '..');
 const SQL_DIR = path.join(ROOT, 'node_modules', 'better-sqlite3');
-const BIN = process.platform === 'win32' ? 'node.cmd' : 'node';
+// use the running node binary directly: spawning "node.cmd" (a batch file)
+// without a shell fails with EINVAL on Node >= 20.12
+const BIN = process.execPath;
 
 const electronVersion = () => {
   const p = path.join(ROOT, 'node_modules', 'electron', 'package.json');
