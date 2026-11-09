@@ -1,0 +1,56 @@
+name: Release
+
+# Publishing the installers from GitHub's own runners.
+#
+# Why not from a local machine: this link sustains only ~75 KB/s in both
+# directions, and GitHub aborts any upload request whose body is still
+# streaming after ~10 minutes ("408 Upload body timed out due to
+# inactivity"). A ~93 MB installer cannot be pushed from here in one
+# request. The runner has a fast link, so the build and the upload both
+# happen on GitHub.
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build and publish
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Rebuild better-sqlite3 for the Electron ABI
+        run: npm run rebuild:native
+
+      - name: Build and publish the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EP_GH_IGNORE_TIME: 'true'
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: npx electron-builder --win --x64 --publish always
+
+      - name: Release summary
+        if: always()
+        shell: pwsh
+        run: Get-ChildItem -Path dist -File | Select-Object Name, Length
