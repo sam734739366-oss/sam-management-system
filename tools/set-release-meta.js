@@ -12,6 +12,9 @@ const OWNER = 'sam734739366-oss';
 const REPO = 'sam-management-system';
 
 function token() {
+  /* On the CI runner there is no stored credential — the workflow passes
+     GH_TOKEN in the environment. Locally we fall back to git's store. */
+  if (process.env.GH_TOKEN) return process.env.GH_TOKEN.trim();
   const out = execFileSync('git', ['credential', 'fill'], {
     input: 'protocol=https\nhost=github.com\n\n', encoding: 'utf8', timeout: 30000
   });

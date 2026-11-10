@@ -42,13 +42,31 @@ jobs:
       - name: Rebuild better-sqlite3 for the Electron ABI
         run: npm run rebuild:native
 
-      - name: Build and publish the release
+      - name: Build the installers (no publishing yet)
+        env:
+          # the token is still here so the github publish config resolves
+          # exactly as it does in a normal build — nothing is uploaded
+          # because --publish never turns the publishing off.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: npx electron-builder --win --x64 --publish never
+
+      # electron-builder makes one publisher per target (nsis + portable) and
+      # they race each other to create the release — GitHub then holds TWO
+      # releases with the same tag, and the page shows only one of them.
+      # So the build never publishes; this step publishes once, for real.
+      - name: Publish the release (a single release, no duplicates)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           EP_GH_IGNORE_TIME: 'true'
-          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-        run: npx electron-builder --win --x64 --publish always
+        run: node tools/publish-release.js
+
+      - name: Arabic release title and notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node tools/set-release-meta.js
 
       - name: Release summary
         if: always()
