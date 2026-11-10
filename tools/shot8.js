@@ -107,6 +107,12 @@ app.whenReady().then(async () => {
   const cust = dbMod.addParty({ name: 'موزع الرياض', phone: '0555123456', type: 'customer' });
   const hangar = dbMod.addWarehouse({ code: 'H02', name: 'هنجر التالف', kind: 'sub', location: 'خلف الخط' });
   dbMod.setProdRouting({ fgGoodWh: main.id, fgDefectWh: hangar.id, rawDefectWh: hangar.id, bagItemId: idOf('9001'), bagWhId: main.id });
+  /* a stock adjustment that writes DEFECT stock — so the bucket filter has
+     something of its own to reveal */
+  dbMod.saveDocument({
+    kind: 'adjustment', doc_date: '2026-10-30', warehouse_id: main.id, notes: 'تالف مخزني',
+    lines: [{ item_id: AMPOULE, warehouse_id: main.id, bucket: 'defect', pieces: 120, sign: 1 }]
+  });
 
   win = new BrowserWindow({
     width: 1440, height: 900, show: false, frame: false, backgroundColor: '#f8fafc',
@@ -178,7 +184,8 @@ app.whenReady().then(async () => {
   await sleep(900);
   const itemsHead = await step('items header', `[...document.querySelectorAll('#itemsTbl thead th')].map(t=>t.textContent.trim())`);
   check('no "محجوز" anywhere in the DOM', !/(محجوز)/.test(await js('document.body.innerText')), 'checked');
-  check('held column renamed to محرز', itemsHead.includes('محرز'), itemsHead);
+  check('the items table has no held column at all',
+    !itemsHead.some((h) => /محرز|محجوز/.test(h)) && itemsHead.indexOf('سليم') >= 0 && itemsHead.indexOf('تالف') >= 0, itemsHead);
 
   await js(`document.getElementById('btnAddItem').click()`);
   await sleep(700);
@@ -229,38 +236,45 @@ app.whenReady().then(async () => {
   await sleep(900);
   await step('switch the editor to مبيعات', `(() => {
     const ed = [...document.querySelectorAll('.modal.editor')].pop();
-    [...ed.querySelectorAll('.seg-btn')].find(b => b.textContent.trim() === 'مبيعات').click();
-    return ed.querySelectorAll('.seg-btn.on')[0].textContent.trim();
+    const card = [...ed.querySelectorAll('.kind-card')].find(c => (c.querySelector('.kc-name')||{}).textContent === 'مبيعات');
+    if (!card) return 'no-card';
+    card.click();
+    return ed.querySelector('.kind-card.on .kc-name').textContent.trim();
   })()`);
   const pickCombo = (query) => `(() => {
     const ed = [...document.querySelectorAll('.modal.editor')].pop();
     const host = ${JSON.stringify(query)};
-    // V3: a line now carries three combos (item, warehouse, destination), so
-    // the item combo is found by its cell, not by its position in the list.
+    // V4: a line carries three combos (item, warehouse, destination), so each
+    // one is found by its own cell, not by its position in the list.
     const inp = host === 'party'
       ? ed.querySelector('.party-cell .combo-input')
-      : ed.querySelector('.lines-tbl tbody tr td:first-child .combo-input');
+      : (host === 'wh'
+        ? ed.querySelector('.lines-tbl tbody tr td.wh-c .combo-input')
+        : ed.querySelector('.lines-tbl tbody tr td.item-c .combo-input'));
     if (!inp) return -1;
-    inp.focus(); inp.value = host === 'party' ? 'موزع' : 'أمبولة';
+    inp.focus();
+    inp.value = host === 'party' ? 'موزع' : (host === 'wh' ? 'المخزن' : 'أمبولة');
     inp.dispatchEvent(new Event('input', { bubbles: true }));
     const pop = [...document.querySelectorAll('.combo-pop')].filter(x => x.style.display !== 'none').pop();
     return pop ? pop.querySelectorAll('.combo-opt').length : 0;
   })()`;
-  await step('type into the party combo', pickCombo('party'));
-  await sleep(300);
-  await step('pick the party', `(() => {
+  const pickTop = () => `(() => {
     const pop = [...document.querySelectorAll('.combo-pop')].filter(x => x.style.display !== 'none').pop();
+    if (!pop) return 'no-pop';
     pop.querySelector('.combo-opt').click();
     return 'picked';
-  })()`);
+  })()`;
+  await step('type into the party combo', pickCombo('party'));
+  await sleep(300);
+  await step('pick the party', pickTop());
   await sleep(300);
   await step('type into the item combo', pickCombo('item'));
   await sleep(300);
-  await step('pick the item', `(() => {
-    const pop = [...document.querySelectorAll('.combo-pop')].filter(x => x.style.display !== 'none').pop();
-    pop.querySelector('.combo-opt').click();
-    return 'picked';
-  })()`);
+  await step('pick the item', pickTop());
+  await sleep(400);
+  await step('type into the line warehouse combo', pickCombo('wh'));
+  await sleep(300);
+  await step('pick the warehouse', pickTop());
   await sleep(700);
   const availRead = await step('availability + unit chip after picking', `(() => {
     const ed = [...document.querySelectorAll('.modal.editor')].pop();
@@ -421,23 +435,38 @@ app.whenReady().then(async () => {
   /* ================= 10) reports: default = good only, totals on visible cols ================= */
   await js(`document.querySelector('.nav-item[data-view=reports]').click()`);
   await sleep(900);
+  /* V4: the report centre is a window — the screen only launches it */
+  await step('open the report window', `window.SamReports.run().then(() => 'opened')`);
+  await sleep(1500);
+  const winProbe = await step('the report window is up', `(() => ({
+    overlay: document.querySelectorAll('.rw-overlay').length,
+    rail: document.querySelectorAll('.rw-rail .rw-item').length,
+    cards: document.querySelectorAll('.rpt-card').length,
+    actions: [...document.querySelectorAll('.rw-actions .btn')].map(b => b.textContent.trim())
+  }))()`);
+  check('the report centre opens as a window', winProbe && winProbe.overlay === 1, winProbe);
+  check('the window lists the ready-made reports', winProbe && winProbe.rail === 9, winProbe);
+  check('the window carries the export / print actions',
+    winProbe && winProbe.actions.some((a) => /Excel/.test(a)) && winProbe.actions.some((a) => /طباعة/.test(a)), winProbe && winProbe.actions);
+
   const buckets = await step('bucket checkboxes default', `[...document.querySelectorAll('#bucketWrap .col-check')].map(l => [l.textContent.trim(), l.querySelector('input').checked])`);
-  check('only Good ticked by default', JSON.stringify(buckets) === JSON.stringify([['سليم', true], ['تالف', false], ['محرز', false]]), buckets);
+  check('only Good ticked by default', JSON.stringify(buckets) === JSON.stringify([['سليم', true], ['تالف', false]]), buckets);
   await step('widen the report period to cover the harness history', `(() => {
     document.getElementById('fFrom').value = '2026-10-01';
     document.getElementById('fTo').value = '2026-12-31';
+    document.getElementById('fFrom').dispatchEvent(new Event('change', { bubbles: true }));
+    document.getElementById('fTo').dispatchEvent(new Event('change', { bubbles: true }));
     return [document.getElementById('fFrom').value, document.getElementById('fTo').value];
   })()`);
-  await js(`document.getElementById('btnRunReport').click()`);
-  await sleep(1200);
+  await sleep(1400);
   const rep1 = await step('good-only report', `({ rows: SamReports ? undefined : undefined, count: document.querySelectorAll('#reportTbl tbody tr').length, foot: document.getElementById('reportFoot').textContent.replace(/\\s+/g,' ').slice(0,180) })`);
   check('report ran and shows rows', rep1.count > 0, rep1.count);
   check('footer sums visible numeric columns only', /وارد/.test(rep1.foot) && /صادر/.test(rep1.foot) && /صافي الحركة/.test(rep1.foot) && /الوحدة:/.test(rep1.foot), rep1.foot);
   await shot('v2-08-report-good-only');
 
   await shot('v2-08b-report-grid');
-  // tick Defect + Held -> row count must grow, footer must follow the visible columns
-  await step('tick defect + held', `(() => {
+  // tick Defect -> row count must grow, footer must follow the visible columns
+  await step('tick defect', `(() => {
     [...document.querySelectorAll('#bucketWrap input')].forEach(cb => { cb.checked = true; cb.dispatchEvent(new Event('change', { bubbles: true })); });
     return 'ticked';
   })()`);
@@ -445,13 +474,16 @@ app.whenReady().then(async () => {
   const rep2 = await step('all-buckets report', `({ count: document.querySelectorAll('#reportTbl tbody tr').length, foot: document.getElementById('reportFoot').textContent.replace(/\\s+/g,' ').slice(0,180) })`);
   check('adding buckets adds rows', rep2.count > rep1.count, [rep1.count, rep2.count]);
 
-  await step('hide the IN column and re-check the footer', `(() => {
+  await step('hide the IN column', `(() => {
     const lab = [...document.querySelectorAll('#colsWrap .col-check')].find(l => /وارد/.test(l.textContent));
     const cb = lab.querySelector('input');
     cb.checked = false;
     cb.dispatchEvent(new Event('change', { bubbles: true }));
-    return document.getElementById('reportFoot').textContent.replace(/\\s+/g,' ');
-  })()`).then((foot) => check('footer drops the hidden column total', !/وارد:/.test(foot), foot.slice(0, 160)));
+    return 'hidden';
+  })()`);
+  await sleep(1600);
+  const footAfter = await step('the footer after hiding the column', `document.getElementById('reportFoot').textContent.replace(/\\s+/g,' ').slice(0,200)`);
+  check('footer drops the hidden column total', !/وارد:/.test(footAfter), footAfter.slice(0, 160));
 
   // optional per-hangar breakdown
   await step('enable breakdown by hangar', `(() => {
@@ -461,7 +493,11 @@ app.whenReady().then(async () => {
     return 'on';
   })()`);
   await sleep(1600);
-  await step('print report to preview', `document.getElementById('btnPrintReport').click()`);
+  await step('print report to preview', `(() => {
+    const b = [...document.querySelectorAll('.rw-actions .btn')].find(x => /طباعة/.test(x.textContent));
+    if (!b) return 'no-btn';
+    b.click(); return 'clicked';
+  })()`);
   await sleep(1200);
   const pv = await step('print sheet structure', `(() => {
     const s = [...document.querySelectorAll('.pv .sheet')].pop();

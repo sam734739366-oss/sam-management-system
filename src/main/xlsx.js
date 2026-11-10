@@ -62,7 +62,21 @@ async function writeWorkbook(spec) {
 
   const ws = wb.addWorksheet(spec.sheetName || 'التقرير', {
     views: [{ state: 'frozen', ySplit: 0, rightToLeft: true }],
-    pageSetup: { paperSize: 9, orientation: 'landscape', fitToPage: true, margins: { left: 0.4, right: 0.4, top: 0.5, bottom: 0.5 } }
+    /* V4: `fitToPage` alone makes Excel squeeze the WHOLE report onto ONE
+       page — that is exactly what produced the tiny, washed-out Arabic the
+       customer complained about. `fitToWidth: 1` + `fitToHeight: 0` means
+       "one page wide, as many pages tall as needed", so the text keeps its
+       size and only the number of pages grows. */
+    pageSetup: {
+      paperSize: 9, // A4
+      orientation: spec.landscape ? 'landscape' : 'portrait',
+      fitToPage: true,
+      fitToWidth: 1,
+      fitToHeight: 0,
+      horizontalCentered: true,
+      verticalCentered: false,
+      margins: { left: 0.25, right: 0.25, top: 0.35, bottom: 0.35, header: 0.15, footer: 0.15 }
+    }
   });
 
   let cursor = 1;
@@ -73,16 +87,16 @@ async function writeWorkbook(spec) {
     ws.mergeCells(cursor, 1, cursor, Math.max(columns.length, 1));
     const c = ws.getCell(cursor, 1);
     c.value = spec.title;
-    c.font = { name: 'Arial', size: 16, bold: true, color: { argb: BRAND_DARK } };
+    c.font = { name: 'Arial', size: 18, bold: true, color: { argb: BRAND_DARK } };
     c.alignment = { horizontal: 'center', vertical: 'middle', readingOrder: 'rtl' };
-    ws.getRow(cursor).height = 24;
+    ws.getRow(cursor).height = 28;
     cursor += 1;
   }
   if (spec.subtitle) {
     ws.mergeCells(cursor, 1, cursor, Math.max(columns.length, 1));
     const c = ws.getCell(cursor, 1);
     c.value = spec.subtitle;
-    c.font = { name: 'Arial', size: 11, color: { argb: MUTED } };
+    c.font = { name: 'Arial', size: 12, color: { argb: MUTED } };
     c.alignment = { horizontal: 'center', readingOrder: 'rtl' };
     cursor += 1;
   }
@@ -103,12 +117,14 @@ async function writeWorkbook(spec) {
   columns.forEach((col, i) => {
     const cell = headR.getCell(i + 1);
     cell.value = col.header;
-    cell.font = { name: 'Arial', size: 11, bold: true, color: { argb: 'FFFFFF' } };
+    cell.font = { name: 'Arial', size: 12, bold: true, color: { argb: 'FFFFFF' } };
     cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: BRAND } };
     cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true, readingOrder: 'rtl' };
     cell.border = { bottom: { style: 'thin', color: { argb: BRAND_DARK } } };
   });
-  headR.height = 22;
+  headR.height = 26;
+  // repeat the header on every printed page
+  ws.pageSetup.printTitlesRow = `${headR.number}:${headR.number}`;
 
   /* ---- body ---- */
   const sample = [];
@@ -127,10 +143,10 @@ async function writeWorkbook(spec) {
         cell.value = raw == null ? '' : String(raw);
         cell.alignment = { horizontal: 'right', readingOrder: 'rtl', wrapText: false };
       }
-      cell.font = { name: 'Arial', size: 10.5, color: { argb: INK } };
+      cell.font = { name: 'Arial', size: 12, color: { argb: INK } };
       sample[i] = (sample[i] || []).concat([col.num ? cell.value : raw]);
     });
-    row.height = 16;
+    row.height = 19;
   }
 
   /* ---- totals: only the columns the report actually shows ---- */
@@ -148,11 +164,11 @@ async function writeWorkbook(spec) {
         cell.value = totals.find((t) => t.label) ? totals.find((t) => t.label).label : 'الإجمالي';
         cell.alignment = { horizontal: 'right', readingOrder: 'rtl' };
       }
-      cell.font = { name: 'Arial', size: 11, bold: true, color: { argb: BRAND_DARK } };
+      cell.font = { name: 'Arial', size: 12, bold: true, color: { argb: BRAND_DARK } };
       cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'EFF6FF' } };
       cell.border = { top: { style: 'thin', color: { argb: BRAND } }, bottom: { style: 'double', color: { argb: BRAND } } };
     });
-    row.height = 20;
+    row.height = 22;
   }
 
   /* ---- widths + banding + autofilter ---- */

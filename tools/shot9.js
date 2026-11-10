@@ -48,6 +48,7 @@ process.env.SAM_DATA_DIR = DATA;
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 require(path.join(ROOT, 'src', 'main', 'ipc-db.js'))();
 require(path.join(ROOT, 'src', 'main', 'ipc-auth.js'))(() => win);
+require(path.join(ROOT, 'src', 'main', 'updater.js')).init(() => win);
 require(path.join(ROOT, 'src', 'main', 'ipc.js'))(() => win);
 
 async function shot(name, settle = 700) {
@@ -219,15 +220,22 @@ app.whenReady().then(async () => {
   await js(`[...document.querySelectorAll('.pv')].pop().querySelectorAll('.pv-bar .btn-ghost')[1].click(); 1`);
 
   await go('reports');
-  await js(`document.getElementById('btnRunReport').click()`);
-  await sleep(1400);
-  await shot('21-reports-good-only');
+  await js(`window.SamReports.run(); 1`);
+  await sleep(1600);
+  await shot('20b-reports-launcher-and-window');
   await js(`(() => { [...document.querySelectorAll('#bucketWrap input')].forEach(cb => { cb.checked = true; cb.dispatchEvent(new Event('change', { bubbles: true })); }); return 1; })()`);
   await sleep(1600);
+  await shot('21-reports-good-only');
+  await js(`document.querySelector('.rw-rail .rw-item[data-key=stock_status]').click(); 1`);
+  await sleep(1400);
   await shot('22-reports-all-buckets');
-  await js(`document.getElementById('btnPrintReport').click()`);
+  await js(`(() => { const b = [...document.querySelectorAll('.rw-actions .btn')].find(x => /طباعة/.test(x.textContent)); if (b) b.click(); return 1; })()`);
+  await sleep(900);
   await shot('23-print-report');
   await js(`[...document.querySelectorAll('.pv')].pop().querySelectorAll('.pv-bar .btn-ghost')[1].click(); 1`);
+  await sleep(300);
+  await js(`SamReportWindow.close(); 1`);
+  await sleep(400);
 
   await go('settings');
   await shot('24-settings-general');

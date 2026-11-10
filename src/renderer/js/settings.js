@@ -6,17 +6,19 @@
 (function () {
   const { el, icon, esc, toast, bindRow, modal, form, field, input, emptyState, toggleEmpty } = SamUI;
 
-  const state = { users: [], meta: { screens: [], perms: [] }, backup: null, sync: null, tab: 'general' };
+  const state = { users: [], meta: { screens: [], perms: [] }, backup: null, sync: null, datadir: null, cloud: null, tab: 'general' };
 
   /* ---------------- tabs ---------------- */
   function showTab(tab) {
     state.tab = tab;
-    ['general', 'users', 'backup', 'update'].forEach((t) => {
-      document.getElementById(`set-${t}`).classList.toggle('hidden', t !== tab);
+    ['general', 'users', 'backup', 'data', 'update'].forEach((t) => {
+      const box = document.getElementById(`set-${t}`);
+      if (box) box.classList.toggle('hidden', t !== tab);
     });
     document.querySelectorAll('#settingsTabs .tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
     if (tab === 'users') loadUsers();
     if (tab === 'backup') loadBackup();
+    if (tab === 'data') loadDataTab();
     if (tab === 'update') loadUpdate();
   }
 
@@ -116,9 +118,9 @@
     }
 
     grid.append(
-      field('اسم المستخدم', username),
-      field('الاسم الكامل', fullName),
-      field('كلمة المرور', password),
+      field('اسم المستخدم', username, '', 'i-user'),
+      field('الاسم الكامل', fullName, '', 'i-user'),
+      field('كلمة المرور', password, '', 'i-lock'),
       blockField('الدور', roleBox),
       blockField('الشاشات المسموحة', screensBox),
       blockField('الصلاحيات', permsBox),
@@ -164,7 +166,7 @@
     const grid = el('div', 'form-grid');
     const pw = input({ type: 'password', placeholder: 'كلمة مرور جديدة — 6 أحرف على الأقل' });
     const pw2 = input({ type: 'password', placeholder: 'تأكيد كلمة المرور' });
-    grid.append(field(`كلمة المرور الجديدة لـ ${u.username}`, pw), field('تأكيد كلمة المرور', pw2));
+    grid.append(field(`كلمة المرور الجديدة لـ ${u.username}`, pw, '', 'i-lock'), field('تأكيد كلمة المرور', pw2, '', 'i-lock'));
     body.appendChild(grid);
     const ok = await form({
       title: 'إعادة تعيين كلمة المرور',
@@ -201,25 +203,17 @@
     loadUsers();
   }
 
-  /* ---------------- backup + sync ---------------- */
+  /* ---------------- backup ---------------- */
   async function loadBackup() {
     try {
       const [info, list] = await Promise.all([sam.sync.info(), sam.backup.list()]);
       if (!info.ok) return toast(info.error, 'bad');
       state.sync = info.data;
-      document.getElementById('syncFolder').value = state.sync.folder || 'لم يتم اختيار مجلد';
-      document.getElementById('syncAuto').checked = !!state.sync.auto;
       document.getElementById('backupInfo').innerHTML = rows([
         ['ملف قاعدة البيانات', state.sync.dbFile],
         ['حجم الملف', `${SamDB.fmt(Math.round(state.sync.dbSize / 1024))} ك.ب`],
         ['مجلد النسخ المحلية', state.sync.backupsDir],
         ['آخر نسخة', fmtStamp(state.sync.backupLast)]
-      ]);
-      document.getElementById('syncInfo').innerHTML = rows([
-        ['مجلد Drive', state.sync.folder || '—'],
-        ['المزامنة التلقائية', state.sync.auto ? 'مفعّلة' : 'متوقفة'],
-        ['آخر مزامنة', fmtStamp(state.sync.last)],
-        ['نسخ الاحتفاظ في Drive', 'آخر 12 نسخة']
       ]);
       const tb = document.querySelector('#backupsTbl tbody');
       tb.innerHTML = '';
@@ -253,24 +247,149 @@
     toast(`تم حفظ النسخة: ${res.data.path}`, 'ok', 5200);
     loadBackup();
   }
-  async function pickFolder() {
-    const res = await sam.sync.pickFolder();
-    if (res && res.canceled) return;
-    if (!res.ok) return toast(res.error, 'bad');
-    toast('تم اختيار مجلد المزامنة', 'ok');
-    loadBackup();
+  /* =====================================================================
+     V4 — where the data lives, and the cloud sync by e-mail alone
+     ===================================================================== */
+
+  /* ---------------- the data folder ---------------- */
+  async function loadDataTab() {
+    try {
+      const res = await sam.datadir.info();
+      if (!res.ok) return toast(res.error, 'bad');
+      const d = res.data;
+      state.datadir = d;
+      const badge = document.getElementById('ddBadge');
+      badge.textContent = d.isCustom ? 'مجلد مخصص' : 'المجلد الافتراضي';
+      badge.className = `badge ${d.isCustom ? 'ok' : ''}`;
+      document.getElementById('ddInfo').innerHTML = rows([
+        ['مجلد البيانات', d.dir],
+        ['ملف قاعدة البيانات', d.dbFile],
+        ['حجم قاعدة البيانات', `${SamDB.fmt(Math.round(d.dbSize / 1024))} ك.ب`],
+        ['المساحة الحرة', d.freeSpaceMB == null ? '—' : `${SamDB.fmt(d.freeSpaceMB)} م.ب`],
+        ['الوضع', d.isCustom ? 'مجلد تختاره أنت' : 'المجلد الافتراضي للبرنامج']
+      ]);
+    } catch (e) { toast(e.message, 'bad'); }
+    loadCloud();
   }
-  async function saveSyncCfg() {
-    const res = await sam.sync.setConfig({ auto: document.getElementById('syncAuto').checked });
+
+  async function pickDataDir() {
+    const res = await sam.datadir.pick();
+    if (!res) return;
+    if (res.canceled) return;
     if (!res.ok) return toast(res.error, 'bad');
-    toast('تم حفظ إعدادات المزامنة', 'ok');
-    loadBackup();
+    const d = res.data || {};
+    const copy = d.copy || {};
+    const info = d.info || {};
+    const answer = await modal({
+      title: 'تم نسخ البيانات إلى المجلد الجديد',
+      body: `<p>أُنسخت قاعدة البيانات إلى:</p>
+        <p style="direction:ltr;text-align:start"><b>${esc(info.dir || copy.dir || '')}</b></p>
+        <p>الحجم المنسوخ: <b>${SamDB.fmt(Math.round((copy.size || 0) / 1024))} ك.ب</b></p>
+        <p style="margin-top:10px">النسخة القديمة بقيت كما هي في مكانها. التعديل يسري بالكامل عند إعادة تشغيل البرنامج، وبعدها كل ما تدخله يُحفظ في المجلد الجديد.</p>`,
+      actions: [
+        { label: 'إعادة التشغيل الآن', value: 'relaunch', kind: 'btn-primary', icon: 'i-refresh' },
+        { label: 'لاحقاً', value: 'later', kind: 'btn-ghost' }
+      ]
+    });
+    if (answer === 'relaunch') sam.app.relaunch();
+    loadDataTab();
   }
-  async function syncNow() {
-    const res = await sam.sync.now();
-    if (!res.ok) return toast(res.error, 'bad', 5200);
-    toast(`تمت المزامنة إلى ${res.data.target}`, 'ok', 5200);
-    loadBackup();
+
+  async function openDataDir() {
+    const d = state.datadir;
+    if (d && d.dir) sam.app.openPath(d.dir);
+    else toast('لم يتم تحديد المجلد بعد', 'warn');
+  }
+
+  async function resetDataDir() {
+    const yes = await modal({
+      title: 'العودة إلى المجلد الافتراضي',
+      danger: true,
+      body: '<p>سيعيش البرنامج من جديد في مجلده الافتراضي. بياناتك الحالية تبقى في المجلد المختار كنسخة احتياطية، ولن يُحذف شيء.</p>',
+      actions: [
+        { label: 'العودة للمجلد الافتراضي', value: 'yes', kind: 'btn-danger', icon: 'i-refresh' },
+        { label: 'إلغاء', value: 'no', kind: 'btn-ghost' }
+      ]
+    });
+    if (yes !== 'yes') return;
+    const res = await sam.datadir.reset();
+    if (!res.ok) return toast(res.error, 'bad');
+    toast('سيعود البرنامج إلى المجلد الافتراضي عند إعادة التشغيل', 'ok');
+    loadDataTab();
+  }
+
+  async function exportDataDir() {
+    const res = await sam.datadir.exportCopy();
+    if (!res) return;
+    if (res.canceled) return;
+    if (!res.ok) return toast(res.error, 'bad');
+    toast(`تم حفظ النسخة في ${res.data.path}`, 'ok', 5200);
+  }
+
+  /* ---------------- the cloud sync ---------------- */
+  async function loadCloud() {
+    try {
+      const res = await sam.cloud.status();
+      if (!res.ok) return;
+      const c = res.data || {};
+      state.cloud = c;
+      const email = document.getElementById('cloudEmail');
+      if (email && !email.value && c.email) email.value = c.email;
+
+      document.getElementById('cloudInfo').innerHTML = rows([
+        ['البريد المحفوظ', c.email || '—'],
+        ['برنامج السحابة', c.activeClient ? c.activeClient.label : (c.clients && c.clients.length ? c.clients[0].label : 'لا يوجد على هذا الجهاز')],
+        ['الحساب المسجّل', c.account || '—'],
+        ['آخر مزامنة', fmtStamp(c.last)]
+      ]);
+
+      const host = document.getElementById('cloudClients');
+      host.innerHTML = '';
+      if (!c.clients || !c.clients.length) {
+        const note = el('p', 'foot-note', 'لم يُعثر على Google Drive أو OneDrive أو Dropbox على هذا الجهاز. ثبّت واحداً منها وسجّل الدخول بحسابك ثم أعد المحاولة.');
+        const b = el('button', 'btn btn-primary');
+        b.type = 'button';
+        b.innerHTML = `${icon('i-cloud')}<span>تحميل Google Drive للكمبيوتر</span>`;
+        b.addEventListener('click', async () => {
+          const r = await sam.cloud.installPage('gdrive');
+          if (r && r.ok) toast('فُتحت صفحة التحميل في المتصفح', 'ok');
+        });
+        host.append(note, b);
+        return;
+      }
+      const list = el('div', 'row-btns');
+      c.clients.forEach((cl) => {
+        const b = el('button', 'col-check');
+        b.type = 'button';
+        b.innerHTML = `${icon('i-cloud')}<span>${esc(cl.label)} — ${esc(cl.account || cl.root)}</span>`;
+        b.addEventListener('click', () => doCloudSync(cl.id));
+        list.appendChild(b);
+      });
+      host.appendChild(list);
+    } catch (e) { toast(e.message, 'bad'); }
+  }
+
+  async function doCloudSync(clientId) {
+    const email = (document.getElementById('cloudEmail').value || '').trim();
+    if (!email) return toast('اكتب بريدك الإلكتروني أولاً', 'warn');
+    const ok = await modal({
+      title: 'مزامنة البيانات إلى السحابة',
+      body: `<p>ستُنسخ قاعدة البيانات إلى مجلد السحابة على جهازك، ويرفعها برنامج السحابة إلى حسابك.</p>
+        <p style="margin-top:8px">البريد: <b>${esc(email)}</b></p>
+        <p style="margin-top:8px;color:var(--muted-fg)">النسخة عملية及市场كة — بياناتك الأصلية لا تُمس.</p>`,
+      actions: [
+        { label: 'ابدأ المزامنة', value: 'yes', kind: 'btn-primary', icon: 'i-cloud' },
+        { label: 'إلغاء', value: 'no', kind: 'btn-ghost' }
+      ]
+    });
+    if (ok !== 'yes') return;
+    const res = await sam.cloud.sync(email, clientId);
+    if (!res) return;
+    if (!res.ok) return toast(res.error, 'bad');
+    const d = res.data || {};
+    toast(`تمت المزامنة إلى ${d.folder || d.client || 'السحابة'}`, 'ok', 5200);
+    if (d.warning) toast(d.warning, 'warn', 7000);
+    loadCloud();
   }
 
   async function changeOwnPassword() {
@@ -279,7 +398,7 @@
     const oldPw = input({ type: 'password', placeholder: 'كلمة المرور الحالية' });
     const newPw = input({ type: 'password', placeholder: 'الجديدة — 6 أحرف على الأقل' });
     const newPw2 = input({ type: 'password', placeholder: 'تأكيد الجديدة' });
-    grid.append(field('كلمة المرور الحالية', oldPw), field('كلمة المرور الجديدة', newPw), field('تأكيد الجديدة', newPw2));
+    grid.append(field('كلمة المرور الحالية', oldPw, '', 'i-lock'), field('كلمة المرور الجديدة', newPw, '', 'i-lock'), field('تأكيد الجديدة', newPw2, '', 'i-lock'));
     body.appendChild(grid);
     await form({
       title: 'تغيير كلمة مروري',
@@ -372,9 +491,15 @@
   document.getElementById('btnBackupNow').addEventListener('click', backupNow);
   document.getElementById('btnBackupSaveAs').addEventListener('click', backupSaveAs);
   document.getElementById('btnBackupFolder').addEventListener('click', () => sam.app.openPath(state.sync ? state.sync.backupsDir : ''));
-  document.getElementById('btnPickFolder').addEventListener('click', pickFolder);
-  document.getElementById('btnSaveSyncCfg').addEventListener('click', saveSyncCfg);
-  document.getElementById('btnSyncNow').addEventListener('click', syncNow);
+  document.getElementById('btnGoCloud').addEventListener('click', () => showTab('data'));
+  document.getElementById('btnOpenGuide').addEventListener('click', () => {
+    if (window.SamGuide) window.SamGuide.open();
+  });
+  document.getElementById('btnPickDataDir').addEventListener('click', pickDataDir);
+  document.getElementById('btnOpenDataDir').addEventListener('click', openDataDir);
+  document.getElementById('btnResetDataDir').addEventListener('click', resetDataDir);
+  document.getElementById('btnExportDataDir').addEventListener('click', exportDataDir);
+  document.getElementById('btnCloudSync').addEventListener('click', () => doCloudSync(null));
   document.getElementById('btnChangeOwnPw').addEventListener('click', changeOwnPassword);
   document.getElementById('btnCheckUpdate').addEventListener('click', checkUpdate);
   document.getElementById('btnDownloadUpdate').addEventListener('click', downloadUpdate);

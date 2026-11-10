@@ -8,6 +8,8 @@ const path = require('path');
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const session = require('./session');
 const backup = require('./backup');
+const cloudsync = require('./cloudsync');
+const datadir = require('./datadir');
 const db = require('./db');
 
 const RENDERER = path.resolve(__dirname, '..', 'renderer');
@@ -88,4 +90,52 @@ module.exports = function registerAuthIpc(getWindow) {
   });
 
   ipcMain.handle('sync:now', () => wrapAsync(() => backup.syncNow()));
+
+  /* ---------------- V4: sync by e-mail only ---------------- */
+  ipcMain.handle('cloud:status', () => wrap(() => cloudsync.status(db)));
+
+  ipcMain.handle('cloud:sync', (_e, email, clientId) => wrapAsync(() => cloudsync.syncByEmail(db, email, clientId)));
+
+  ipcMain.handle('cloud:installPage', (_e, clientId) => wrap(() => ({ url: cloudsync.openInstallerPage(clientId) })));
+
+  /* ---------------- V4: where the data lives ---------------- */
+  ipcMain.handle('datadir:info', () => wrap(() => datadir.info(app)));
+
+  ipcMain.handle('datadir:pick', async (e) => {
+    const w = winOf(e);
+    const res = await dialog.showOpenDialog(w, {
+      title: 'اختر مجلد الاحتفاظ بالبيانات',
+      properties: ['openDirectory', 'createDirectory'],
+      defaultPath: datadir.info(app).dir
+    });
+    if (res.canceled || !res.filePaths.length) return { ok: false, canceled: true };
+    const picked = res.filePaths[0];
+    if (!datadir.writable(picked)) return { ok: false, error: 'لا يمكن الكتابة في المجلد المختار' };
+    try {
+      /* the copy is immediate so the customer sees his data in the new
+         folder at once — and the ORIGINAL file is never touched */
+      const copy = datadir.exportTo(app, picked, db.dbFile());
+      /* the live database path is remembered too: on the next launch the
+         program copies the FRESH database over, so anything typed between
+         the pick and the restart is not lost */
+      const saved = datadir.remember(app, picked, db.dbFile());
+      return { ok: true, data: { copy, info: saved, restartNeeded: true } };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('datadir:reset', () => wrap(() => datadir.forget(app)));
+
+  ipcMain.handle('datadir:export', async (e) => {
+    const w = winOf(e);
+    const res = await dialog.showOpenDialog(w, {
+      title: 'اختر مجلد نسخة احتياطية',
+      properties: ['openDirectory', 'createDirectory'],
+      defaultPath: app.getPath('documents')
+    });
+    if (res.canceled || !res.filePaths.length) return { ok: false, canceled: true };
+    try { return { ok: true, data: datadir.exportTo(app, res.filePaths[0], db.dbFile()) }; }
+    catch (err) { return { ok: false, error: err.message }; }
+  });
 };

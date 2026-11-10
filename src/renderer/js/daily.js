@@ -1,22 +1,18 @@
 'use strict';
 
 /* =====================================================================
-   Daily report — V3
-     · what entered each warehouse today (دخل اليوم)
-     · what is still left in it (المتبقي)
-     · the grand remaining across ALL warehouses (إجمالي المتبقي)
-   The table is item × warehouse: two columns per warehouse, so one
-   screen answers the question "where is my stock right now?" without
-   any spreadsheet gymnastics. A per-warehouse summary sits under it,
-   and the grand total closes the screen.
+   التقرير اليومي — V4
+     · صنف × مخزن: دخل اليوم والمتبقي، وإجمالي كل المخازن
+     · the screen shows the live table; «فتح في نافذة» gives the same
+       report inside the report window (Excel · Print · PDF)
+     · one painting path serves both surfaces
    ===================================================================== */
 (function () {
   const { el, icon, esc, toast, combo, printPreview, emptyState, toggleEmpty } = SamUI;
 
   const BUCKETS = [
     { key: 'good', label: 'سليم', on: true },
-    { key: 'defect', label: 'تالف', on: false },
-    { key: 'held', label: 'محرز', on: false }
+    { key: 'defect', label: 'تالف', on: false }
   ];
 
   const state = {
@@ -24,12 +20,39 @@
     ran: false,
     whFilter: null,      // null = every warehouse
     showAll: false,      // show items with no movement and no balance
-    includeCustomer: false
+    includeCustomer: false,
+    date: SamUI.today(),
+    win: null
   };
 
-  let whCombo = null;
+  let whCombo = null;    // the screen's warehouse combo
+  let winCombo = null;   // the window's warehouse combo
+  let winNodes = null;   // the nodes of the window panel
+  let winGen = 0;        // رقم النافذة الحالية — يمنع نافذة قديمة من تدمير حديثة
 
   /* ---------------- filters ---------------- */
+  function activeBuckets() {
+    return BUCKETS.filter((b) => b.on).map((b) => b.key);
+  }
+
+  /** the checkbox group (the screen's or the window's) */
+  function paintBuckets(host) {
+    if (!host) return;
+    host.innerHTML = '';
+    BUCKETS.forEach((b) => {
+      const box = el('label', 'col-check bucket');
+      const cb = el('input');
+      cb.type = 'checkbox';
+      cb.checked = b.on;
+      cb.addEventListener('change', () => {
+        b.on = cb.checked;
+        run();
+      });
+      box.append(cb, el('span', '', esc(b.label)));
+      host.appendChild(box);
+    });
+  }
+
   function initUi() {
     if (!whCombo) {
       whCombo = combo(document.getElementById('dWh'), {
@@ -37,54 +60,48 @@
         emptyText: 'لا توجد مخازن',
         onChange: (v) => {
           state.whFilter = v;
-          if (state.ran) render();
+          run();
         }
       });
       whCombo.setValue(null, false);
     }
-    const host = document.getElementById('dBuckets');
-    if (host && !host.childElementCount) {
-      BUCKETS.forEach((b) => {
-        const box = el('label', 'col-check bucket');
-        const cb = el('input');
-        cb.type = 'checkbox';
-        cb.checked = b.on;
-        cb.addEventListener('change', () => {
-          b.on = cb.checked;
-          if (state.ran) run();
-        });
-        box.append(cb, el('span', '', esc(b.label)));
-        host.appendChild(box);
-      });
-    }
-  }
-
-  function activeBuckets() {
-    return BUCKETS.filter((b) => b.on).map((b) => b.key);
+    paintBuckets(document.getElementById('dBuckets'));
+    const dateEl = document.getElementById('dDate');
+    if (dateEl && !dateEl.value) dateEl.value = state.date;
+    const allEl = document.getElementById('dAllItems');
+    if (allEl) allEl.checked = state.showAll;
+    const custEl = document.getElementById('dIncludeCustomer');
+    if (custEl) custEl.checked = state.includeCustomer;
   }
 
   /* ---------------- run ---------------- */
   async function run() {
-    initUi();
     const buckets = activeBuckets();
-    if (!buckets.length) return toast('حدّد حالة واحدة على الأقل (سليم / تالف / محرز)', 'warn');
-    const date = document.getElementById('dDate').value || SamUI.today();
+    if (!buckets.length) return toast('حدّد حالة واحدة على الأقل (سليم / تالف)', 'warn');
     let res;
     try {
-      res = await SamDB.call('dailyReport', { date, buckets, includeCustomer: state.includeCustomer });
+      res = await SamDB.call('dailyReport', {
+        date: state.date,
+        buckets,
+        includeCustomer: state.includeCustomer
+      });
     } catch (e) { return toast(e.message, 'bad'); }
 
     state.res = res;
     state.ran = true;
-    state.whFilter = whCombo ? whCombo.getValue() : null;
 
     // the combo lists the warehouses of this report (they can change any time)
+    const whs = (res.warehouses || []).map((w) => ({ id: w.id, label: w.name, code: w.code }));
     if (whCombo) {
-      whCombo.setItems((res.warehouses || []).map((w) => ({ id: w.id, label: w.name, code: w.code })));
+      whCombo.setItems(whs);
       whCombo.setValue(state.whFilter, false);
     }
+    if (winCombo) {
+      winCombo.setItems(whs);
+      winCombo.setValue(state.whFilter, false);
+    }
 
-    render();
+    paint();
     toast(`تقرير ${res.date}: ${SamDB.fmt(visibleRows().length)} صنف · المتبقي في كل المخازن ${SamDB.fmt(res.grand.balance)}`, 'ok');
   }
 
@@ -113,9 +130,25 @@
     });
   }
 
-  /* ---------------- rendering ---------------- */
-  function render() {
+  /* ---------------- painting (one path for both surfaces) ---------------- */
+  function paint() {
     const res = state.res;
+    const screen = {
+      kpis: document.getElementById('dailyKpis'),
+      tbl: document.getElementById('dailyTbl'),
+      sumTbl: document.getElementById('dailySumTbl'),
+      foot: document.getElementById('dailyFoot'),
+      empty: document.getElementById('dailyEmpty')
+    };
+    if (res) {
+      paintInto(screen);
+      if (winNodes) paintInto(winNodes);
+    }
+  }
+
+  function paintInto(t) {
+    const res = state.res;
+    if (!res || !t.tbl) return;
     const whs = shownWarehouses();
     const rows = visibleRows();
 
@@ -143,15 +176,15 @@
       </tr>`;
     }).join('');
 
-    document.getElementById('dailyTbl').innerHTML =
+    t.tbl.innerHTML =
       `<thead><tr>${head1}</tr><tr>${head2}</tr></thead><tbody>${body}</tbody>`;
 
     /* --- the per-warehouse summary + the grand total --- */
     const sums = whs.map((w) => {
-      const t = res.warehouseTotals[w.id] || { inQty: 0, outQty: 0, balance: 0 };
-      const inQ = SamDB.n(t.inQty);
-      const outQ = SamDB.n(t.outQty);
-      const bal = SamDB.n(t.balance);
+      const s = res.warehouseTotals[w.id] || { inQty: 0, outQty: 0, balance: 0 };
+      const inQ = SamDB.n(s.inQty);
+      const outQ = SamDB.n(s.outQty);
+      const bal = SamDB.n(s.balance);
       return `<tr>
         <td><b>${esc(w.name)}</b>${w.location ? ` <span class="dim">— ${esc(w.location)}</span>` : ''}</td>
         <td class="num ${inQ ? 'qty plus' : 'dim'}">${inQ ? SamDB.fmt(inQ) : '—'}</td>
@@ -170,46 +203,51 @@
       <td class="num"><b>${SamDB.fmt(grandBal)}</b></td>
     </tr>`;
 
-    document.getElementById('dailySumTbl').innerHTML =
-      `<thead><tr><th>المخزن</th><th>دخل اليوم</th><th>صادر اليوم</th><th>المتبقي</th></tr></thead>
-       <tbody>${sums}${grandRow}</tbody>`;
+    if (t.sumTbl) {
+      t.sumTbl.innerHTML =
+        `<thead><tr><th>المخزن</th><th>دخل اليوم</th><th>صادر اليوم</th><th>المتبقي</th></tr></thead>
+         <tbody>${sums}${grandRow}</tbody>`;
+    }
 
     /* --- the headline numbers --- */
-    document.getElementById('dailyKpis').innerHTML = `
-      <div class="kpi gold"><span class="k-top">إجمالي المتبقي في كل المخازن</span>
-        <span class="k-val">${SamDB.fmt(grandBal)}</span>
-        <span class="k-note">${esc(state.whFilter ? 'المخزن المختار' : `${whs.length} مخازن`)} · تاريخ ${esc(res.date)}</span></div>
-      <div class="kpi"><span class="k-top">دخل اليوم</span>
-        <span class="k-val">${SamDB.fmt(grandIn)}</span>
-        <span class="k-note">وارد في تاريخ ${esc(res.date)}</span></div>
-      <div class="kpi"><span class="k-top">صادر اليوم</span>
-        <span class="k-val">${SamDB.fmt(grandOut)}</span>
-        <span class="k-note">خروج في تاريخ ${esc(res.date)}</span></div>
-      <div class="kpi"><span class="k-top">الأصناف</span>
-        <span class="k-val">${SamDB.fmt(rows.length)}</span>
-        <span class="k-note">${esc((res.bucketLabels || []).join(' + '))}</span></div>`;
+    if (t.kpis) {
+      t.kpis.innerHTML = `
+        <div class="kpi gold"><span class="k-top">إجمالي المتبقي في كل المخازن</span>
+          <span class="k-val">${SamDB.fmt(grandBal)}</span>
+          <span class="k-note">${esc(state.whFilter ? 'المخزن المختار' : `${whs.length} مخازن`)} · تاريخ ${esc(res.date)}</span></div>
+        <div class="kpi"><span class="k-top">دخل اليوم</span>
+          <span class="k-val">${SamDB.fmt(grandIn)}</span>
+          <span class="k-note">وارد في تاريخ ${esc(res.date)}</span></div>
+        <div class="kpi"><span class="k-top">صادر اليوم</span>
+          <span class="k-val">${SamDB.fmt(grandOut)}</span>
+          <span class="k-note">خروج في تاريخ ${esc(res.date)}</span></div>
+        <div class="kpi"><span class="k-top">الأصناف</span>
+          <span class="k-val">${SamDB.fmt(rows.length)}</span>
+          <span class="k-note">${esc((res.bucketLabels || []).join(' + '))}</span></div>`;
+    }
 
     /* --- the footnote --- */
-    document.getElementById('dailyFoot').innerHTML = `
-      <span>عدد الأصناف: <b>${SamDB.fmt(rows.length)}</b></span>
-      <span>إجمالي المتبقي: <b class="big">${SamDB.fmt(grandBal)}</b></span>
-      <span>دخل اليوم: <b>${SamDB.fmt(grandIn)}</b></span>
-      <span>صادر اليوم: <b>${SamDB.fmt(grandOut)}</b></span>
-      <span class="dim">الوحدة: ${esc([...new Set(rows.map((r) => r.baseUnit))].join(' / ') || '—')}</span>`;
+    if (t.foot) {
+      t.foot.innerHTML = `
+        <span>عدد الأصناف: <b>${SamDB.fmt(rows.length)}</b></span>
+        <span>إجمالي المتبقي: <b class="big">${SamDB.fmt(grandBal)}</b></span>
+        <span>دخل اليوم: <b>${SamDB.fmt(grandIn)}</b></span>
+        <span>صادر اليوم: <b>${SamDB.fmt(grandOut)}</b></span>
+        <span class="dim">الوحدة: ${esc([...new Set(rows.map((r) => r.baseUnit))].join(' / ') || '—')}</span>`;
+    }
 
     const hasRows = rows.length > 0;
-    emptyState('dailyEmpty', {
+    emptyState(t.empty, {
       icon: 'i-chart',
       title: hasRows ? '' : 'لا توجد أصناف في هذا التقرير',
       hint: hasRows ? '' : 'غيّر التاريخ أو أظهر كل الأصناف. «المتبقي» يحسب من كل الحركات السابقة، و«دخل اليوم» من حركات اليوم فقط.'
     });
-    toggleEmpty('dailyEmpty', hasRows);
+    toggleEmpty(t.empty, hasRows);
   }
 
-  /* ---------------- print ---------------- */
-  function printDaily() {
+  /* ---------------- the print sheet ---------------- */
+  function sheetOpts() {
     const res = state.res;
-    if (!res) return toast('شغّل التقرير أولاً', 'bad');
     const whs = shownWarehouses();
     const rows = visibleRows();
 
@@ -231,12 +269,12 @@
     const grandBal = whs.reduce((a, w) => a + SamDB.n((res.warehouseTotals[w.id] || {}).balance), 0);
 
     const sumBody = whs.map((w) => {
-      const t = res.warehouseTotals[w.id] || {};
-      return `<tr><td>${esc(w.name)}</td><td>${SamDB.fmt(SamDB.n(t.inQty))}</td><td>${SamDB.fmt(SamDB.n(t.outQty))}</td><td>${SamDB.fmt(SamDB.n(t.balance))}</td></tr>`;
+      const s = res.warehouseTotals[w.id] || {};
+      return `<tr><td>${esc(w.name)}</td><td>${SamDB.fmt(SamDB.n(s.inQty))}</td><td>${SamDB.fmt(SamDB.n(s.outQty))}</td><td>${SamDB.fmt(SamDB.n(s.balance))}</td></tr>`;
     }).join('')
       + `<tr class="tot-row"><td><b>إجمالي كل المخازن</b></td><td>${SamDB.fmt(grandIn)}</td><td>${SamDB.fmt(grandOut)}</td><td>${SamDB.fmt(grandBal)}</td></tr>`;
 
-    printPreview({
+    return {
       title: 'التقرير اليومي',
       subtitle: `ما دخل اليوم في كل مخزن وما هو المتبقي فيه — ${res.date}`,
       docRef: `DR-${res.date}`,
@@ -262,7 +300,23 @@
       landscape: true,
       footer: 'SAM Management System — التقرير اليومي (الكميات بالوحدة الأساسية لكل صنف)',
       signatures: ['أمين المخازن', 'المعد', 'المدير']
+    };
+  }
+
+  function printDaily() {
+    if (!state.res) return toast('شغّل التقرير أولاً', 'bad');
+    printPreview(sheetOpts());
+  }
+
+  async function exportPdf() {
+    if (!state.res) return toast('شغّل التقرير أولاً', 'bad');
+    const node = SamUI.sheet(sheetOpts());
+    const r = await SamUI.exportPdf(node, {
+      landscape: true,
+      fileName: `SAM-Daily-${state.res.date}.pdf`
     });
+    if (r && r.ok) toast(`تم حفظ الملف: ${r.path}`, 'ok', 5200);
+    else if (r && !r.canceled) toast(r.error || 'تعذّر حفظ الملف', 'bad');
   }
 
   /* ---------------- real xlsx export ---------------- */
@@ -330,11 +384,114 @@
     }
   }
 
+  /* ---------------- the report window ---------------- */
+  function buildWindowPanel() {
+    const wrap = el('div', 'rw-stack');
+
+    /* --- filters --- */
+    const panel = el('div', 'rw-panel');
+    const r1 = el('div', 'rw-frow rw-f-period');
+    r1.innerHTML = `<div class="rw-flabel"><svg class="ic"><use href="#i-calendar"/></svg><span>التاريخ</span></div>`;
+    const b1 = el('div', 'rw-fbody rw-dates');
+    b1.innerHTML = `<label class="field"><span>تاريخ التقرير</span><input type="date" id="dwDate" class="input" /></label>
+      <div class="field"><span>المخزن</span><div id="dwWh"></div></div>`;
+    r1.appendChild(b1);
+
+    const r2 = el('div', 'rw-frow rw-f-state');
+    r2.innerHTML = `<div class="rw-flabel"><svg class="ic"><use href="#i-box"/></svg><span>الحالة</span></div>`;
+    const b2 = el('div', 'rw-fbody rw-state');
+    b2.innerHTML = `<div class="rw-chips" id="dwBuckets"></div>
+      <label class="col-check"><input type="checkbox" id="dwAll" /><span>إظهار كل الأصناف</span></label>
+      <label class="col-check"><input type="checkbox" id="dwCust" /><span>ضمّ مادة العملاء</span></label>`;
+    r2.appendChild(b2);
+    panel.append(r1, r2);
+    wrap.appendChild(panel);
+
+    /* --- KPIs --- */
+    const kpis = el('div', 'kpi-row');
+    wrap.appendChild(kpis);
+
+    /* --- the table --- */
+    const card = el('div', 'rw-pbody');
+    card.innerHTML = `<div class="tbl-wrap tall"><table class="tbl" id="dwTbl"></table></div>
+      <div class="empty" id="dwEmpty"></div>
+      <div class="report-foot" id="dwFoot"></div>`;
+    wrap.appendChild(card);
+
+    /* --- the per-warehouse summary --- */
+    const sum = el('div', 'rw-pbody');
+    sum.innerHTML = `<div class="tbl-wrap"><table class="tbl" id="dwSumTbl"></table></div>`;
+    wrap.appendChild(sum);
+
+    const nodes = {
+      node: wrap,
+      kpis,
+      tbl: card.querySelector('#dwTbl'),
+      sumTbl: sum.querySelector('#dwSumTbl'),
+      foot: card.querySelector('#dwFoot'),
+      empty: card.querySelector('#dwEmpty')
+    };
+    winNodes = nodes;
+    return nodes;
+  }
+
+  function openWindow() {
+    const gen = ++winGen;
+    const nodes = buildWindowPanel();
+
+    state.win = SamReportWindow.open({
+      title: 'التقرير اليومي',
+      subtitle: 'ما دخل اليوم في كل مخزن وما هو المتبقي فيه',
+      icon: 'i-day',
+      render: () => nodes.node,
+      actions: (api) => [
+        { label: 'تصدير Excel', icon: 'i-archive', kind: 'btn-ghost', onClick: () => exportExcel() },
+        { label: 'طباعة / معاينة', icon: 'i-print', kind: 'btn-ghost', onClick: () => printDaily() },
+        { label: 'تصدير PDF', icon: 'i-clipboard', kind: 'btn-primary', onClick: () => exportPdf() },
+        { label: 'إغلاق', icon: 'i-x', kind: 'btn-ghost', onClick: () => api.close() }
+      ],
+      onClose: () => {
+        /* a window that was replaced by a newer one must not clean up the
+           newer window's state */
+        if (gen !== winGen) return;
+        state.win = null;
+        winNodes = null;
+        winCombo = null;
+      }
+    });
+
+    /* wire the window controls */
+    const dateEl = nodes.node.querySelector('#dwDate');
+    dateEl.value = state.date;
+    dateEl.addEventListener('change', () => {
+      state.date = dateEl.value || SamUI.today();
+      run();
+    });
+    winCombo = combo(nodes.node.querySelector('#dwWh'), {
+      placeholder: 'كل المخازن…',
+      emptyText: 'لا توجد مخازن',
+      onChange: (v) => { state.whFilter = v; run(); }
+    });
+    winCombo.setItems((state.res && state.res.warehouses || []).map((w) => ({ id: w.id, label: w.name, code: w.code })));
+    winCombo.setValue(state.whFilter, false);
+    paintBuckets(nodes.node.querySelector('#dwBuckets'));
+
+    const allEl = nodes.node.querySelector('#dwAll');
+    allEl.checked = state.showAll;
+    allEl.addEventListener('change', () => { state.showAll = allEl.checked; run(); });
+
+    const custEl = nodes.node.querySelector('#dwCust');
+    custEl.checked = state.includeCustomer;
+    custEl.addEventListener('change', () => { state.includeCustomer = custEl.checked; run(); });
+
+    if (state.res) paintInto(nodes);
+    return state.win;
+  }
+
   /* ---------------- wiring ---------------- */
   async function load() {
     initUi();
-    const dateEl = document.getElementById('dDate');
-    if (!dateEl.value) dateEl.value = SamUI.today();
+    if (!state.date) state.date = SamUI.today();
     await run();
   }
 
@@ -342,19 +499,27 @@
   document.getElementById('btnPrintDaily').addEventListener('click', printDaily);
   document.getElementById('btnExcelDaily').addEventListener('click', exportExcel);
   document.getElementById('btnTodayDaily').addEventListener('click', async () => {
-    document.getElementById('dDate').value = SamUI.today();
+    state.date = SamUI.today();
+    const dateEl = document.getElementById('dDate');
+    if (dateEl) dateEl.value = state.date;
     await run();
   });
   document.getElementById('dAllItems').addEventListener('change', (e) => {
     state.showAll = e.target.checked;
-    if (state.ran) render();
+    if (state.ran) paint();
   });
   document.getElementById('dIncludeCustomer').addEventListener('change', async (e) => {
     state.includeCustomer = e.target.checked;
     await run();
   });
-  document.getElementById('dDate').addEventListener('change', run);
+  document.getElementById('dDate').addEventListener('change', async (e) => {
+    state.date = e.target.value || SamUI.today();
+    await run();
+  });
 
-  window.SamDaily = { load, run, printDaily, exportExcel, state };
+  const btnWin = document.getElementById('btnDailyWindow');
+  if (btnWin) btnWin.addEventListener('click', () => openWindow());
+
+  window.SamDaily = { load, run, openWindow, printDaily, exportExcel, exportPdf, state };
   SamUI.pushKeys({ refresh: () => run() });
 })();

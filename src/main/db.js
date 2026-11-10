@@ -19,8 +19,14 @@
 const path = require('path');
 const fs = require('fs');
 
-const BUCKETS = ['good', 'defect', 'held'];
-const AR_BUCKET = { good: 'سليم', defect: 'تالف', held: 'محرز' };
+const BUCKETS = ['good', 'defect'];
+/* 'held' existed in V2/V3 as «محرز» — good product that was set aside and
+   therefore never available to sell. V4 removes that field from the whole
+   app, so every leftover «محرز» quantity is folded into «سليم»: the piece
+   stays physically sound and the warehouse totals do not change, only the
+   extra bucket disappears. The key stays here purely as a defensive
+   fallback for a row that somehow survived the migration. */
+const AR_BUCKET = { good: 'سليم', defect: 'تالف', held: 'سليم' };
 
 let db = null;
 let dbPath = null;
@@ -75,7 +81,7 @@ CREATE TABLE IF NOT EXISTS stock_moves (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
   warehouse_id INTEGER NOT NULL REFERENCES warehouses(id) ON DELETE CASCADE,
-  bucket TEXT NOT NULL CHECK (bucket IN ('good','defect','held')),
+  bucket TEXT NOT NULL CHECK (bucket IN ('good','defect')),
   piece_delta INTEGER NOT NULL,
   carton_qty INTEGER NOT NULL DEFAULT 0,
   bag_qty INTEGER NOT NULL DEFAULT 0,
@@ -91,7 +97,7 @@ CREATE TABLE IF NOT EXISTS stock_moves (
 
 CREATE TABLE IF NOT EXISTS documents (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  kind TEXT NOT NULL CHECK (kind IN ('purchase','sale','sale_return','purchase_return','transfer')),
+  kind TEXT NOT NULL CHECK (kind IN ('purchase','sale','sale_return','purchase_return','transfer','prod_receipt','gate_in','gate_out','adjustment')),
   doc_no TEXT NOT NULL,
   doc_date TEXT NOT NULL DEFAULT (date('now','localtime')),
   party_id INTEGER REFERENCES parties(id) ON DELETE RESTRICT,
@@ -108,7 +114,7 @@ CREATE TABLE IF NOT EXISTS doc_lines (
   item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
   warehouse_id INTEGER REFERENCES warehouses(id),
   dest_warehouse_id INTEGER REFERENCES warehouses(id),
-  bucket TEXT NOT NULL DEFAULT 'good' CHECK (bucket IN ('good','defect','held')),
+  bucket TEXT NOT NULL DEFAULT 'good' CHECK (bucket IN ('good','defect')),
   pieces INTEGER NOT NULL DEFAULT 0,
   cartons INTEGER NOT NULL DEFAULT 0,
   bags INTEGER NOT NULL DEFAULT 0,
@@ -231,7 +237,7 @@ CREATE TABLE IF NOT EXISTS scrap_movements (
   item_id INTEGER REFERENCES items(id) ON DELETE SET NULL,
   warehouse_id INTEGER REFERENCES warehouses(id) ON DELETE SET NULL,
   pieces INTEGER NOT NULL DEFAULT 0,
-  bucket TEXT NOT NULL DEFAULT 'defect' CHECK (bucket IN ('good','defect','held')),
+  bucket TEXT NOT NULL DEFAULT 'defect' CHECK (bucket IN ('good','defect')),
   doc_type TEXT,
   doc_id INTEGER,
   doc_no TEXT,
@@ -271,13 +277,89 @@ function migrate() {
   db.exec('CREATE INDEX IF NOT EXISTS idx_moves_date ON stock_moves(move_date)');
   const whCols = db.prepare('PRAGMA table_info(warehouses)').all().map((c) => c.name);
   if (!whCols.includes('location')) db.exec('ALTER TABLE warehouses ADD COLUMN location TEXT');
-  // V3: every warehouse is equal — normalize any legacy 'main' rows
+  // V3: every warehouse is equal — normalize any legacy 'main' rows.
+  // The V2 model had exactly ONE 'main' warehouse: the auto-seeded one, and
+  // the seed called it «المخزن الرئيسي». ONLY that legacy row is renamed.
+  // A warehouse the user named «المخزن الرئيسي» himself in V3 (where every
+  // warehouse is 'sub') keeps its name — renaming user data inside a
+  // migration is a silent way of losing what the customer typed.
+  const legacyMain = db.prepare(
+    "SELECT id FROM warehouses WHERE kind='main' AND name='المخزن الرئيسي' ORDER BY id LIMIT 1"
+  ).get();
+  if (legacyMain) {
+    db.prepare("UPDATE warehouses SET name='المخزن 1', location='' WHERE id=?").run(legacyMain.id);
+  }
   db.exec("UPDATE warehouses SET kind='sub' WHERE kind<>'sub'");
-  // the old seed called the first warehouse "المخزن الرئيسي"; there is no main
-  // warehouse in V3, so the legacy seed keeps only a neutral name.
-  db.exec("UPDATE warehouses SET name='المخزن 1' WHERE name='المخزن الرئيسي'");
   const rlCols = db.prepare('PRAGMA table_info(prod_receipt_lines)').all().map((c) => c.name);
   if (!rlCols.includes('breaks')) db.exec('ALTER TABLE prod_receipt_lines ADD COLUMN breaks INTEGER NOT NULL DEFAULT 0');
+  // V4: a stock-adjustment line carries its own direction (+1 surplus / -1 shortage)
+  const dlCols = db.prepare('PRAGMA table_info(doc_lines)').all().map((c) => c.name);
+  if (!dlCols.includes('sign')) db.exec('ALTER TABLE doc_lines ADD COLUMN sign INTEGER NOT NULL DEFAULT 1');
+
+  // V4 — widen the document kinds and retire the «محرز» bucket
+  widenDocumentKinds();
+  mergeHeldBucket();
+}
+
+/**
+ * V4 — the `documents.kind` CHECK only allowed the five trade kinds.
+ * SQLite cannot ALTER a CHECK constraint, so the table is rebuilt the
+ * documented way: foreign keys off, copy every row WITH ITS ID (so
+ * `doc_lines` and `stock_moves` keep pointing at the right row), swap the
+ * table, foreign keys back on.
+ */
+function widenDocumentKinds() {
+  const sql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='documents'").get();
+  if (!sql) return;
+  if (sql.sql.includes("'gate_out'")) return; // already widened
+
+  db.pragma('foreign_keys = OFF');
+  db.pragma('legacy_alter_table = ON');
+  try {
+    db.exec(`
+      CREATE TABLE documents_v4 (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        kind TEXT NOT NULL CHECK (kind IN ('purchase','sale','sale_return','purchase_return','transfer','prod_receipt','gate_in','gate_out','adjustment')),
+        doc_no TEXT NOT NULL,
+        doc_date TEXT NOT NULL DEFAULT (date('now','localtime')),
+        party_id INTEGER REFERENCES parties(id) ON DELETE RESTRICT,
+        warehouse_id INTEGER REFERENCES warehouses(id) ON DELETE RESTRICT,
+        dest_warehouse_id INTEGER REFERENCES warehouses(id) ON DELETE RESTRICT,
+        invoice_value TEXT,
+        notes TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+      );
+      INSERT INTO documents_v4 (id, kind, doc_no, doc_date, party_id, warehouse_id, dest_warehouse_id, invoice_value, notes, created_at)
+        SELECT id, kind, doc_no, doc_date, party_id, warehouse_id, dest_warehouse_id, invoice_value, notes, created_at FROM documents;
+      DROP TABLE documents;
+      ALTER TABLE documents_v4 RENAME TO documents;
+    `);
+  } finally {
+    db.pragma('legacy_alter_table = OFF');
+    db.pragma('foreign_keys = ON');
+  }
+  const broken = db.pragma('foreign_key_check');
+  if (broken && broken.length) throw new Error('فشل توسيع أنواع المستندات: ' + JSON.stringify(broken));
+}
+
+/**
+ * V4 — the «محرز» (held) bucket is gone from the whole app. Any quantity
+ * that was sitting in it is folded into «سليم» exactly once (guarded by a
+ * meta flag) so no piece of stock ever becomes invisible, and the moved
+ * amount is recorded for the settings screen to disclose.
+ */
+function mergeHeldBucket() {
+  const flag = db.prepare("SELECT value FROM meta WHERE key='held_merged_v4'").get();
+  if (flag) return;
+  const moved = db.prepare("SELECT COALESCE(SUM(piece_delta),0) AS p FROM stock_moves WHERE bucket='held'").get().p;
+  const tx = db.transaction(() => {
+    db.exec("UPDATE stock_moves SET bucket='good' WHERE bucket='held'");
+    db.exec("UPDATE doc_lines SET bucket='good' WHERE bucket='held'");
+    db.exec("UPDATE scrap_movements SET bucket='good' WHERE bucket='held'");
+    db.prepare("INSERT INTO meta(key,value) VALUES('held_merged_v4',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value")
+      .run(String(moved));
+  });
+  tx();
 }
 
 /**
@@ -449,7 +531,10 @@ const STOCK_SQL = `
   GROUP BY m.warehouse_id, m.bucket
 `;
 
-const emptyBucket = () => ({ good: 0, defect: 0, held: 0, total: 0 });
+const emptyBucket = () => ({ good: 0, defect: 0, total: 0 });
+
+/** V4 has two buckets only — a legacy «held» row folds into «سليم» */
+const normBucket = (b) => (b === 'held' ? 'good' : b);
 
 /**
  * One warehouse, many hangars: the balance shown everywhere is the sum over
@@ -460,10 +545,11 @@ function attachStock(item) {
   const byWh = {};
   const all = emptyBucket();
   for (const r of rows) {
+    const bucket = normBucket(r.bucket);
     byWh[r.warehouseId] = byWh[r.warehouseId] || emptyBucket();
-    byWh[r.warehouseId][r.bucket] = r.pieces;
+    byWh[r.warehouseId][bucket] = (byWh[r.warehouseId][bucket] || 0) + r.pieces;
     byWh[r.warehouseId].total += r.pieces;
-    all[r.bucket] += r.pieces;
+    all[bucket] = (all[bucket] || 0) + r.pieces;
     all.total += r.pieces;
   }
   const alerts = [];
@@ -505,10 +591,9 @@ function itemStock(id) {
     name: w.name,
     kind: w.kind,
     good: item.stockByWarehouse[w.id]?.good || 0,
-    defect: item.stockByWarehouse[w.id]?.defect || 0,
-    held: item.stockByWarehouse[w.id]?.held || 0
+    defect: item.stockByWarehouse[w.id]?.defect || 0
   }));
-  return rows.filter((r) => r.good || r.defect || r.held);
+  return rows.filter((r) => r.good || r.defect);
 }
 
 /**
@@ -585,7 +670,7 @@ function openingBalances(itemId) {
   ).all(itemId);
   const map = {};
   for (const r of rows) {
-    map[r.warehouseId] = map[r.warehouseId] || { good: 0, defect: 0, held: 0 };
+    map[r.warehouseId] = map[r.warehouseId] || { good: 0, defect: 0 };
     map[r.warehouseId][r.bucket] = r.qty;
   }
   return map;
@@ -730,15 +815,28 @@ function deleteMove(id) {
  * documents — المشتريات / المبيعات / المرتجعات / التحويلات
  * Every line writes stock_moves rows, so balances are always derived
  * from the ledger and a hard delete simply removes those rows again.
+ *
+ * V4 adds the movement documents that a real warehouse needs and that
+ * were missing: the production receipt (inbound from the factory, with
+ * an exit permit because the factory sits OUTSIDE the warehouse), the
+ * gate notes (goods in / goods out of the site) and the stock
+ * adjustment (the difference found while counting).
  * ------------------------------------------------------------------ */
 
 const DOC_KINDS = {
-  purchase: { ar: 'مشتريات', sign: 1, prefix: 'PUR' },
-  sale: { ar: 'مبيعات', sign: -1, prefix: 'SAL' },
-  sale_return: { ar: 'مرتجع مبيعات', sign: 1, prefix: 'SRT' },
-  purchase_return: { ar: 'مرتجع مشتريات', sign: -1, prefix: 'PRT' },
-  transfer: { ar: 'نقل بين الهناجر', sign: 0, prefix: 'TRF' }
+  purchase: { ar: 'مشتريات', sign: 1, prefix: 'PUR', group: 'تجاري' },
+  sale: { ar: 'مبيعات', sign: -1, prefix: 'SAL', group: 'تجاري' },
+  sale_return: { ar: 'مرتجع مبيعات', sign: 1, prefix: 'SRT', group: 'تجاري' },
+  purchase_return: { ar: 'مرتجع مشتريات', sign: -1, prefix: 'PRT', group: 'تجاري' },
+  transfer: { ar: 'نقل بين المخازن', sign: 0, prefix: 'TRF', group: 'مستودع' },
+  prod_receipt: { ar: 'سند استلام الإنتاج', sign: 1, prefix: 'PRC', group: 'مستودع' },
+  gate_in: { ar: 'إذن إدخال', sign: 1, prefix: 'GIN', group: 'بوابة' },
+  gate_out: { ar: 'إذن خروج', sign: -1, prefix: 'GOT', group: 'بوابة' },
+  adjustment: { ar: 'تسوية جرد', sign: 0, prefix: 'ADJ', group: 'مستودع' }
 };
+
+/** kinds whose lines need a warehouse of their own (one warehouse per line) */
+const DOC_PER_LINE_WH = ['prod_receipt', 'gate_in', 'gate_out', 'adjustment'];
 
 /** every doc_type that can appear in stock_moves, including production rows */
 const DOC_LABELS_ALL = {
@@ -811,6 +909,9 @@ function validateDocument(payload) {
     if (!l.item_id) throw new Error(`اختر الصنف في السطر ${at}`);
     if (int(l.pieces) <= 0) throw new Error(`كمية الحبة في السطر ${at} يجب أن تكون أكبر من صفر`);
     if (!BUCKETS.includes(l.bucket || 'good')) throw new Error(`حالة غير صالحة في السطر ${at}`);
+    if (payload.kind === 'adjustment' && int(l.sign) !== 1 && int(l.sign) !== -1) {
+      throw new Error(`حدد اتجاه السطر ${at}: زيادة (1) أو عجز (-1)`);
+    }
   }
   payload.lines = filled;
   return meta;
@@ -833,13 +934,17 @@ function saveDocument(payload) {
       db.prepare('DELETE FROM doc_lines WHERE document_id=?').run(id);
     }
 
+    // the number is decided ONCE — computing it again after the insert would
+    // hand the ledger rows a different number than the document itself
+    const docNo = (payload.doc_no || '').trim() || nextDocNo(payload.kind);
+
     let docId = id;
     if (docId) {
       db.prepare(
         `UPDATE documents SET kind=?, doc_no=?, doc_date=?, party_id=?, warehouse_id=?, dest_warehouse_id=?,
          invoice_value=?, notes=? WHERE id=?`
       ).run(
-        payload.kind, (payload.doc_no || '').trim() || nextDocNo(payload.kind), payload.doc_date,
+        payload.kind, docNo, payload.doc_date,
         int(payload.party_id) || null, int(payload.warehouse_id) || null, int(payload.dest_warehouse_id) || null,
         (payload.invoice_value == null ? '' : String(payload.invoice_value)).trim() || null,
         (payload.notes || '').trim() || null, docId
@@ -849,7 +954,7 @@ function saveDocument(payload) {
         `INSERT INTO documents(kind,doc_no,doc_date,party_id,warehouse_id,dest_warehouse_id,invoice_value,notes)
          VALUES(?,?,?,?,?,?,?,?)`
       ).run(
-        payload.kind, (payload.doc_no || '').trim() || nextDocNo(payload.kind), payload.doc_date,
+        payload.kind, docNo, payload.doc_date,
         int(payload.party_id) || null, int(payload.warehouse_id) || null, int(payload.dest_warehouse_id) || null,
         (payload.invoice_value == null ? '' : String(payload.invoice_value)).trim() || null,
         (payload.notes || '').trim() || null
@@ -858,15 +963,14 @@ function saveDocument(payload) {
     }
 
     const insLine = db.prepare(
-      `INSERT INTO doc_lines(document_id,item_id,warehouse_id,dest_warehouse_id,bucket,pieces,cartons,bags,note)
-       VALUES(?,?,?,?,?,?,?,?,?)`
+      `INSERT INTO doc_lines(document_id,item_id,warehouse_id,dest_warehouse_id,bucket,pieces,cartons,bags,note,sign)
+       VALUES(?,?,?,?,?,?,?,?,?,?)`
     );
     const warnings = [];
     const insMove = db.prepare(
       `INSERT INTO stock_moves(item_id,warehouse_id,bucket,piece_delta,carton_qty,bag_qty,doc_type,doc_id,doc_no,party_id,note,move_date)
        VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`
     );
-    const docNo = (payload.doc_no || '').trim() || nextDocNo(payload.kind);
 
     for (const l of payload.lines) {
       const itemId = int(l.item_id);
@@ -884,20 +988,27 @@ function saveDocument(payload) {
         if (pieces > here) {
           warnings.push(`«${item.name}» في ${whName(src)} ${here} ${item.base_unit} فقط، والمخزن سيتجاوز الحد إلى ${here - pieces}.`);
         }
-        insLine.run(docId, itemId, src, dst, bucket, pieces, cartons, bags, l.note || null);
+        insLine.run(docId, itemId, src, dst, bucket, pieces, cartons, bags, l.note || null, -1);
         insMove.run(itemId, src, bucket, -pieces, cartons, bags, payload.kind, docId, docNo, null, l.note || 'نقل صادر', payload.doc_date);
         insMove.run(itemId, dst, bucket, pieces, cartons, bags, payload.kind, docId, docNo, null, l.note || 'نقل وارد', payload.doc_date);
       } else {
         const wh = int(l.warehouse_id || payload.warehouse_id) || null;
         if (!wh) throw new Error(`اختر المخزن للسطر ${payload.lines.indexOf(l) + 1}`);
-        if (meta.sign < 0) {
+        // the movement documents always carry their own warehouse per line —
+        // there is no header-level default to fall back on
+        if (DOC_PER_LINE_WH.includes(payload.kind) && !int(l.warehouse_id)) {
+          throw new Error(`اختر مخزن السطر ${payload.lines.indexOf(l) + 1} — كل سطر يذهب إلى مخزنه`);
+        }
+        // a stock adjustment carries its own direction per line (surplus / shortage)
+        const sign = payload.kind === 'adjustment' ? int(l.sign) : meta.sign;
+        if (sign < 0) {
           const avail = availableInLocation(itemId, wh, bucket, docId);
           if (pieces > avail) {
             warnings.push(`رصيد «${item.name}» في ${whName(wh)} ${avail} ${item.base_unit} فقط والإصدار ${pieces} — الرصيد بعد الحفظ ${avail - pieces}.`);
           }
         }
-        insLine.run(docId, itemId, wh, null, bucket, pieces, cartons, bags, l.note || null);
-        insMove.run(itemId, wh, bucket, meta.sign * pieces, cartons, bags, payload.kind, docId, docNo,
+        insLine.run(docId, itemId, wh, null, bucket, pieces, cartons, bags, l.note || null, sign);
+        insMove.run(itemId, wh, bucket, sign * pieces, cartons, bags, payload.kind, docId, docNo,
           int(payload.party_id) || null, l.note || null, payload.doc_date);
       }
     }
@@ -974,14 +1085,47 @@ function listDocuments(filter = {}) {
   return rows.map((r) => ({ ...r, kindAr: DOC_KINDS[r.kind] ? DOC_KINDS[r.kind].ar : r.kind }));
 }
 
+/**
+ * سندات استلام الإنتاج — the production receipts as documents.
+ * The production screen lists them next to the documentation reports, so
+ * the user sees both halves of the same story: what entered the stock and
+ * what was only written down.
+ */
+function listProdReceipts(limit = 200) {
+  return listDocuments({ kind: 'prod_receipt', limit: int(limit) || 200 });
+}
+
 /** what will be reverted if this document is hard-deleted */
 function documentImpact(id) {
   const doc = getDocument(id);
   if (!doc) return null;
+  const kindMeta = DOC_KINDS[doc.kind] || { sign: 0 };
+  // the ledger rows carry the real direction, so an adjustment (whose
+  // direction differs per line) is described exactly as it will be undone
+  const moves = db.prepare(
+    `SELECT m.item_id AS itemId, i.code AS itemCode, i.name AS itemName,
+            m.warehouse_id AS warehouseId, w.name AS warehouseName,
+            m.bucket AS bucket, m.piece_delta AS delta, m.note AS note
+     FROM stock_moves m
+     JOIN items i ON i.id = m.item_id
+     LEFT JOIN warehouses w ON w.id = m.warehouse_id
+     WHERE m.doc_id=? AND m.doc_type=? ORDER BY m.id`
+  ).all(id, doc.kind);
+
+  if (moves.length) {
+    const lines = moves.map((m) => ({
+      item: `${m.itemCode} — ${m.itemName}`,
+      wh: m.warehouseName || '—',
+      dir: m.delta < 0 ? 'إضافة (عكس الخصم)' : 'خصم (عكس الزيادة)',
+      qty: `${Math.abs(m.delta)} ${AR_BUCKET[m.bucket] || m.bucket}`
+    }));
+    return { doc, lines, totalPieces: doc.totalPieces };
+  }
+
   const lines = doc.lines.map((l) => {
-    const out = DOC_KINDS[doc.kind].sign < 0;
+    const out = kindMeta.sign < 0;
     if (doc.kind === 'transfer') {
-      return { item: `${l.itemCode} — ${l.itemName}`, wh: l.warehouseName, dir: 'إضافة (عكس الصادر)', qty: `${l.pieces} ${AR_BUCKET[l.bucket]}` , extra: l.destWarehouseName };
+      return { item: `${l.itemCode} — ${l.itemName}`, wh: l.warehouseName, dir: 'إضافة (عكس الصادر)', qty: `${l.pieces} ${AR_BUCKET[l.bucket]}`, extra: l.destWarehouseName };
     }
     return {
       item: `${l.itemCode} — ${l.itemName}`,
@@ -1268,8 +1412,15 @@ function getReceipt(id) {
   return { ...r, lines: receiptLines(id) };
 }
 
+/**
+ * تقرير الإنتاج اليومي — a DOCUMENTATION record only.
+ *
+ * V4: it no longer writes any stock movement. Its whole purpose is to
+ * record what came out of each carton (good / damaged / broken / bags)
+ * so the shortage and damage can be known and reported. The stock effect
+ * is carried by the separate «سند استلام الإنتاج» document.
+ */
 function saveReceipt(payload) {
-  const routing = prodRouting();
   const rawItemId = int(payload.raw_item_id);
   const perBagOf = (id) => int(db.prepare('SELECT pieces_per_bag AS p FROM items WHERE id=?').get(id)?.p);
   const lines = (payload.lines || []).map((l) => {
@@ -1305,54 +1456,34 @@ function saveReceipt(payload) {
   const shortage = Math.max(0, cartonPieces - produced);
   const surplus = Math.max(0, produced - cartonPieces);
 
-  // routing is only required for the buckets that actually have quantities
-  if (lines.some((l) => l.good > 0) && !routing.fgGoodWh) throw new Error('حدّد مخزن «منتج تام سليم» في قسم توجيه الأرصدة');
-  if (lines.some((l) => l.defect_cans > 0) && !routing.fgDefectWh) throw new Error('حدّد مخزن «منتج تام تالف» في قسم توجيه الأرصدة');
-  if (lines.some((l) => l.defect_ampoules > 0) && !routing.rawDefectWh) throw new Error('حدّد مخزن «خام تالف» في قسم توجيه الأرصدة');
-
   const id = int(payload.id) || null;
   let newId = null;
+  // a production report is a documentation record — it always carries a date
+  const docDate = String(payload.doc_date || '').trim() || new Date().toISOString().slice(0, 10);
   const tx = db.transaction(() => {
     if (id) {
-      db.prepare("DELETE FROM stock_moves WHERE doc_id=? AND doc_type IN ('receipt','bags')").run(id);
       db.prepare('DELETE FROM prod_receipt_lines WHERE receipt_id=?').run(id);
       db.prepare(
         `UPDATE prod_receipts SET doc_no=?, doc_date=?, issue_id=?, raw_item_id=?, carton_no=?, carton_pieces=?,
          bags_used=?, produced_total=?, shortage=?, surplus=?, note=? WHERE id=?`
-      ).run(payload.doc_no, payload.doc_date, int(payload.issue_id) || null, rawItemId, String(payload.carton_no).trim(),
+      ).run(payload.doc_no, docDate, int(payload.issue_id) || null, rawItemId, String(payload.carton_no).trim(),
         cartonPieces, bagsTotal, produced, shortage, surplus, str(payload.note), id);
     } else {
       const info = db.prepare(
         `INSERT INTO prod_receipts(doc_no,doc_date,issue_id,raw_item_id,carton_no,carton_pieces,bags_used,produced_total,shortage,surplus,note)
          VALUES(?,?,?,?,?,?,?,?,?,?,?)`
-      ).run(payload.doc_no || nextProdNo('prod_receipts', 'PRD'), payload.doc_date, int(payload.issue_id) || null,
+      ).run(payload.doc_no || nextProdNo('prod_receipts', 'PRD'), docDate, int(payload.issue_id) || null,
         rawItemId, String(payload.carton_no).trim(), cartonPieces, bagsTotal, produced, shortage, surplus, str(payload.note));
       newId = info.lastInsertRowid;
     }
     const receiptId = id || newId;
-    const docNo = db.prepare('SELECT doc_no FROM prod_receipts WHERE id=?').get(receiptId).doc_no;
 
     const insLine = db.prepare(
       'INSERT INTO prod_receipt_lines(receipt_id,item_id,good,defect_cans,defect_ampoules,bags_used,breaks,note) VALUES(?,?,?,?,?,?,?,?)'
     );
-    const insMove = db.prepare(
-      `INSERT INTO stock_moves(item_id,warehouse_id,bucket,piece_delta,carton_qty,bag_qty,doc_type,doc_id,doc_no,note,move_date)
-       VALUES(?,?,?,?,?,?,?,?,?,?,?)`
-    );
 
     for (const l of lines) {
       insLine.run(receiptId, l.item_id, l.good, l.defect_cans, l.defect_ampoules, l.bags_used, l.breaks, str(l.note));
-      // good -> finished-goods GOOD warehouse
-      if (l.good) insMove.run(l.item_id, routing.fgGoodWh, 'good', l.good, 0, 0, 'receipt', receiptId, docNo, 'إنتاج جيد', payload.doc_date);
-      // defect cans -> finished-goods DEFECT warehouse
-      if (l.defect_cans) insMove.run(l.item_id, routing.fgDefectWh, 'defect', l.defect_cans, 0, 0, 'receipt', receiptId, docNo, 'تالف علب', payload.doc_date);
-      // defect ampoules -> RAW MATERIAL defect warehouse, on the raw item
-      if (l.defect_ampoules) insMove.run(rawItemId, routing.rawDefectWh, 'defect', l.defect_ampoules, 0, 0, 'receipt', receiptId, docNo, 'تالف أمبولة', payload.doc_date);
-    }
-    // bags consumed, deducted from the bag item when configured
-    if (bagsTotal > 0 && routing.bagItemId) {
-      const wh = routing.bagWhId || routing.fgGoodWh;
-      insMove.run(routing.bagItemId, wh, 'good', -bagsTotal, 0, bagsTotal, 'bags', receiptId, docNo, 'أكياس مستخدمة في الإنتاج', payload.doc_date);
     }
     return receiptId;
   });
@@ -1361,27 +1492,26 @@ function saveReceipt(payload) {
   return getReceipt(savedId);
 }
 
+/**
+ * What a daily production report touches. Since V4 it is a documentation
+ * record only, so the answer is "nothing in the stock" — unless the report
+ * was created before V4 and still carries legacy movements.
+ */
 function receiptImpact(id) {
   const r = getReceipt(id);
   if (!r) return null;
-  const routing = prodRouting();
-  const lines = [];
-  for (const l of r.lines) {
-    const name = `${l.itemCode} — ${l.itemName}`;
-    if (l.good) lines.push({ item: name, wh: whName(routing.fgGoodWh), dir: 'خصم (عكس الإضافة)', qty: `${l.good} سليم` });
-    if (l.defect_cans) lines.push({ item: name, wh: whName(routing.fgDefectWh), dir: 'خصم (عكس الإضافة)', qty: `${l.defect_cans} تالف` });
-    if (l.defect_ampoules) {
-      const raw = db.prepare('SELECT code,name FROM items WHERE id=?').get(r.raw_item_id);
-      lines.push({ item: `${raw.code} — ${raw.name}`, wh: whName(routing.rawDefectWh), dir: 'خصم (عكس الإضافة)', qty: `${l.defect_ampoules} تالف` });
-    }
-  }
-  const bags = db.prepare("SELECT COALESCE(SUM(piece_delta),0) AS p FROM stock_moves WHERE doc_id=? AND doc_type='bags'").get(id).p;
-  if (bags) {
-    const routing2 = prodRouting();
-    const bagItem = db.prepare('SELECT code,name FROM items WHERE id=?').get(routing2.bagItemId);
-    if (bagItem) lines.push({ item: `${bagItem.code} — ${bagItem.name}`, wh: whName(routing2.bagWhId || routing2.fgGoodWh), dir: 'إضافة (عكس الخصم)', qty: `${-bags} سليم` });
-  }
-  return { doc: r, lines, produced: r.produced_total, shortage: r.shortage, surplus: r.surplus };
+  const legacy = db.prepare(
+    "SELECT COUNT(*) AS c FROM stock_moves WHERE doc_id=? AND doc_type IN ('receipt','bags')"
+  ).get(id).c;
+  return {
+    doc: r,
+    lines: [],
+    legacyMoves: legacy,
+    produced: r.produced_total,
+    shortage: r.shortage,
+    surplus: r.surplus,
+    documentationOnly: true
+  };
 }
 
 function whName(id) {
@@ -1771,8 +1901,7 @@ function reportQuery(filters = {}) {
     `SELECT item_id AS id,
             COALESCE(SUM(piece_delta),0) AS total,
             COALESCE(SUM(CASE WHEN bucket='good' THEN piece_delta ELSE 0 END),0) AS good,
-            COALESCE(SUM(CASE WHEN bucket='defect' THEN piece_delta ELSE 0 END),0) AS defect,
-            COALESCE(SUM(CASE WHEN bucket='held' THEN piece_delta ELSE 0 END),0) AS held
+            COALESCE(SUM(CASE WHEN bucket='defect' THEN piece_delta ELSE 0 END),0) AS defect
      FROM stock_moves GROUP BY item_id`
   ).all();
   mb.forEach((r) => (mainBal[r.id] = r));
@@ -1780,7 +1909,7 @@ function reportQuery(filters = {}) {
   let qty = 0;
   let value = 0;
   let nonNumeric = 0;
-  const byBucket = { good: 0, defect: 0, held: 0 };
+  const byBucket = { good: 0, defect: 0 };
   const inByBucket = {};
   const outByBucket = {};
   buckets.forEach((b) => { inByBucket[b] = 0; outByBucket[b] = 0; });
@@ -1818,8 +1947,7 @@ function reportQuery(filters = {}) {
       locationName: (filters.byLocation && locationTotals[r.warehouseId]) ? locationTotals[r.warehouseId].name : null,
       mainBalance: mainBal[r.itemId] ? mainBal[r.itemId].total : 0,
       mainGood: mainBal[r.itemId] ? mainBal[r.itemId].good : 0,
-      mainDefect: mainBal[r.itemId] ? mainBal[r.itemId].defect : 0,
-      mainHeld: mainBal[r.itemId] ? mainBal[r.itemId].held : 0
+      mainDefect: mainBal[r.itemId] ? mainBal[r.itemId].defect : 0
     })),
     totals: {
       rows: inRange.length,
@@ -1876,7 +2004,6 @@ function summary() {
   const mainPieces = sumBucket(null);
   const mainGood = sumBucket('good');
   const mainDefect = sumBucket('defect');
-  const mainHeld = sumBucket('held');
   const customerPieces = db.prepare('SELECT COALESCE(SUM(piece_delta),0) AS p FROM stock_moves WHERE is_customer=1').get().p;
   const today = db.prepare("SELECT COUNT(*) AS c FROM stock_moves WHERE move_date=date('now','localtime')").get().c;
   const docs = db.prepare('SELECT COUNT(*) AS c FROM documents').get().c;
@@ -1891,7 +2018,7 @@ function summary() {
     documents: docs,
     todayDocs,
     moves: db.prepare('SELECT COUNT(*) AS c FROM stock_moves').get().c,
-    mainPieces, mainGood, mainDefect, mainHeld,
+    mainPieces, mainGood, mainDefect,
     customerPieces,
     todayMoves: today,
     alerts,
@@ -1967,6 +2094,448 @@ function dailyReport(filters = {}) {
   return { date: day, buckets, bucketLabels: buckets.map((b) => AR_BUCKET[b]), warehouses: whs, rows, warehouseTotals, grand };
 }
 
+/* ------------------------------------------------------------------ *
+ * V4 — ready-made reports.
+ *
+ * Every report shares ONE shape so the report window can render any of
+ * them without special-casing:
+ *   { report, title, columns:[{key,label,num?,money?}], rows:[], totals:{...} }
+ * All of them honour the same period filter (from / to on move_date).
+ * ------------------------------------------------------------------ */
+
+/** the catalogue the report window renders as a ready-made list */
+const REPORTS = [
+  { key: 'movements', title: 'حركة المخزون', hint: 'كل حركات الدخول والخروج بالتفصيل', landscape: true },
+  { key: 'stock_status', title: 'أرصدة الأصناف', hint: 'الرصيد الحالي لكل صنف في كل مخزن', landscape: false },
+  { key: 'item_ledger', title: 'كشف حساب صنف', hint: 'حركة الصنف سطراً سطراً مع الرصيد الجاري', landscape: false },
+  { key: 'warehouse_flow', title: 'حركة المخازن', hint: 'الداخل والخالص لكل مخزن خلال الفترة', landscape: false },
+  { key: 'movement_summary', title: 'ملخص الحركات', hint: 'عدد وقيمة كل نوع مستند', landscape: false },
+  { key: 'shortage', title: 'الأصناف الناقصة', hint: 'ما وصل حد التنبيه أو نفد من المخزون', landscape: false },
+  { key: 'damage', title: 'التالف والهدر', hint: 'حركة التالف والهدر لكل صنف', landscape: false },
+  { key: 'party_balance', title: 'حساب الأطراف', hint: 'ماذا دخل وماذا خرج لكل عميل أو مورد', landscape: false },
+  { key: 'production_gap', title: 'عجز وتالف الإنتاج', hint: 'عجز الكراتين وتالفها — تقرير توثيقي بلا أثر على المخزون', landscape: true }
+];
+
+function reportRange(filters) {
+  const from = (filters.dateFrom || '').trim();
+  const to = (filters.dateTo || '').trim();
+  const where = [];
+  const params = [];
+  if (from) { where.push('m.move_date >= ?'); params.push(from); }
+  if (to) { where.push('m.move_date <= ?'); params.push(to); }
+  return { where, params };
+}
+
+/** أرصدة الأصناف: current balance of every item, split per warehouse */
+function stockStatusReport(filters = {}) {
+  const whId = int(filters.warehouseId) || null;
+  const itemId = int(filters.itemId) || null;
+  const where = ['m.is_customer = 0'];
+  const params = [];
+  if (whId) { where.push('m.warehouse_id = ?'); params.push(whId); }
+  if (itemId) { where.push('m.item_id = ?'); params.push(itemId); }
+  const rows = db.prepare(
+    `SELECT i.id AS itemId, i.code AS itemCode, i.name AS itemName, i.base_unit AS baseUnit,
+            i.min_good_alert AS minAlert, i.max_defect_alert AS maxDefect,
+            w.id AS warehouseId, w.name AS warehouseName,
+            COALESCE(SUM(CASE WHEN m.bucket='good' THEN m.piece_delta ELSE 0 END),0) AS good,
+            COALESCE(SUM(CASE WHEN m.bucket='defect' THEN m.piece_delta ELSE 0 END),0) AS defect,
+            COALESCE(SUM(m.piece_delta),0) AS total
+     FROM stock_moves m
+     JOIN items i ON i.id = m.item_id
+     JOIN warehouses w ON w.id = m.warehouse_id
+     WHERE ${where.join(' AND ')}
+     GROUP BY i.id, w.id
+     HAVING good <> 0 OR defect <> 0 OR total <> 0
+     ORDER BY i.code, w.name`
+  ).all(...params);
+
+  let good = 0, defect = 0, total = 0;
+  const out = rows.map((r) => {
+    good += r.good; defect += r.defect; total += r.total;
+    const low = r.minAlert > 0 && r.good < r.minAlert;
+    const high = r.maxDefect > 0 && r.defect > r.maxDefect;
+    return {
+      ...r,
+      alert: low ? 'سليم تحت الحد' : high ? 'تالف تجاوز الحد' : '',
+      alertKind: low ? 'warn' : high ? 'bad' : ''
+    };
+  });
+  return {
+    report: 'stock_status',
+    title: 'أرصدة الأصناف',
+    columns: [
+      { key: 'itemCode', label: 'كود الصنف' },
+      { key: 'itemName', label: 'اسم الصنف' },
+      { key: 'warehouseName', label: 'المخزن' },
+      { key: 'good', label: 'سليم', num: true },
+      { key: 'defect', label: 'تالف', num: true },
+      { key: 'total', label: 'الإجمالي', num: true },
+      { key: 'alert', label: 'التنبيه' }
+    ],
+    rows: out,
+    totals: { rows: out.length, good, defect, total }
+  };
+}
+
+/** كشف حساب صنف: every movement of one item with the running balance */
+function itemLedgerReport(filters = {}) {
+  const itemId = int(filters.itemId);
+  if (!itemId) throw new Error('اختر الصنف لعرض كشف الحساب');
+  const { where, params } = reportRange(filters);
+  const rows = db.prepare(
+    `SELECT m.id, m.move_date AS moveDate, m.doc_no AS docNo, m.doc_type AS docType,
+            m.piece_delta AS delta, m.bucket AS bucket, m.note AS note,
+            w.name AS warehouseName, p.name AS partyName
+     FROM stock_moves m
+     JOIN warehouses w ON w.id = m.warehouse_id
+     LEFT JOIN parties p ON p.id = m.party_id
+     WHERE m.item_id = ? ${where.length ? 'AND ' + where.join(' AND ') : ''}
+     ORDER BY m.move_date, m.id`
+  ).all(itemId, ...params);
+
+  let bal = 0;
+  const out = rows.map((r) => {
+    bal += r.delta;
+    return {
+      ...r,
+      docTypeAr: DOC_LABELS_ALL[r.docType] || r.docType,
+      bucketAr: AR_BUCKET[r.bucket] || r.bucket,
+      inQty: r.delta > 0 ? r.delta : 0,
+      outQty: r.delta < 0 ? -r.delta : 0,
+      balance: bal
+    };
+  });
+  return {
+    report: 'item_ledger',
+    title: 'كشف حساب صنف',
+    columns: [
+      { key: 'moveDate', label: 'التاريخ' },
+      { key: 'docNo', label: 'رقم المستند' },
+      { key: 'docTypeAr', label: 'نوع الحركة' },
+      { key: 'warehouseName', label: 'المخزن' },
+      { key: 'partyName', label: 'الطرف' },
+      { key: 'inQty', label: 'وارد', num: true },
+      { key: 'outQty', label: 'صادر', num: true },
+      { key: 'balance', label: 'الرصيد الجاري', num: true },
+      { key: 'note', label: 'ملاحظة' }
+    ],
+    rows: out,
+    totals: { rows: out.length, inQty: out.reduce((a, r) => a + r.inQty, 0), outQty: out.reduce((a, r) => a + r.outQty, 0), balance: bal }
+  };
+}
+
+/** حركة المخازن: what came in and what went out of each warehouse */
+function warehouseFlowReport(filters = {}) {
+  const { where, params } = reportRange(filters);
+  const rows = db.prepare(
+    `SELECT w.id AS warehouseId, w.name AS warehouseName, w.code AS warehouseCode,
+            COALESCE(SUM(CASE WHEN m.piece_delta>0 THEN m.piece_delta ELSE 0 END),0) AS inQty,
+            COALESCE(SUM(CASE WHEN m.piece_delta<0 THEN -m.piece_delta ELSE 0 END),0) AS outQty,
+            COALESCE(SUM(m.piece_delta),0) AS net,
+            COUNT(DISTINCT m.doc_type || '-' || m.doc_id) AS docCount
+     FROM stock_moves m
+     JOIN warehouses w ON w.id = m.warehouse_id
+     WHERE m.is_customer = 0 ${where.length ? 'AND ' + where.join(' AND ') : ''}
+     GROUP BY w.id
+     ORDER BY w.name`
+  ).all(...params);
+
+  const balRows = db.prepare(
+    `SELECT m.warehouse_id AS id, COALESCE(SUM(m.piece_delta),0) AS balance
+     FROM stock_moves m WHERE m.is_customer = 0 GROUP BY m.warehouse_id`
+  ).all();
+  const balMap = {}; balRows.forEach((r) => (balMap[r.id] = r.balance));
+
+  const out = rows.map((r) => ({ ...r, balance: balMap[r.warehouseId] || 0 }));
+  return {
+    report: 'warehouse_flow',
+    title: 'حركة المخازن',
+    columns: [
+      { key: 'warehouseName', label: 'المخزن' },
+      { key: 'docCount', label: 'عدد المستندات', num: true },
+      { key: 'inQty', label: 'الداخل', num: true },
+      { key: 'outQty', label: 'الخارج', num: true },
+      { key: 'net', label: 'الصافي', num: true, signed: true },
+      { key: 'balance', label: 'الرصيد الحالي', num: true }
+    ],
+    rows: out,
+    totals: {
+      rows: out.length,
+      inQty: out.reduce((a, r) => a + r.inQty, 0),
+      outQty: out.reduce((a, r) => a + r.outQty, 0),
+      net: out.reduce((a, r) => a + r.net, 0)
+    }
+  };
+}
+
+/** ملخص الحركات: one row per document type */
+function movementSummaryReport(filters = {}) {
+  const { where, params } = reportRange(filters);
+  const rows = db.prepare(
+    `SELECT m.doc_type AS docType, COUNT(*) AS moveCount,
+            COUNT(DISTINCT m.doc_type || '-' || m.doc_id) AS docCount,
+            COALESCE(SUM(CASE WHEN m.piece_delta>0 THEN m.piece_delta ELSE 0 END),0) AS inQty,
+            COALESCE(SUM(CASE WHEN m.piece_delta<0 THEN -m.piece_delta ELSE 0 END),0) AS outQty,
+            COALESCE(SUM(m.piece_delta),0) AS net
+     FROM stock_moves m
+     WHERE 1=1 ${where.length ? 'AND ' + where.join(' AND ') : ''}
+     GROUP BY m.doc_type
+     ORDER BY moveCount DESC`
+  ).all(...params);
+  const out = rows.map((r) => ({ ...r, docTypeAr: DOC_LABELS_ALL[r.docType] || r.docType }));
+  return {
+    report: 'movement_summary',
+    title: 'ملخص الحركات',
+    columns: [
+      { key: 'docTypeAr', label: 'نوع المستند' },
+      { key: 'docCount', label: 'عدد المستندات', num: true },
+      { key: 'moveCount', label: 'عدد الحركات', num: true },
+      { key: 'inQty', label: 'وارد', num: true },
+      { key: 'outQty', label: 'صادر', num: true },
+      { key: 'net', label: 'الصافي', num: true, signed: true }
+    ],
+    rows: out,
+    totals: {
+      rows: out.length,
+      inQty: out.reduce((a, r) => a + r.inQty, 0),
+      outQty: out.reduce((a, r) => a + r.outQty, 0),
+      net: out.reduce((a, r) => a + r.net, 0)
+    }
+  };
+}
+
+/** الأصناف الناقصة: below the alert threshold or negative balance */
+function shortageReport(filters = {}) {
+  const whId = int(filters.warehouseId) || null;
+  const params = [];
+  const whWhere = whId ? 'AND m.warehouse_id = ?' : '';
+  if (whId) params.push(whId);
+  const rows = db.prepare(
+    `SELECT i.id AS itemId, i.code AS itemCode, i.name AS itemName, i.base_unit AS baseUnit,
+            i.min_good_alert AS minAlert, i.max_defect_alert AS maxDefect,
+            w.name AS warehouseName,
+            COALESCE(SUM(CASE WHEN m.bucket='good' THEN m.piece_delta ELSE 0 END),0) AS good,
+            COALESCE(SUM(CASE WHEN m.bucket='defect' THEN m.piece_delta ELSE 0 END),0) AS defect
+     FROM stock_moves m
+     JOIN items i ON i.id = m.item_id
+     JOIN warehouses w ON w.id = m.warehouse_id
+     WHERE m.is_customer = 0 ${whWhere}
+     GROUP BY i.id, w.id
+     HAVING good < 0 OR (minAlert > 0 AND good < minAlert)
+     ORDER BY good ASC, i.code`
+  ).all(...params);
+  const out = rows.map((r) => ({
+    ...r,
+    missing: r.minAlert > 0 ? Math.max(0, r.minAlert - r.good) : Math.max(0, -r.good),
+    reason: r.good < 0 ? 'رصيد سالب' : 'تحت حد التنبيه'
+  }));
+  return {
+    report: 'shortage',
+    title: 'الأصناف الناقصة',
+    columns: [
+      { key: 'itemCode', label: 'كود الصنف' },
+      { key: 'itemName', label: 'اسم الصنف' },
+      { key: 'warehouseName', label: 'المخزن' },
+      { key: 'good', label: 'سليم', num: true },
+      { key: 'minAlert', label: 'حد التنبيه', num: true },
+      { key: 'missing', label: 'الناقص', num: true },
+      { key: 'reason', label: 'السبب' }
+    ],
+    rows: out,
+    totals: { rows: out.length, missing: out.reduce((a, r) => a + r.missing, 0) }
+  };
+}
+
+/** التالف والهدر: every defect movement, per item */
+function damageReport(filters = {}) {
+  const { where, params } = reportRange(filters);
+  const rows = db.prepare(
+    `SELECT i.code AS itemCode, i.name AS itemName, i.base_unit AS baseUnit,
+            w.name AS warehouseName,
+            COALESCE(SUM(CASE WHEN m.piece_delta<0 THEN -m.piece_delta ELSE 0 END),0) AS outQty,
+            COALESCE(SUM(CASE WHEN m.piece_delta>0 THEN m.piece_delta ELSE 0 END),0) AS inQty,
+            COUNT(*) AS moveCount,
+            COALESCE(SUM(m.piece_delta),0) AS net
+     FROM stock_moves m
+     JOIN items i ON i.id = m.item_id
+     JOIN warehouses w ON w.id = m.warehouse_id
+     WHERE m.bucket = 'defect' ${where.length ? 'AND ' + where.join(' AND ') : ''}
+     GROUP BY i.id, w.id
+     ORDER BY outQty DESC, i.code`
+  ).all(...params);
+  return {
+    report: 'damage',
+    title: 'التالف والهدر',
+    columns: [
+      { key: 'itemCode', label: 'كود الصنف' },
+      { key: 'itemName', label: 'اسم الصنف' },
+      { key: 'warehouseName', label: 'المخزن' },
+      { key: 'moveCount', label: 'عدد الحركات', num: true },
+      { key: 'inQty', label: 'وارد تالف', num: true },
+      { key: 'outQty', label: 'صادر تالف', num: true },
+      { key: 'net', label: 'صافي التالف', num: true, signed: true }
+    ],
+    rows,
+    totals: { rows: rows.length, outQty: rows.reduce((a, r) => a + r.outQty, 0), inQty: rows.reduce((a, r) => a + r.inQty, 0) }
+  };
+}
+
+/** حساب الأطراف: per customer / supplier, in and out */
+function partyBalanceReport(filters = {}) {
+  const { where, params } = reportRange(filters);
+  const rows = db.prepare(
+    `SELECT p.id AS partyId, p.name AS partyName, p.type AS partyType,
+            COALESCE(SUM(CASE WHEN m.piece_delta>0 THEN m.piece_delta ELSE 0 END),0) AS inQty,
+            COALESCE(SUM(CASE WHEN m.piece_delta<0 THEN -m.piece_delta ELSE 0 END),0) AS outQty,
+            COALESCE(SUM(m.piece_delta),0) AS net,
+            COUNT(DISTINCT m.doc_type || '-' || m.doc_id) AS docCount
+     FROM stock_moves m
+     JOIN parties p ON p.id = m.party_id
+     WHERE 1=1 ${where.length ? 'AND ' + where.join(' AND ') : ''}
+     GROUP BY p.id
+     ORDER BY p.name`
+  ).all(...params);
+  const out = rows.map((r) => ({ ...r, partyTypeAr: PARTY_TYPES[r.partyType] || r.partyType }));
+  return {
+    report: 'party_balance',
+    title: 'حساب الأطراف',
+    columns: [
+      { key: 'partyName', label: 'الطرف' },
+      { key: 'partyTypeAr', label: 'النوع' },
+      { key: 'docCount', label: 'عدد المستندات', num: true },
+      { key: 'inQty', label: 'وارد', num: true },
+      { key: 'outQty', label: 'صادر', num: true },
+      { key: 'net', label: 'الصافي', num: true, signed: true }
+    ],
+    rows: out,
+    totals: {
+      rows: out.length,
+      inQty: out.reduce((a, r) => a + r.inQty, 0),
+      outQty: out.reduce((a, r) => a + r.outQty, 0),
+      net: out.reduce((a, r) => a + r.net, 0)
+    }
+  };
+}
+
+/**
+ * عجز وتالف الإنتاج — a documentation report: it reads the daily
+ * production records and never touches the stock ledger.
+ */
+function productionGapReport(filters = {}) {
+  const from = (filters.dateFrom || '').trim();
+  const to = (filters.dateTo || '').trim();
+  const where = [];
+  const params = [];
+  if (from) { where.push('r.doc_date >= ?'); params.push(from); }
+  if (to) { where.push('r.doc_date <= ?'); params.push(to); }
+  const receipts = db.prepare(
+    `SELECT r.id, r.doc_no AS docNo, r.doc_date AS docDate, r.carton_no AS cartonNo,
+            r.carton_pieces AS cartonPieces, r.produced_total AS produced, r.shortage AS shortage,
+            r.surplus AS surplus, r.bags_used AS bagsUsed, r.note AS note,
+            ri.code AS rawCode, ri.name AS rawName
+     FROM prod_receipts r
+     LEFT JOIN items ri ON ri.id = r.raw_item_id
+     WHERE 1=1 ${where.length ? 'AND ' + where.join(' AND ') : ''}
+     ORDER BY r.doc_date DESC, r.id DESC`
+  ).all(...params);
+
+  const rows = [];
+  let shortage = 0, surplus = 0, defect = 0;
+  for (const rec of receipts) {
+    const lines = db.prepare(
+      `SELECT l.good, l.defect_cans, l.defect_ampoules, l.bags_used, l.breaks, l.note,
+              i.code AS itemCode, i.name AS itemName, i.base_unit AS baseUnit
+       FROM prod_receipt_lines l JOIN items i ON i.id = l.item_id
+       WHERE l.receipt_id = ? ORDER BY l.id`
+    ).all(rec.id);
+    const d = lines.reduce((a, l) => a + l.defect_cans + l.defect_ampoules, 0);
+    defect += d;
+    shortage += rec.shortage;
+    surplus += rec.surplus;
+    rows.push({
+      id: rec.id,
+      docNo: rec.docNo,
+      docDate: rec.docDate,
+      cartonNo: rec.cartonNo,
+      rawItem: rec.rawCode ? `${rec.rawCode} — ${rec.rawName}` : '—',
+      cartonPieces: rec.cartonPieces,
+      produced: rec.produced,
+      shortage: rec.shortage,
+      surplus: rec.surplus,
+      defect: d,
+      defectCans: lines.reduce((a, l) => a + l.defect_cans, 0),
+      defectAmpoules: lines.reduce((a, l) => a + l.defect_ampoules, 0),
+      breaks: lines.reduce((a, l) => a + l.breaks, 0),
+      items: lines.map((l) => `${l.itemCode} — ${l.itemName}`).join(' · '),
+      note: rec.note || ''
+    });
+  }
+  return {
+    report: 'production_gap',
+    title: 'عجز وتالف الإنتاج',
+    columns: [
+      { key: 'docDate', label: 'التاريخ' },
+      { key: 'docNo', label: 'رقم التقرير' },
+      { key: 'cartonNo', label: 'رقم الكرتون' },
+      { key: 'rawItem', label: 'المادة الخام' },
+      { key: 'cartonPieces', label: 'حبات الكرتون', num: true },
+      { key: 'produced', label: 'الإنتاج', num: true },
+      { key: 'shortage', label: 'العجز', num: true },
+      { key: 'surplus', label: 'الزيادة', num: true },
+      { key: 'defect', label: 'التالف', num: true },
+      { key: 'items', label: 'الأصناف' }
+    ],
+    rows,
+    totals: { rows: rows.length, shortage, surplus, defect }
+  };
+}
+
+/**
+ * Run one of the ready-made reports. `filters.report` picks the report;
+ * every report accepts the same period filter.
+ */
+function runReport(filters = {}) {
+  const key = filters.report || 'movements';
+  switch (key) {
+    case 'stock_status': return stockStatusReport(filters);
+    case 'item_ledger': return itemLedgerReport(filters);
+    case 'warehouse_flow': return warehouseFlowReport(filters);
+    case 'movement_summary': return movementSummaryReport(filters);
+    case 'shortage': return shortageReport(filters);
+    case 'damage': return damageReport(filters);
+    case 'party_balance': return partyBalanceReport(filters);
+    case 'production_gap': return productionGapReport(filters);
+    case 'movements':
+    default: {
+      const q = reportQuery(filters);
+      return {
+        report: 'movements',
+        title: 'حركة المخزون',
+        columns: [
+          { key: 'moveDate', label: 'التاريخ' },
+          { key: 'docNo', label: 'رقم المستند' },
+          { key: 'docTypeAr', label: 'نوع المستند' },
+          { key: 'partyName', label: 'العميل / المورد' },
+          { key: 'itemCode', label: 'كود الصنف' },
+          { key: 'itemName', label: 'اسم الصنف' },
+          { key: 'warehouseName', label: 'المخزن' },
+          { key: 'bucketAr', label: 'الحالة' },
+          { key: 'inQty', label: 'وارد', num: true },
+          { key: 'outQty', label: 'صادر', num: true },
+          { key: 'delta', label: 'صافي الحركة', num: true, signed: true },
+          { key: 'movingBalance', label: 'الرصيد المتحرك', num: true },
+          { key: 'mainBalance', label: 'الرصيد الحالي', num: true },
+          { key: 'invoiceValue', label: 'قيمة الفاتورة', money: true },
+          { key: 'note', label: 'ملاحظة' }
+        ],
+        rows: q.rows,
+        totals: q.totals
+      };
+    }
+  }
+}
+
 module.exports = {
   init,
   close,
@@ -2004,6 +2573,7 @@ module.exports = {
   saveDocument,
   getDocument,
   listDocuments,
+  listProdReceipts,
   documentImpact,
   deleteDocument,
   gatePass,
@@ -2039,6 +2609,9 @@ module.exports = {
   reportQuery,
   reportFacets,
   dailyReport,
+  REPORTS,
+  runReport,
+  productionGapReport,
   ALL_SCREENS,
   ALL_PERMS,
   listUsers,

@@ -7,8 +7,9 @@
   const { el, icon, esc, toast, bindRow, modal, form, field, input, numInput, textarea, confirmHardDelete, emptyState, toggleEmpty } = SamUI;
 
   const state = { items: [], warehouses: [], search: '' };
-  const BUCKETS = ['good', 'defect', 'held'];
-  const AR = { good: 'سليم', defect: 'تالف', held: 'محرز' };
+  /* V4 has two buckets only — the third legacy bucket is gone for good */
+  const BUCKETS = ['good', 'defect'];
+  const AR = { good: 'سليم', defect: 'تالف' };
 
   async function load() {
     try {
@@ -40,7 +41,6 @@
         <td class="num">${zero(it.pieces_per_bag)}</td>
         <td class="num qty ${it.mainStock.good < 0 ? 'minus' : ''}">${SamDB.fmt(it.mainStock.good)}</td>
         <td class="num qty">${SamDB.fmt(it.mainStock.defect)}</td>
-        <td class="num qty">${SamDB.fmt(it.mainStock.held)}</td>
         <td class="num qty ${it.totalPieces < 0 ? 'minus' : ''}">${SamDB.fmt(it.totalPieces)}</td>
         <td>${alert}</td>`;
       bindRow(tr, {
@@ -81,14 +81,14 @@
     const maxDefect = numInput({ value: item ? item.max_defect_alert : 0, placeholder: '0' });
 
     grid.append(
-      field('كود الصنف', code),
-      field('اسم الصنف', name),
-      field('الوحدة الأساسية', unit, 'هذه الوحدة تظهر في كل الفواتير والتقارير والتقرير اليومي'),
-      field('الفئة', cat),
-      field('عدد الوحدات لكل كرتونة', perCtn, 'معلوماتي فقط — لا يدخل في أي حساب'),
-      field('عدد الوحدات لكل كيس', perBag, 'معلوماتي فقط'),
-      field('حد التنبيه الأدنى للجيد', minGood, 'تنبيه إذا قلّ الجيد عن هذا الرقم'),
-      field('حد التالف الأقصى', maxDefect, 'تنبيه إذا زاد التالف عن هذا الرقم')
+      field('كود الصنف', code, '', 'i-hash'),
+      field('اسم الصنف', name, '', 'i-tag'),
+      field('الوحدة الأساسية', unit, 'هذه الوحدة تظهر في كل الفواتير والتقارير والتقرير اليومي', 'i-sigma'),
+      field('الفئة', cat, '', 'i-list'),
+      field('عدد الوحدات لكل كرتونة', perCtn, 'معلوماتي فقط — لا يدخل في أي حساب', 'i-archive-box'),
+      field('عدد الوحدات لكل كيس', perBag, 'معلوماتي فقط', 'i-archive'),
+      field('حد التنبيه الأدنى للجيد', minGood, 'تنبيه إذا قلّ الجيد عن هذا الرقم', 'i-warn'),
+      field('حد التالف الأقصى', maxDefect, 'تنبيه إذا زاد التالف عن هذا الرقم', 'i-alert')
     );
     body.appendChild(grid);
 
@@ -102,8 +102,7 @@
     bal.append(
       el('div', 'hd', 'المخزن'),
       el('div', 'hd', 'سليم'),
-      el('div', 'hd', 'تالف'),
-      el('div', 'hd', 'محرز')
+      el('div', 'hd', 'تالف')
     );
     state.warehouses.forEach((w) => {
       const saved = openings[w.id] || {};
@@ -181,10 +180,9 @@
         { key: 'code', label: 'الكود' },
         { key: 'good', label: 'سليم' },
         { key: 'defect', label: 'تالف' },
-        { key: 'held', label: 'محرز' },
         { key: 'tot', label: 'الإجمالي' }
       ],
-      rows.map((r, i) => ({ ...r, no: i + 1, tot: r.good + r.defect + r.held })),
+      rows.map((r, i) => ({ ...r, no: i + 1, tot: r.good + r.defect })),
       SamDB.fmt(total)
     );
     const body = `
@@ -220,10 +218,9 @@
         { key: 'name', label: 'المخزن' },
         { key: 'good', label: 'سليم' },
         { key: 'defect', label: 'تالف' },
-        { key: 'held', label: 'محرز' },
         { key: 'tot', label: 'الإجمالي (حبة)' }
       ],
-      rows.map((r) => ({ name: `${r.code} — ${r.name}`, good: SamDB.fmt(r.good), defect: SamDB.fmt(r.defect), held: SamDB.fmt(r.held), tot: SamDB.fmt(r.good + r.defect + r.held) })),
+      rows.map((r) => ({ name: `${r.code} — ${r.name}`, good: SamDB.fmt(r.good), defect: SamDB.fmt(r.defect), tot: SamDB.fmt(r.good + r.defect) })),
       SamDB.fmt(total)
     );
     SamUI.printPreview({
@@ -277,12 +274,11 @@
       if (!itemId) return;
       try {
         const item = await SamDB.call('getItem', itemId);
-        const s = whId ? (item.stockByWarehouse[whId] || { good: 0, defect: 0, held: 0 }) : item.mainStock;
+        const s = whId ? (item.stockByWarehouse[whId] || { good: 0, defect: 0 }) : item.mainStock;
         out.innerHTML = `
           <div class="cr-row"><span>سليم</span><b>${SamDB.fmt(s.good)}</b></div>
           <div class="cr-row"><span>تالف</span><b>${SamDB.fmt(s.defect)}</b></div>
-          <div class="cr-row"><span>محرز</span><b>${SamDB.fmt(s.held)}</b></div>
-          <div class="cr-row total"><span>الإجمالي (${esc(item.base_unit)})</span><b>${SamDB.fmt(s.good + s.defect + s.held)}</b></div>`;
+          <div class="cr-row total"><span>الإجمالي (${esc(item.base_unit)})</span><b>${SamDB.fmt(s.good + s.defect)}</b></div>`;
       } catch (e) { out.innerHTML = `<span class="muted">${esc(e.message)}</span>`; }
     };
 
@@ -304,7 +300,7 @@
     const grid = el('div', 'form-grid');
     const outWrap = el('div', 'full');
     outWrap.appendChild(out);
-    grid.append(field('الصنف', itemHost), field('المخزن', whHost), outWrap);
+    grid.append(field('الصنف', itemHost, '', 'i-box'), field('المخزن', whHost, '', 'i-warehouse'), outWrap);
 
     const body = el('div');
     body.appendChild(el('p', 'tip', 'اكتب حرفين من الاسم أو الكود ثم Enter — نفس القائمة المستخدمة في المستندات والفلاتر.'));

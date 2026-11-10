@@ -12,6 +12,18 @@
    · EVERY LINE carries its own warehouse, so one invoice may leave from
      several warehouses at once (each with its own keeper and gate).
    · each warehouse involved gets its own permit printed from the document.
+
+   V4:
+   · every document kind has its OWN colour, icon and card — the header of
+     the editor changes with the kind, so the user always knows which
+     document he is looking at.
+   · the kind is picked from a card grid, not from a row of grey buttons.
+   · four new kinds join the family:
+       prod_receipt  سند استلام الإنتاج  (increases the stock)
+       gate_in       إذن إدخال            (increases the stock)
+       gate_out      إذن خروج             (decreases the stock)
+       adjustment    تسوية جرد            (each line adds or subtracts)
+   · no field ever carries a default value — every box starts EMPTY.
    ===================================================================== */
 (function () {
   const {
@@ -19,17 +31,68 @@
     confirmHardDelete, confirmWarning, emptyState, toggleEmpty, combo, tableHtml, printPreview, CURRENCY
   } = SamUI;
 
+  /* ---------- the identity of every document kind ----------
+     `tone` drives the CSS variables of the card, the header and the chip. */
+  const KIND_STYLE = {
+    purchase: { ar: 'مشتريات', icon: 'i-cart', tone: 'buy', hint: 'ما يدخل إلى المخزن من مورد — يزيد الرصيد' },
+    sale: { ar: 'مبيعات', icon: 'i-box', tone: 'sell', hint: 'ما يخرج من المخزن إلى عميل — يخفض الرصيد' },
+    sale_return: { ar: 'مرتجع مبيعات', icon: 'i-return', tone: 'sreturn', hint: 'ما يعود من العميل إلى المخزن — يزيد الرصيد' },
+    purchase_return: { ar: 'مرتجع مشتريات', icon: 'i-return', tone: 'pretn', hint: 'ما يعود إلى المورد — يخفض الرصيد' },
+    transfer: { ar: 'نقل بين المخازن', icon: 'i-truck', tone: 'move', hint: 'انتقال داخلي — يخرج من مخزن ويدخل آخر' },
+    prod_receipt: { ar: 'سند استلام الإنتاج', icon: 'i-factory', tone: 'produce', hint: 'إنتاج المستودع الداخل — يزيد الرصيد ويصدر تصريح خروج' },
+    gate_in: { ar: 'إذن إدخال', icon: 'i-gate-in', tone: 'gin', hint: 'دخول بضاعة من خارج المصنع — يزيد الرصيد' },
+    gate_out: { ar: 'إذن خروج', icon: 'i-gate-out', tone: 'gout', hint: 'خروج بضاعة من المصنع — يخفض الرصيد' },
+    adjustment: { ar: 'تسوية جرد', icon: 'i-scale', tone: 'adjust', hint: 'فرق الجرد — كل سطر يزيد أو ينقص بمقداره' }
+  };
+
   const state = {
     docs: [], items: [], warehouses: [], parties: [],
-    kinds: { purchase: 'مشتريات', sale: 'مبيعات', sale_return: 'مرتجع مبيعات', purchase_return: 'مرتجع مشتريات', transfer: 'نقل بين المخازن' },
+    kinds: Object.fromEntries(Object.entries(KIND_STYLE).map(([k, v]) => [k, v.ar])),
     filter: { kind: '', search: '' }
   };
-  const BUCKETS = [['good', 'سليم'], ['defect', 'تالف'], ['held', 'محرز']];
-  const bucketAr = (b) => ({ good: 'سليم', defect: 'تالف', held: 'محرز' }[b] || b);
+  const BUCKETS = [['good', 'سليم'], ['defect', 'تالف']];
+  const bucketAr = (b) => ({ good: 'سليم', defect: 'تالف' }[b] || b);
   /** kinds that ADD stock — a shortage warning makes no sense for them */
-  const ADDS_STOCK = ['purchase', 'sale_return'];
+  const ADDS_STOCK = ['purchase', 'sale_return', 'prod_receipt', 'gate_in'];
   /** kinds that need an external invoice number + a party */
-  const isExternal = (kind) => kind !== 'transfer';
+  const isExternal = (kind) => !['transfer', 'prod_receipt', 'gate_in', 'gate_out', 'adjustment'].includes(kind);
+  /** the kinds that leave the warehouse and therefore need an exit permit */
+  const NEEDS_PERMIT = ['sale', 'transfer', 'prod_receipt', 'gate_out'];
+  /** the kinds whose lines must each name their own warehouse */
+  const PER_LINE_WH = ['prod_receipt', 'gate_in', 'gate_out', 'adjustment'];
+  /** the kind whose lines carry their own direction */
+  const isAdjustment = (kind) => kind === 'adjustment';
+  /** the number each kind expects in the "document number" box */
+  const DOC_NO_PLACEHOLDER = {
+    purchase: 'رقم الفاتورة من النظام الآخر',
+    sale: 'رقم الفاتورة من النظام الآخر',
+    sale_return: 'رقم إرجاع العميل',
+    purchase_return: 'رقم إرجاع المورد',
+    transfer: 'رقم مستند النقل (اختياري)',
+    prod_receipt: 'رقم سند الاستلام (اختياري)',
+    gate_in: 'رقم إذن الإدخال (اختياري)',
+    gate_out: 'رقم إذن الخروج (اختياري)',
+    adjustment: 'رقم محضر الجرد (اختياري)'
+  };
+  /** the label of the "save + print the exit permits" button */
+  const PERMIT_BTN_LABEL = {
+    sale: 'حفظ وطباعة تصاريح الخروج',
+    transfer: 'حفظ وطباعة تصريح الانتقال',
+    prod_receipt: 'حفظ وطباعة تصريح خروج الإنتاج',
+    gate_out: 'حفظ وطباعة تصريح الخروج'
+  };
+  /** the guidance shown under the lines table — it changes with the kind */
+  const KIND_HINT = {
+    purchase: 'المستند يعكس فاتورة مورد من نظام آخر — الرقم واسم المورد مطلوبان. لكل سطر مخزنه، والكمية بالوحدة الأساسية. إذا تجاوزت الكمية المتاح يظهر تحذير ويمكن الحفظ برصيد سالب.',
+    sale: 'المستند يعكس فاتورة عميل — الرقم واسم العميل مطلوبان. بعد الحفظ اطبع تصاريح الخروج، فكل مخزن يحتاج تصريحاً مستقلاً، والتصريح لا يحمل أسعاراً.',
+    sale_return: 'مرتجع من العميل — يزيد رصيد المخزن. الرقم واسم العميل مطلوبان، لكل سطر مخزنه.',
+    purchase_return: 'مرتجع إلى المورد — يخفض رصيد المخزن. الرقم واسم المورد مطلوبان، لكل سطر مخزنه.',
+    transfer: 'نقل داخلي: كل سطر يخرج من مخزنه ويدخل إلى وجهته، ويجب أن تكون الوجهة مختلفة عن المصدر. بعد الحفظ اطبع تصريح الانتقال لكل مخزن.',
+    prod_receipt: 'استلام إنتاج داخل المستودع — يزيد الرصيد، ولكل سطر مخزنه. بعد الحفظ اطبع تصريح خروج الإنتاج، لأن المخزن خارج المصنع.',
+    gate_in: 'إذن دخول بضاعة من خارج المصنع — يزيد الرصيد. لكل سطر مخزنه المستقبِل.',
+    gate_out: 'إذن خروج بضاعة من المصنع — يخفض الرصيد. لكل سطر مخزنه المُرسل، وبعد الحفظ يُطبع تصريح الخروج.',
+    adjustment: 'تسوية جرد: كل سطر يحدّد اتجاهه — زيادة أو عجز — ويؤثر على رصيد مخزنه. تعديل السطر أو حذف المستند يعيد الرصيد كما كان.'
+  };
 
   const itemById = (id) => state.items.find((i) => i.id === Number(id)) || null;
   const unitOf = (id) => (itemById(id) || {}).base_unit || 'حبة';
@@ -75,10 +138,11 @@
       const whCell = d.kind === 'transfer' && dests
         ? `${esc(srcs)} ← ${esc(dests)}`
         : esc(srcs || '—');
+      const st = KIND_STYLE[d.kind] || { ar: d.kindAr, icon: 'i-clipboard', tone: 'plain' };
       tr.innerHTML = `
         <td class="num">${idx + 1}</td>
         <td class="mono">${esc(d.doc_no)}</td>
-        <td><span class="chip ${kindChip(d.kind)}">${esc(d.kindAr)}</span></td>
+        <td><span class="chip kind-chip tone-${st.tone}"><svg class="ic"><use href="#${st.icon}"/></svg>${esc(d.kindAr)}</span></td>
         <td>${esc(d.doc_date)}</td>
         <td>${esc(d.partyName || '—')}</td>
         <td>${whCell}</td>
@@ -94,9 +158,9 @@
       tb.appendChild(tr);
     });
     emptyState('docsEmpty', {
-      icon: 'i-swap',
+      icon: 'i-clipboard',
       title: 'لا توجد مستندات',
-      hint: 'أنشئ مستنداً جديداً — المشتريات تزيد الرصيد والمبيعات تخفضه بالوحدة الأساسية.',
+      hint: 'أنشئ مستنداً جديداً — المشتريات وسند استلام الإنتاج يزيدان الرصيد، والمبيعات وإذن الخروج يخفضانه.',
       actionLabel: 'مستند جديد',
       onAction: () => openEditor(null)
     });
@@ -104,22 +168,29 @@
   }
 
   function kindChip(kind) {
-    return { purchase: 'ok', sale: 'main', sale_return: 'warn', purchase_return: 'warn', transfer: 'sub' }[kind] || 'sub';
+    return (KIND_STYLE[kind] || {}).tone || 'plain';
   }
 
-  /** the context-menu entry that prints the permits of a document */
+  /** the context-menu entries of a document — printing depends on its kind */
   function permitMenuItems(d) {
-    if (d.kind === 'sale') return [{ label: 'طباعة تصاريح الخروج', icon: 'i-print', onClick: () => printPermits(d.id) }];
-    if (d.kind === 'transfer') return [{ label: 'طباعة تصريح الانتقال', icon: 'i-print', onClick: () => printPermits(d.id) }];
+    if (NEEDS_PERMIT.includes(d.kind)) {
+      const label = d.kind === 'transfer' ? 'طباعة تصريح الانتقال'
+        : d.kind === 'prod_receipt' ? 'طباعة تصريح خروج الإنتاج'
+          : d.kind === 'gate_out' ? 'طباعة تصريح الخروج'
+            : 'طباعة تصاريح الخروج';
+      return [{ label, icon: 'i-print', onClick: () => printPermits(d.id) }];
+    }
     return [{ label: 'طباعة المستند', icon: 'i-print', onClick: () => printInvoice(d.id) }];
   }
 
   /* ---------------- editor ---------------- */
-  async function openEditor(docId) {
+  /* `presetKind` opens the editor on a given kind — the production screen
+     uses it for «سند استلام الإنتاج» (a per-line warehouse, no default). */
+  async function openEditor(docId, presetKind) {
     // the editor is often opened by a shortcut before the list has arrived
     if (!state.items.length || !state.warehouses.length || !state.parties.length) await load();
     const doc = docId ? await SamDB.call('getDocument', docId) : null;
-    let kind = doc ? doc.kind : 'purchase';
+    let kind = doc ? doc.kind : (KIND_STYLE[presetKind] ? presetKind : 'purchase');
 
     const box = el('div', 'modal editor');
     const ov = el('div', 'overlay');
@@ -132,17 +203,29 @@
     const body = el('div', 'ed-body');
     body.appendChild(errBar);
 
-    /* --- segmented kind picker --- */
-    const seg = el('div', 'seg');
-    Object.entries(state.kinds).forEach(([val, label]) => {
-      const b = el('button', `seg-btn ${val === kind ? 'on' : ''}`, esc(label));
-      b.type = 'button';
-      b.addEventListener('click', () => {
+    /* --- the kind picker: a card grid, one card per document kind ---
+       The customer asked for a window that shows the kind's NAME, a mark
+       that tells the kinds apart, a different colour and a different
+       design — a card does all of that at a glance. */
+    const kindGrid = el('div', 'kind-grid');
+    const kindCards = new Map();
+    Object.entries(KIND_STYLE).forEach(([val, st]) => {
+      const card = el('button', `kind-card tone-${st.tone} ${val === kind ? 'on' : ''}`);
+      card.type = 'button';
+      card.innerHTML = `
+        <span class="kc-ic"><svg class="ic"><use href="#${st.icon}"/></svg></span>
+        <span class="kc-txt">
+          <span class="kc-name">${esc(st.ar)}</span>
+          <span class="kc-hint">${esc(st.hint)}</span>
+        </span>`;
+      card.addEventListener('click', () => {
         kind = val;
-        seg.querySelectorAll('.seg-btn').forEach((x) => x.classList.toggle('on', x === b));
+        kindCards.forEach((c, k) => c.classList.toggle('on', k === val));
+        applyKindTheme();
         syncKindVisibility();
       });
-      seg.appendChild(b);
+      kindCards.set(val, card);
+      kindGrid.appendChild(card);
     });
 
     /* the external invoice number — the one printed on the customer's paper */
@@ -153,7 +236,7 @@
     });
     const docDate = input({ class: 'input', type: 'date', value: doc ? doc.doc_date : SamUI.today() });
     // empty by default, grouped with commas, currency spelled out beside it
-    const invoiceValue = numInput({ value: doc ? doc.invoice_value : 0, placeholder: '0' });
+    const invoiceValue = numInput({ value: doc ? doc.invoice_value : '', placeholder: '0' });
     const notes = textarea({ rows: 2, value: doc ? doc.notes || '' : '', placeholder: 'ملاحظات المستند' });
 
     const partyHost = el('div');
@@ -177,7 +260,7 @@
     /* the top combos are DEFAULTS for newly added lines — every line keeps
        its own warehouse so one invoice can leave from several of them. */
     const whCombo = combo(whHost, {
-      placeholder: 'المخزن الافتراضي…',
+      placeholder: 'مخزن الأسطر الجديدة…',
       emptyText: 'لا توجد مخازن',
       items: whOptions(),
       onChange: (v) => {
@@ -185,10 +268,11 @@
         lines.forEach((l) => { if (l.whCombo && l.whCombo.getValue() == null) l.whCombo.setValue(v, false); });
       }
     });
-    whCombo.setValue(doc ? doc.warehouse_id : (activeWh()[0] || {}).id || null, false);
+    /* nothing is pre-selected — the warehouse is always the user's own choice */
+    whCombo.setValue(doc ? doc.warehouse_id : null, false);
 
     const destCombo = combo(destHost, {
-      placeholder: 'الوجهة الافتراضية…',
+      placeholder: 'وجهة الأسطر الجديدة…',
       emptyText: 'لا توجد مخازن',
       items: whOptions(),
       onChange: (v) => {
@@ -200,15 +284,18 @@
     });
     destCombo.setValue(doc ? doc.dest_warehouse_id : null, false);
 
-    const cell = (label, node, cls) => {
+    const cell = (label, node, cls, iconId) => {
       const c = el('div', `ed-cell ${cls || ''}`);
-      c.appendChild(el('label', '', esc(label)));
+      const lab = el('label', 'ed-label');
+      if (iconId) lab.appendChild(el('span', 'field-ic', icon(iconId)));
+      lab.appendChild(el('span', 'field-txt', esc(label)));
+      c.appendChild(lab);
       c.appendChild(node);
       return c;
     };
     /* a "apply to every line" button under a default combo */
-    const defaultCell = (label, node, cls, pick, what) => {
-      const c = cell(label, node, cls);
+    const defaultCell = (label, node, cls, pick, what, iconId) => {
+      const c = cell(label, node, cls, iconId);
       const b = el('button', 'btn btn-sm btn-ghost', `${icon('i-swap')}<span>تطبيق على كل الأسطر</span>`);
       b.type = 'button';
       b.addEventListener('click', () => {
@@ -226,30 +313,36 @@
 
     const grid = el('div', 'ed-grid');
     grid.append(
-      cell('رقم الفاتورة', docNo),
-      cell('التاريخ', docDate),
-      cell('العميل / المورد', partyHost, 'party-cell'),
-      defaultCell('المخزن (للسطور الجديدة)', whHost, 'wh-default', () => whCombo.getValue(), 'المخزن'),
-      defaultCell('الوجهة (للسطور الجديدة)', destHost, 'dest-cell', () => destCombo.getValue(), 'الوجهة'),
-      cell(`قيمة الفاتورة (${CURRENCY})`, affixInput(invoiceValue, CURRENCY)),
-      cell('ملاحظات', notes, 'full')
+      cell('رقم الفاتورة', docNo, 'docno-cell', 'i-hash'),
+      cell('التاريخ', docDate, '', 'i-calendar'),
+      cell('العميل / المورد', partyHost, 'party-cell', 'i-user'),
+      defaultCell('المخزن (للسطور الجديدة)', whHost, 'wh-default', () => whCombo.getValue(), 'المخزن', 'i-warehouse'),
+      defaultCell('الوجهة (للسطور الجديدة)', destHost, 'dest-cell', () => destCombo.getValue(), 'الوجهة', 'i-out'),
+      cell(`قيمة الفاتورة (${CURRENCY})`, affixInput(invoiceValue, CURRENCY), 'value-cell', 'i-money'),
+      cell('ملاحظات', notes, 'full', 'i-clipboard')
     );
     body.appendChild(grid);
 
     /* --- lines table --- */
-    body.appendChild(el('div', 'ed-sec', `${icon('i-box')}<span>أسطر المستند — لكل سطر مخزنه، والكمية بالوحدة الأساسية</span>`));
+    const linesSec = el('div', 'ed-sec', `${icon('i-box')}<span>أسطر المستند — لكل سطر مخزنه، والكمية بالوحدة الأساسية</span>`);
+    body.appendChild(linesSec);
     const linesTbl = el('table', 'tbl lines-tbl');
     linesTbl.innerHTML = `<thead><tr>
-        <th>الصنف</th>
-        <th style="width:152px">المخزن</th>
-        <th style="width:152px" class="dest-col">الوجهة</th>
+        <th class="item-h">الصنف</th>
+        <th style="width:158px">المخزن</th>
+        <th style="width:158px" class="dest-col">الوجهة</th>
         <th class="unit-h" style="width:74px">الوحدة</th>
-        <th style="width:138px">الحالة</th>
+        <th style="width:132px">الحالة</th>
+        <th class="sign-h" style="width:132px">الاتجاه</th>
         <th style="width:100px">الكمية</th>
         <th style="width:80px" title="معلوماتي فقط">كراتين</th><th style="width:80px" title="معلوماتي فقط">أكياس</th>
-        <th style="width:88px">المتاح</th><th style="width:36px"></th></tr></thead><tbody></tbody>`;
+        <th style="width:90px">المتاح</th><th style="width:40px"></th></tr></thead><tbody></tbody>`;
     const linesBody = linesTbl.querySelector('tbody');
-    body.appendChild(linesTbl);
+    /* the table may be wider than the window — it scrolls sideways instead of
+       squeezing the item column, which is the column that matters most */
+    const linesWrap = el('div', 'lines-wrap');
+    linesWrap.appendChild(linesTbl);
+    body.appendChild(linesWrap);
 
     const totals = el('div', 'totals-bar');
     body.appendChild(totals);
@@ -258,7 +351,8 @@
     addRow.type = 'button';
     addRow.addEventListener('click', () => addLine());
     body.appendChild(el('div', 'row-add').appendChild(addRow).parentNode);
-    body.appendChild(el('p', 'foot-note', 'الرقم والعميل مطلوبان لأن المستند يعكس فاتورة نظام آخر. لكل سطر مخزنه — قد تخرج فاتورة واحدة من عدة مخازن. الكمية أكبر من المتاح؟ يظهر تحذير ويمكن الحفظ.'));
+    const footNote = el('p', 'foot-note');
+    body.appendChild(footNote);
 
     const foot = el('div', 'modal-foot');
     box.appendChild(body);
@@ -267,15 +361,55 @@
     /* --- line model --- */
     const lines = [];
 
+    /* «سند استلام الإنتاج» can take its warehouses from the production
+       routing (سليم → مخزن السليم، تالف → مخزن التالف). Nothing is filled
+       silently — the user presses the button and sees what happened. */
+    const routeBtn = el('button', 'btn btn-sm btn-ghost route-fill', `${icon('i-swap')}<span>تعبئة المخازن من التوجيه</span>`);
+    routeBtn.type = 'button';
+    routeBtn.addEventListener('click', async () => {
+      let r = null;
+      try { r = await SamDB.call('prodRouting'); } catch (e) { r = null; }
+      if (!r || (!r.fgGoodWh && !r.fgDefectWh)) {
+        toast('اضبط «توجيه الأرصدة» من شاشة الإنتاج أولاً', 'warn', 4200);
+        return;
+      }
+      let n = 0;
+      lines.forEach((l) => {
+        if (!l.whCombo) return;
+        let wh = null;
+        if (l.bucket === 'defect') {
+          /* the damage of a raw material goes to the raw-damage warehouse,
+             the damage of a finished product to the finished-goods one */
+          const it = itemById(l.itemCombo.getValue());
+          const isRaw = it && String(it.category || '').indexOf('خام') >= 0;
+          wh = isRaw ? r.rawDefectWh : r.fgDefectWh;
+        } else {
+          wh = r.fgGoodWh;
+        }
+        if (!wh) return;
+        l.whCombo.setValue(wh, false);
+        refreshAvail(l);
+        n++;
+      });
+      toast(n ? `تم تعبئة مخزن ${n} سطر من توجيه الإنتاج` : 'لا توجد أسطر لتعبئتها', n ? 'ok' : 'warn');
+    });
+    linesSec.appendChild(routeBtn);
+
     function recomputeTotals() {
       const pieces = lines.reduce((a, l) => a + SamDB.n(l.piecesEl.value), 0);
       const cartons = lines.reduce((a, l) => a + SamDB.n(l.cartonsEl.value), 0);
       const bags = lines.reduce((a, l) => a + SamDB.n(l.bagsEl.value), 0);
       const units = new Set(lines.map((l) => unitOf(l.itemCombo.getValue())));
+      /* a stock adjustment has two directions — the net is what matters there */
+      const net = isAdjustment(kind)
+        ? lines.reduce((a, l) => a + (l.sign === 1 ? SamDB.n(l.piecesEl.value)
+          : l.sign === -1 ? -SamDB.n(l.piecesEl.value) : 0), 0)
+        : null;
       totals.innerHTML = `<span>الأسطر: <b>${lines.length}</b></span>
         <span>إجمالي الكمية: <b class="big">${SamDB.fmt(pieces)}</b> <span class="chip sub">${esc([...units].join(' / ') || 'حبة')}</span></span>
         <span>كراتين: <b>${SamDB.fmt(cartons)}</b></span>
-        <span>أكياس: <b>${SamDB.fmt(bags)}</b></span>`;
+        <span>أكياس: <b>${SamDB.fmt(bags)}</b></span>
+        ${net != null ? `<span>الصافي: <b class="${net < 0 ? 'bad' : 'ok'}">${SamDB.fmt(net)}</b></span>` : ''}`;
     }
 
     function setUnit(l) {
@@ -296,7 +430,7 @@
           : await SamDB.call('availablePieces', itemId, l.bucket, doc ? doc.id : null);
         l.avail = avail;
         l.availEl.textContent = SamDB.fmt(avail);
-        l.availEl.className = SamDB.n(l.piecesEl.value) > avail ? 'avail low' : 'avail';
+        l.availEl.className = (lineTakesFromStock(l) && SamDB.n(l.piecesEl.value) > avail) ? 'avail low' : 'avail';
       } catch (e) { l.avail = null; l.availEl.textContent = '—'; }
     }
 
@@ -307,6 +441,7 @@
       const destLineHost = el('div');
       const unitBox = el('div');
       const bucketBox = el('div', 'bucket-seg');
+      const signBox = el('div', 'sign-seg');
       const piecesEl = numInput({ value: data ? data.pieces : 0, placeholder: '0' });
       const cartonsEl = numInput({ value: data ? data.cartons : 0, placeholder: '0' });
       const bagsEl = numInput({ value: data ? data.bags : 0, placeholder: '0' });
@@ -314,7 +449,13 @@
       const del = el('button', 'row-del', '×');
       del.type = 'button';
 
-      const l = { itemCombo: null, whCombo: null, destCombo: null, bucket: data ? data.bucket : 'good', piecesEl, cartonsEl, bagsEl, availEl, unitEl: unitBox };
+      const l = {
+        itemCombo: null, whCombo: null, destCombo: null,
+        bucket: data ? data.bucket : 'good',
+        piecesEl, cartonsEl, bagsEl, availEl, unitEl: unitBox, signBox,
+        /* a stock adjustment has no direction until the user picks one */
+        sign: data && (Number(data.sign) === 1 || Number(data.sign) === -1) ? Number(data.sign) : null
+      };
       l.itemCombo = combo(itemHost, {
         placeholder: 'اكتب حرفين من اسم الصنف أو الكود…',
         emptyText: 'لا يوجد صنف مطابق',
@@ -330,7 +471,9 @@
         items: whOptions(),
         onChange: () => refreshAvail(l)
       });
-      l.whCombo.setValue(data ? data.warehouse_id : (whCombo.getValue() || (activeWh()[0] || {}).id || null), false);
+      /* the warehouse is never guessed: it comes from the document default
+         only when the user has actually picked one there */
+      l.whCombo.setValue(data ? data.warehouse_id : (whCombo.getValue() || null), false);
 
       /* the destination of this line (transfers only) */
       l.destCombo = combo(destLineHost, {
@@ -354,7 +497,9 @@
       [piecesEl, cartonsEl, bagsEl].forEach((n) => n.addEventListener('input', () => {
         recomputeTotals();
         const avail = l.avail;
-        if (avail != null) l.availEl.className = SamDB.n(l.piecesEl.value) > avail ? 'avail low' : 'avail';
+        if (avail != null) {
+          l.availEl.className = (lineTakesFromStock(l) && SamDB.n(l.piecesEl.value) > avail) ? 'avail low' : 'avail';
+        }
       }));
       del.addEventListener('click', () => {
         const i = lines.indexOf(l);
@@ -363,11 +508,12 @@
         recomputeTotals();
       });
 
-      tr.append(el('td', '', '').appendChild(itemHost).parentNode,
-        el('td', '').appendChild(whLineHost).parentNode,
+      tr.append(el('td', 'item-c').appendChild(itemHost).parentNode,
+        el('td', 'wh-c').appendChild(whLineHost).parentNode,
         el('td', 'dest-col').appendChild(destLineHost).parentNode,
         el('td', 'unit-c').appendChild(unitBox).parentNode,
         el('td').appendChild(bucketBox).parentNode,
+        el('td', 'sign-c').appendChild(signBox).parentNode,
         el('td').appendChild(piecesEl).parentNode,
         el('td').appendChild(cartonsEl).parentNode,
         el('td').appendChild(bagsEl).parentNode,
@@ -375,31 +521,78 @@
         el('td').appendChild(del).parentNode);
       linesBody.appendChild(tr);
       lines.push(l);
+      renderSign(l);
       recomputeTotals();
       setUnit(l);
       if (data) refreshAvail(l);
       return l;
     }
 
-    /* --- kind visibility --- */
+    /** the direction buttons of an adjustment line (.visible only for تسوية جرد) */
+    function renderSign(l) {
+      const active = isAdjustment(kind);
+      l.signBox.parentNode.style.display = active ? '' : 'none';
+      l.signBox.innerHTML = '';
+      if (!active) return;
+      [[1, 'زيادة', 'up'], [-1, 'عجز', 'down']].forEach(([val, label, cls]) => {
+        const b = el('button', `s-btn ${cls} ${l.sign === val ? 'on' : ''}`, label);
+        b.type = 'button';
+        b.addEventListener('click', () => {
+          l.sign = val;
+          l.signBox.querySelectorAll('.s-btn').forEach((x) => x.classList.toggle('on', x === b));
+          refreshAvail(l);
+          recomputeTotals();
+        });
+        l.signBox.appendChild(b);
+      });
+    }
+
+    /** does this line take pieces OUT of the warehouse? */
+    function lineTakesFromStock(l) {
+      if (ADDS_STOCK.includes(kind)) return false;
+      if (isAdjustment(kind)) return l.sign === -1;
+      return true;
+    }
+
+    /* --- kind visibility: every kind shows its own fields --- */
     function syncKindVisibility() {
+      const commercial = isExternal(kind);      // the kinds that mirror an invoice
       const isTransfer = kind === 'transfer';
-      grid.querySelector('.party-cell').style.display = isTransfer ? 'none' : '';
+      const perLineWh = PER_LINE_WH.includes(kind);
+
+      /* the party only exists on a commercial document */
+      grid.querySelector('.party-cell').style.display = commercial ? '' : 'none';
+      grid.querySelector('.value-cell').style.display = commercial ? '' : 'none';
+      /* the destination only exists on a transfer */
       grid.querySelector('.dest-cell').style.display = isTransfer ? '' : 'none';
+      /* the movement documents have NO default warehouse — every line must
+         name its own, so the default box is hidden to avoid a second choice */
+      grid.querySelector('.wh-default').style.display = perLineWh ? 'none' : '';
       /* the destination column of the lines table exists only for transfers */
       linesTbl.querySelectorAll('.dest-col').forEach((n) => { n.style.display = isTransfer ? '' : 'none'; });
+      /* the direction column exists only for a stock adjustment */
+      linesTbl.querySelectorAll('.sign-h').forEach((n) => { n.style.display = isAdjustment(kind) ? '' : 'none'; });
+      /* the routing quick-fill belongs to the production receipt only */
+      routeBtn.classList.toggle('hidden', kind !== 'prod_receipt');
+
       const wantCustomer = kind === 'sale' || kind === 'sale_return';
       partyCombo.setItems(partyOptions(wantCustomer));
-      docNo.placeholder = isTransfer ? 'رقم مستند النقل (اختياري)' : 'رقم الفاتورة من النظام الآخر';
+      docNo.placeholder = DOC_NO_PLACEHOLDER[kind] || 'رقم المستند';
+
+      /* the lines follow the kind: their direction and their availability */
+      lines.forEach((l) => { renderSign(l); refreshAvail(l); });
+      recomputeTotals();
+
       const gateBtn = foot.querySelector('[data-act="gate"]');
       if (gateBtn) {
-        const show = kind === 'sale' || kind === 'transfer';
+        const show = NEEDS_PERMIT.includes(kind);
         gateBtn.classList.toggle('hidden', !show);
         const span = gateBtn.querySelector('span');
-        if (span) span.textContent = kind === 'transfer' ? 'حفظ وطباعة تصريح الانتقال' : 'حفظ وطباعة تصاريح الخروج';
+        if (span) span.textContent = PERMIT_BTN_LABEL[kind] || 'حفظ وطباعة تصاريح الخروج';
       }
+      /* the helper text under the table follows the kind too */
+      footNote.innerHTML = KIND_HINT[kind] || '';
       errBar.innerHTML = '';
-      lines.forEach((l) => refreshAvail(l));
     }
 
     /* --- footer buttons --- */
@@ -423,7 +616,7 @@
         const id = l.itemCombo.getValue();
         const qty = SamDB.n(l.piecesEl.value);
         if (!id || qty <= 0) continue;
-        if (ADDS_STOCK.includes(kind)) continue; // these add stock
+        if (!lineTakesFromStock(l)) continue; // these add stock
         if (l.avail == null) continue;
         if (qty > l.avail) {
           const w = whById(l.whCombo ? l.whCombo.getValue() : null);
@@ -453,6 +646,7 @@
           if (!dst) miss.push(`الوجهة في السطر ${at}`);
           else if (dst === l.whCombo.getValue()) miss.push(`الوجهة في السطر ${at} (نفس المخزن)`);
         }
+        if (isAdjustment(kind) && l.sign !== 1 && l.sign !== -1) miss.push(`اتجاه السطر ${at} (زيادة أو عجز)`);
         if (SamDB.n(l.piecesEl.value) <= 0) miss.push(`الكمية في السطر ${at}`);
       });
       return miss;
@@ -491,7 +685,8 @@
         kind,
         doc_no: docNo.value.trim(),
         doc_date: docDate.value,
-        party_id: kind === 'transfer' ? null : partyCombo.getValue(),
+        /* only a commercial document carries a party */
+        party_id: isExternal(kind) ? partyCombo.getValue() : null,
         /* the header keeps the first line's warehouse — the lines carry the truth */
         warehouse_id: lines[0] ? lines[0].whCombo.getValue() : null,
         dest_warehouse_id: kind === 'transfer' && lines[0] ? lines[0].destCombo.getValue() : null,
@@ -504,7 +699,9 @@
           cartons: SamDB.n(l.cartonsEl.value),
           bags: SamDB.n(l.bagsEl.value),
           warehouse_id: l.whCombo.getValue(),
-          dest_warehouse_id: kind === 'transfer' ? l.destCombo.getValue() : null
+          dest_warehouse_id: kind === 'transfer' ? l.destCombo.getValue() : null,
+          /* only a stock adjustment carries its own direction */
+          sign: isAdjustment(kind) ? l.sign : null
         }))
       };
       foot.querySelectorAll('.btn').forEach((b) => (b.disabled = true));
@@ -539,8 +736,26 @@
     }
     function onKey(e) { if (e.key === 'Escape') close(null); }
 
-    head.innerHTML = `<h3>${doc ? `تعديل ${state.kinds[doc.kind]} — ${esc(doc.doc_no)}` : 'مستند جديد'}</h3>`;
-    head.appendChild(seg);
+    /* --- the header carries the identity of the chosen kind: an icon, the
+       name and a coloured chip — and its colours follow the kind, so the
+       user never wonders WHICH document he is looking at. --- */
+    const titleRow = el('div', 'ed-title');
+    head.appendChild(titleRow);
+    head.appendChild(kindGrid);
+
+    function applyKindTheme() {
+      const st = KIND_STYLE[kind] || KIND_STYLE.purchase;
+      box.className = 'modal editor';
+      box.classList.add(`tone-${st.tone}`);
+      titleRow.innerHTML = `
+        <span class="ed-badge"><svg class="ic"><use href="#${st.icon}"/></svg></span>
+        <div class="ed-txt">
+          <h3>${doc ? `تعديل ${esc(st.ar)}` : 'مستند جديد'}</h3>
+          <span class="ed-sub">${doc ? `${esc(doc.doc_no)} — ${esc(doc.doc_date)}` : esc(st.hint)}</span>
+        </div>
+        <span class="chip kind-chip tone-${st.tone}"><svg class="ic"><use href="#${st.icon}"/></svg>${esc(st.ar)}</span>`;
+    }
+    applyKindTheme();
 
     document.body.appendChild(ov);
     document.addEventListener('keydown', onKey, true);
@@ -561,10 +776,13 @@
   /* ---------------- view ---------------- */
   async function viewDoc(id) {
     const d = await SamDB.call('getDocument', id);
+    const st = KIND_STYLE[d.kind] || { ar: d.kindAr, icon: 'i-clipboard', tone: 'plain' };
+    const isAdj = isAdjustment(d.kind);
     const rows = d.lines.map((l, i) => ({
       no: i + 1,
       item: `${l.itemCode} — ${l.itemName}`,
       bucket: bucketAr(l.bucket),
+      dir: isAdj ? (Number(l.sign) === -1 ? 'عجز' : 'زيادة') : '',
       pieces: SamDB.fmt(l.pieces),
       cartons: SamDB.fmt(l.cartons),
       bags: SamDB.fmt(l.bags),
@@ -576,6 +794,7 @@
         { key: 'no', label: 'م' },
         { key: 'item', label: 'الصنف' },
         { key: 'bucket', label: 'الحالة' },
+        ...(isAdj ? [{ key: 'dir', label: 'الاتجاه' }] : []),
         { key: 'cartons', label: 'كراتين' },
         { key: 'bags', label: 'أكياس' },
         { key: 'pieces', label: 'الكمية' },
@@ -588,8 +807,12 @@
     const whSummary = [...new Set(d.lines.map((l) => l.warehouseName).filter(Boolean))].join(' · ');
     const v = await modal({
       title: `${d.kindAr} — ${d.doc_no}`,
-      width: 'min(860px, 95vw)',
-      body: `<dl class="info">
+      width: 'min(900px, 95vw)',
+      body: `<div class="doc-view-head tone-${st.tone}">
+          <span class="ed-badge"><svg class="ic"><use href="#${st.icon}"/></svg></span>
+          <div><b>${esc(d.kindAr)}</b><span class="ed-sub">${esc(st.hint)}</span></div>
+        </div>
+        <dl class="info">
           <dt>التاريخ</dt><dd>${esc(d.doc_date)}</dd>
           <dt>العميل / المورد</dt><dd>${esc(d.partyName || '—')}</dd>
           <dt>المخازن</dt><dd>${esc(whSummary || '—')}</dd>
@@ -598,15 +821,23 @@
         </dl><div style="margin-top:14px">${html}</div>`,
       actions: [
         { label: 'طباعة المستند', value: 'print', kind: 'btn-primary', icon: 'i-print' },
-        ...(d.kind === 'sale' ? [{ label: 'تصاريح الخروج', value: 'gate', kind: 'btn-gold', icon: 'i-print' }] : []),
-        ...(d.kind === 'transfer' ? [{ label: 'تصريح الانتقال', value: 'gate', kind: 'btn-gold', icon: 'i-print' }] : []),
+        ...(NEEDS_PERMIT.includes(d.kind)
+          ? [{ label: d.kind === 'transfer' ? 'تصريح الانتقال'
+            : d.kind === 'prod_receipt' ? 'تصريح خروج الإنتاج' : 'تصاريح الخروج',
+          value: 'gate', kind: 'btn-gold', icon: 'i-print' }]
+          : []),
         { label: 'تعديل', value: 'edit', kind: 'btn-ghost', icon: 'i-edit' },
+        { label: 'حذف نهائي', value: 'del', kind: 'btn-danger', icon: 'i-trash' },
         { label: 'إغلاق', value: 'close', kind: 'btn-ghost' }
       ]
     });
     if (v === 'edit') openEditor(id);
     if (v === 'print') printInvoice(id);
     if (v === 'gate') printPermits(id);
+    if (v === 'del') {
+      // the impact warning (what the deletion reverses) comes first
+      await removeDoc({ id: d.id, kindAr: d.kindAr, doc_no: d.doc_no });
+    }
   }
 
   /* ---------------- printing ---------------- */
@@ -620,12 +851,14 @@
   async function printInvoice(id) {
     const d = await SamDB.call('getDocument', id);
     const isTransfer = d.kind === 'transfer';
+    const isAdj = isAdjustment(d.kind);
     const rows = d.lines.map((l, i) => ({
       no: i + 1,
       item: `${l.itemCode} — ${l.itemName}`,
       warehouse: l.warehouseName || '—',
       dest: l.destWarehouseName || '',
       unit: l.baseUnit,
+      dir: Number(l.sign) === -1 ? 'عجز' : 'زيادة',
       cartons: SamDB.fmt(l.cartons),
       bags: SamDB.fmt(l.bags),
       pieces: SamDB.fmt(l.pieces)
@@ -635,20 +868,22 @@
       { key: 'item', label: 'الصنف' },
       { key: 'warehouse', label: 'المخزن' },
       ...(isTransfer ? [{ key: 'dest', label: 'الوجهة' }] : []),
+      ...(isAdj ? [{ key: 'dir', label: 'الاتجاه', align: 'center' }] : []),
       { key: 'unit', label: 'الوحدة', align: 'center' },
       { key: 'cartons', label: 'كراتين', align: 'center' },
       { key: 'bags', label: 'أكياس', align: 'center' },
       { key: 'pieces', label: 'الكمية', align: 'end' }
     ];
+    const refLabel = isExternal(d.kind) ? 'رقم الفاتورة' : 'رقم المستند';
     printPreview({
       title: d.kindAr,
       subtitle: `مستند رقم ${d.doc_no}`,
       docRef: d.doc_no,
-      docRefLabel: 'رقم الفاتورة',
+      docRefLabel: refLabel,
       // centred block above the table: party, document number, date
       head: [
-        { k: partyLabel(d), v: d.partyName || '—' },
-        { k: 'رقم الفاتورة', v: d.doc_no },
+        ...(d.partyName ? [{ k: partyLabel(d), v: d.partyName }] : []),
+        { k: refLabel, v: d.doc_no },
         { k: 'التاريخ', v: d.doc_date }
       ],
       bodyHtml: `${tableHtml(cols, rows, SamDB.fmt(d.totalPieces))}
@@ -663,13 +898,18 @@
 
   /**
    * One permit page per warehouse involved in the document.
-   *  · sale     → exit permit (customer + that warehouse's quantities)
-   *  · transfer → movement permit (source warehouse → destination)
+   *  · sale        → exit permit (customer + that warehouse's quantities)
+   *  · transfer    → movement permit (source warehouse → destination)
+   *  · prod_receipt→ exit permit of the produced goods (the store is outside
+   *                  the factory, so the goods need a permit to leave)
+   *  · gate_out    → exit permit of a gate order
    * The quantities on all permits add up to the document total, and no
    * price ever appears on a permit.
    */
   function permitPages(d) {
     const isTransfer = d.kind === 'transfer';
+    const isProd = d.kind === 'prod_receipt';
+    const isGateOut = d.kind === 'gate_out';
     const groups = new Map();
     d.lines.forEach((l) => {
       const key = l.warehouse_id || 0;
@@ -714,22 +954,37 @@
           { k: 'رقم المستند', v: d.doc_no },
           { k: 'التاريخ', v: d.doc_date }
         ]
-        : [
-          { k: 'العميل / الجهة', v: d.partyName || '—' },
-          { k: 'رقم المستند', v: d.doc_no },
-          { k: 'التاريخ', v: d.doc_date },
-          { k: 'المخزن', v: `${g.name}${g.location ? ' — ' + g.location : ''}` }
-        ];
+        : (isProd || isGateOut)
+          ? [
+            { k: 'المخزن', v: `${g.name}${g.location ? ' — ' + g.location : ''}` },
+            { k: 'رقم المستند', v: d.doc_no },
+            { k: 'التاريخ', v: d.doc_date },
+            { k: 'نوع المستند', v: d.kindAr || '' }
+          ]
+          : [
+            { k: 'العميل / الجهة', v: d.partyName || '—' },
+            { k: 'رقم المستند', v: d.doc_no },
+            { k: 'التاريخ', v: d.doc_date },
+            { k: 'المخزن', v: `${g.name}${g.location ? ' — ' + g.location : ''}` }
+          ];
+      const note = isTransfer
+        ? 'صرح بانتقال الكميات المذكورة من المخزن المصدر أعلاه إلى الوجهة المذكورة، ويمنع الخروج بأي كمية غير مذكورة.'
+        : isProd
+          ? 'صرح بخروج الكميات المذكورة من هذا المخزن إلى المصنع بعد استلام الإنتاج، ويمنع الخروج بأي كمية غير مذكورة.'
+          : isGateOut
+            ? 'صرح بخروج الكميات المذكورة من هذا المخزن عبر البوابة، ويمنع الخروج بأي بضاعة غير مذكورة.'
+            : 'صرح بخروج الكميات المذكورة من هذا المخزن فقط إلى العميل أعلاه، ويمنع الخروج بأي بضاعة غير مذكورة.';
       return {
-        title: isTransfer ? 'تصريح انتقال بين المخازن' : 'تصريح خروج للبوابة',
+        title: isTransfer ? 'تصريح انتقال بين المخازن'
+          : isProd ? 'تصريح خروج إنتاج'
+            : isGateOut ? 'تصريح خروج من المصنع'
+              : 'تصريح خروج للبوابة',
         subtitle: `مرفق بمستند ${d.kindAr || ''} رقم ${d.doc_no} — تصريح ${gi + 1} من ${count}`,
         docRef: `GP-${d.doc_no}-${gi + 1}`,
         docRefLabel: 'رقم التصريح',
         head,
         bodyHtml: `
-          <p class="doc-note">${isTransfer
-            ? 'صرح بانتقال الكميات المذكورة من المخزن المصدر أعلاه إلى الوجهة المذكورة، ويمنع الخروج بأي كمية غير مذكورة.'
-            : 'صرح بخروج الكميات المذكورة من هذا المخزن فقط إلى العميل أعلاه، ويمنع الخروج بأي بضاعة غير مذكورة.'}
+          <p class="doc-note">${note}
             <b>لا تظهر الأسعار في هذا التصريح.</b></p>
           <p class="doc-note">وسيلة النقل: .......................... &nbsp;&nbsp; اسم السائق: .......................... &nbsp;&nbsp; رقم اللوحة: .................</p>
           ${tableHtml(cols, rows, SamDB.fmt(total))}
@@ -751,8 +1006,12 @@
     if (!d) return toast('المستند غير موجود', 'bad');
     const pages = permitPages(d);
     if (!pages.length) return toast('لا توجد أصناف في المستند', 'warn');
+    const label = d.kind === 'transfer' ? 'تصاريح انتقال'
+      : d.kind === 'prod_receipt' ? 'تصريح خروج إنتاج'
+        : d.kind === 'gate_out' ? 'تصريح خروج من المصنع'
+          : 'تصاريح خروج';
     printPreview({
-      title: `${d.kind === 'transfer' ? 'تصاريح انتقال' : 'تصاريح خروج'} (${pages.length})`,
+      title: `${label} (${pages.length})`,
       pages
     });
   }
@@ -792,6 +1051,6 @@
     load();
   });
 
-  window.SamDocs = { load, openEditor, viewDoc, printInvoice, printPermits, permitPages };
+  window.SamDocs = { load, openEditor, viewDoc, printInvoice, printPermits, permitPages, removeDoc };
   SamUI.bus.on(load);
 })();

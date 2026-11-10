@@ -49,6 +49,7 @@ const API = {
   saveDocument: (payload) => d.saveDocument(payload),
   getDocument: (id) => d.getDocument(id),
   listDocuments: (filter) => d.listDocuments(filter || {}),
+  listProdReceipts: (limit) => d.listProdReceipts(limit),
   documentImpact: (id) => d.documentImpact(id),
   deleteDocument: (id) => d.deleteDocument(id),
 
@@ -65,6 +66,7 @@ const API = {
   saveReceipt: (payload) => d.saveReceipt(payload),
   receiptImpact: (id) => d.receiptImpact(id),
   deleteReceipt: (id) => d.deleteReceipt(id),
+  productionGap: (filters) => d.productionGapReport(filters || {}),
 
   listTolling: (limit) => d.listTolling(limit),
   getTolling: (id) => d.getTolling(id),
@@ -81,7 +83,11 @@ const API = {
 
   reportQuery: (filters) => d.reportQuery(filters || {}),
   reportFacets: () => d.reportFacets(),
-  dailyReport: (filters) => d.dailyReport(filters || {})
+  dailyReport: (filters) => d.dailyReport(filters || {}),
+
+  /* V4 — the ready-made report catalogue and the dispatcher behind it */
+  REPORTS: () => d.REPORTS,
+  runReport: (filters) => d.runReport(filters || {})
 };
 
 /** [screen, action] required per operation; a function gets the call arguments */
@@ -115,6 +121,8 @@ const PERMS = {
 
   getDocument: ['transactions', 'view'],
   listDocuments: ['transactions', 'view'],
+  listProdReceipts: ['production', 'view'],
+  productionGap: ['production', 'view'],
   documentImpact: ['transactions', 'delete'],
   saveDocument: (a) => ['transactions', a[0] && a[0].id ? 'edit' : 'add'],
   deleteDocument: ['transactions', 'delete'],
@@ -126,6 +134,7 @@ const PERMS = {
   listReceipts: ['production', 'view'],
   issueImpact: ['production', 'delete'],
   receiptImpact: ['production', 'delete'],
+  productionGap: ['production', 'view'],
   setProdRouting: ['production', 'edit'],
   saveIssue: (a) => ['production', a[0] && a[0].id ? 'edit' : 'add'],
   saveReceipt: (a) => ['production', a[0] && a[0].id ? 'edit' : 'add'],
@@ -147,7 +156,9 @@ const PERMS = {
 
   reportQuery: ['reports', 'view'],
   reportFacets: ['reports', 'view'],
-  dailyReport: ['reports', 'view']
+  dailyReport: ['reports', 'view'],
+  REPORTS: ['reports', 'view'],
+  runReport: ['reports', 'view']
 };
 
 module.exports = function registerDbIpc() {

@@ -14,7 +14,7 @@
     confirmHardDelete, confirmWarning, emptyState, toggleEmpty, tableHtml, printPreview
   } = SamUI;
 
-  const state = { items: [], warehouses: [], parties: [], issues: [], receipts: [], tolling: [], scrap: [], archive: [], routing: {}, tab: 'issues' };
+  const state = { items: [], warehouses: [], parties: [], issues: [], receipts: [], tolling: [], scrap: [], archive: [], routing: {}, prodDocs: [], gap: null, tab: 'issues' };
   let rt = null;
 
   const itemById = (id) => state.items.find((i) => i.id === Number(id)) || null;
@@ -29,7 +29,7 @@
   /* ---------------- load ---------------- */
   async function load() {
     try {
-      const [items, whs, parties, issues, receipts, routing, tolling, scrap, archive] = await Promise.all([
+      const [items, whs, parties, issues, receipts, routing, tolling, scrap, archive, prodDocs] = await Promise.all([
         SamDB.call('listItems', ''),
         SamDB.call('listWarehouses'),
         SamDB.call('listParties', ''),
@@ -38,15 +38,18 @@
         SamDB.call('prodRouting'),
         SamDB.call('listTolling', 200),
         SamDB.call('listScrap', { limit: 300 }),
-        SamDB.call('listArchive', 300)
+        SamDB.call('listArchive', 300),
+        SamDB.call('listProdReceipts', 200)
       ]);
-      Object.assign(state, { items, warehouses: whs, parties, issues, receipts, routing, tolling, scrap, archive });
+      Object.assign(state, { items, warehouses: whs, parties, issues, receipts, routing, tolling, scrap, archive, prodDocs });
       initRoutingUI();
       renderIssues();
       renderReceipts();
       renderTolling();
       renderScrap();
       renderArchive();
+      renderProdDocs();
+      await loadGap();
     } catch (e) { toast(e.message, 'bad'); }
   }
 
@@ -117,15 +120,15 @@
     itemCombo.opts.onChange = syncPieces;
     cartons.addEventListener('input', syncPieces);
 
-    const noteField = field('ملاحظة', note);
+    const noteField = field('ملاحظة', note, '', 'i-clipboard');
     noteField.classList.add('full');
     grid.append(
-      field('رقم الصرف', docNo),
-      field('التاريخ', docDate),
-      field('المادة الخام', itemHost),
-      field('مخزن المصدر', whHost),
-      field('عدد الكراتين', cartons, 'معلوماتي'),
-      field('الكمية بالوحدة الأساسية', pieces),
+      field('رقم الصرف', docNo, '', 'i-hash'),
+      field('التاريخ', docDate, '', 'i-calendar'),
+      field('المادة الخام', itemHost, '', 'i-box'),
+      field('مخزن المصدر', whHost, '', 'i-warehouse'),
+      field('عدد الكراتين', cartons, 'معلوماتي', 'i-archive-box'),
+      field('الكمية بالوحدة الأساسية', pieces, '', 'i-sigma'),
       noteField
     );
     body.appendChild(grid);
@@ -527,7 +530,7 @@
     });
     emptyState('receiptsEmpty', {
       title: 'لا توجد تقارير إنتاج',
-      hint: 'سجّل تقرير اليوم: رقم الكرتونة، الخام، والمنتجات التامة — التوجيه للأرصدة تلقائي.',
+      hint: 'سجّل تقرير اليوم: رقم الكرتونة، الخام، والمنتجات التامة — تقرير توثيقي بلا أثر على المخزون.',
       actionLabel: 'تقرير إنتاج يومي',
       onAction: () => openReceiptForm(null)
     });
@@ -599,11 +602,9 @@
         <div style="margin-top:6mm;font-size:10pt;line-height:1.9">
           <div><b>المادة الخام:</b> ${esc(r.rawCode)} — ${esc(r.rawName)} &nbsp;·&nbsp; <b>حبات الكرتونة:</b> ${SamDB.fmt(r.carton_pieces)}
           &nbsp;·&nbsp; <b>المنتَج:</b> ${SamDB.fmt(r.produced_total)} &nbsp;·&nbsp; <b>العجز:</b> ${SamDB.fmt(r.shortage)} &nbsp;·&nbsp; <b>الزيادة:</b> ${SamDB.fmt(r.surplus)}</div>
-          <div style="margin-top:3mm"><b>التوجيه التلقائي:</b></div>
-          <div>الجيد → ${esc(whName(state.routing.fgGoodWh))} (سليم)</div>
-          <div>تالف العلب → ${esc(whName(state.routing.fgDefectWh))} (تالف)</div>
-          <div>تالف الأمبولة → ${esc(whName(state.routing.rawDefectWh))} (خام تالف)</div>
-          <div>الأكياس المستخدمة → ${SamDB.fmt(r.bags_used)} كيس</div>
+          <div style="margin-top:3mm"><b>ملاحظة:</b></div>
+          <div>هذا التقرير توثيقي — لا يُنشئ أي حركة مخزون ولا يغيّر أي رصيد.</div>
+          <div>دخول الإنتاج إلى المخزن يتم بـ«سند استلام الإنتاج» (مخزن لكل سطر + تصريح خروج).</div>
           ${r.note ? `<div style="margin-top:2mm"><b>ملاحظات:</b> ${esc(r.note)}</div>` : ''}
         </div>`,
       footer: 'SAM Management System — تقرير الإنتاج اليومي (الكميات بالوحدة الأساسية)',
@@ -668,14 +669,14 @@
     whCombo.setValue(doc ? doc.warehouse_id : (state.warehouses[0] || {}).id || null, false);
 
     grid.append(
-      field('رقم المستند', docNo),
-      field('التاريخ', docDate),
-      field('العميل (صاحب المادة)', partyHost),
-      field('المادة الخام', rawHost),
-      field('مخزن الاستلام', whHost),
-      field('الحبات المستلمة', piecesIn),
-      field('الأكياس المستلمة', bagsIn, 'معلوماتي'),
-      (() => { const f = field('ملاحظات', note); f.classList.add('full'); return f; })()
+      field('رقم المستند', docNo, '', 'i-hash'),
+      field('التاريخ', docDate, '', 'i-calendar'),
+      field('العميل (صاحب المادة)', partyHost, '', 'i-user'),
+      field('المادة الخام', rawHost, '', 'i-box'),
+      field('مخزن الاستلام', whHost, '', 'i-warehouse'),
+      field('الحبات المستلمة', piecesIn, '', 'i-sigma'),
+      field('الأكياس المستلمة', bagsIn, 'معلوماتي', 'i-archive'),
+      (() => { const f = field('ملاحظات', note, '', 'i-clipboard'); f.classList.add('full'); return f; })()
     );
     body.appendChild(grid);
 
@@ -928,7 +929,7 @@
         <td>${s.is_customer ? `<span class="chip accent">${esc(s.partyName || 'العميل')}</span>` : '<span class="chip main">المصنع</span>'}</td>
         <td>${esc(s.itemCode || '—')} — ${esc(s.itemName || '—')}</td>
         <td class="num qty">${SamDB.fmt(s.pieces)}</td>
-        <td><span class="chip ${s.bucket === 'defect' ? 'bad' : 'ok'}">${{ good: 'سليم', defect: 'تالف', held: 'محرز' }[s.bucket] || s.bucket}</span></td>
+        <td><span class="chip ${s.bucket === 'defect' ? 'bad' : 'ok'}">${{ good: 'سليم', defect: 'تالف' }[s.bucket] || s.bucket}</span></td>
         <td class="mono">${esc(s.doc_no || '—')}</td>`;
       bindRow(tr, {
         view: () => modal({
@@ -990,17 +991,17 @@
     prodCombo.setValue(editing ? row.product_item_id : null, false);
 
     grid.append(
-      field('رقم السجل', docNo),
-      field('التاريخ', docDate),
-      field('الوردية', shift),
-      field('الماكينة', machine),
-      field('المادة الخام', rawHost),
-      field('المنتج التام', prodHost),
-      field('كراتين', cartons),
-      field('أكياس', bags),
-      field('جيد', good),
-      field('تالف', defect),
-      (() => { const f = field('ملاحظة', note); f.classList.add('full'); return f; })()
+      field('رقم السجل', docNo, '', 'i-hash'),
+      field('التاريخ', docDate, '', 'i-calendar'),
+      field('الوردية', shift, '', 'i-day'),
+      field('الماكينة', machine, '', 'i-gear'),
+      field('المادة الخام', rawHost, '', 'i-box'),
+      field('المنتج التام', prodHost, '', 'i-factory'),
+      field('كراتين', cartons, '', 'i-archive-box'),
+      field('أكياس', bags, '', 'i-archive'),
+      field('جيد', good, '', 'i-check'),
+      field('تالف', defect, '', 'i-warn'),
+      (() => { const f = field('ملاحظة', note, '', 'i-clipboard'); f.classList.add('full'); return f; })()
     );
     body.appendChild(grid);
     body.appendChild(el('p', 'foot-note', 'هذا السجل للتوثيق فقط: لا ينشئ أي حركة مخزون ولا يغيّر أي رصيد.'));
@@ -1154,18 +1155,229 @@
     } catch (e) { toast(e.message, 'bad'); }
   }
 
+  /* ---------------- سندات استلام الإنتاج — the documents that DID move the stock -------
+     The daily production report only writes down what came out of a carton.
+     This list is the other half: the document that really put the pieces
+     into the warehouse — one row per document, with its warehouses. */
+  function renderProdDocs() {
+    const tb = document.querySelector('#prodDocsTbl tbody');
+    if (!tb) return;
+    tb.innerHTML = '';
+    state.prodDocs.forEach((d, idx) => {
+      const tr = el('tr');
+      tr.innerHTML = `
+        <td class="num">${idx + 1}</td>
+        <td class="mono">${esc(d.doc_no)}</td>
+        <td>${esc(d.doc_date)}</td>
+        <td>${esc(d.warehouseNames || '—')}</td>
+        <td class="num">${SamDB.fmt(d.lineCount)}</td>
+        <td class="num qty plus">${SamDB.fmt(d.totalPieces)}</td>`;
+      bindRow(tr, {
+        view: () => SamDocs.viewDoc(d.id),
+        edit: () => SamDocs.openEditor(d.id),
+        del: () => SamDocs.removeDoc(d)
+      });
+      tb.appendChild(tr);
+    });
+    emptyState('prodDocsEmpty', {
+      icon: 'i-factory',
+      title: 'لا توجد سندات استلام إنتاج',
+      hint: 'السند هو المستند الذي يزيد رصيد المخزن — اختر المخزن لكل سطر، وبعد الحفظ اطبع تصريح الخروج.',
+      actionLabel: 'سند استلام جديد',
+      onAction: () => SamDocs.openEditor(null, 'prod_receipt')
+    });
+    toggleEmpty('prodDocsEmpty', state.prodDocs.length > 0);
+  }
+
+  /* ---------------- العجز والتالف — the documentation section ----------------
+     Its own section, its own table, its own printed report and its own
+     Excel export — exactly like a separate department inside the program,
+     but fed by the very same items as the rest of the app. */
+  async function loadGap() {
+    const from = (document.getElementById('gapFrom') || {}).value || '';
+    const to = (document.getElementById('gapTo') || {}).value || '';
+    try {
+      state.gap = await SamDB.call('productionGap', { dateFrom: from, dateTo: to });
+    } catch (e) { state.gap = null; toast(e.message, 'bad'); }
+    renderGap();
+  }
+
+  function gapRows() {
+    return (state.gap && state.gap.rows) || [];
+  }
+
+  function renderGap() {
+    const tb = document.querySelector('#gapTbl tbody');
+    if (!tb) return;
+    tb.innerHTML = '';
+    gapRows().forEach((r, idx) => {
+      const tr = el('tr');
+      tr.innerHTML = `
+        <td class="num">${idx + 1}</td>
+        <td>${esc(r.docDate)}</td>
+        <td class="mono">${esc(r.docNo)}</td>
+        <td class="mono">${esc(r.cartonNo || '—')}</td>
+        <td>${esc(r.rawItem)}</td>
+        <td class="num">${SamDB.fmt(r.cartonPieces)}</td>
+        <td class="num qty">${SamDB.fmt(r.produced)}</td>
+        <td class="num qty ${r.shortage ? 'minus' : ''}">${SamDB.fmt(r.shortage)}</td>
+        <td class="num qty ${r.surplus ? 'plus' : ''}">${SamDB.fmt(r.surplus)}</td>
+        <td class="num qty">${SamDB.fmt(r.defectCans)}</td>
+        <td class="num qty">${SamDB.fmt(r.defectAmpoules)}</td>
+        <td class="num">${SamDB.fmt(r.breaks)}</td>
+        <td>${esc(r.items || '—')}</td>`;
+      bindRow(tr, {
+        view: () => viewReceipt(r.id),
+        edit: () => openReceiptForm(r.id),
+        del: () => removeReceipt({
+          id: r.id, doc_no: r.docNo, produced_total: r.produced,
+          shortage: r.shortage, surplus: r.surplus
+        })
+      });
+      tb.appendChild(tr);
+    });
+    emptyState('gapEmpty', {
+      icon: 'i-scale',
+      title: 'لا توجد تقارير إنتاج في هذه الفترة',
+      hint: 'سجّل «تقرير إنتاج يومي» من تبويب تقارير الإنتاج ليظهر العجز والتالف هنا.'
+    });
+    toggleEmpty('gapEmpty', gapRows().length > 0);
+
+    const t = (state.gap && state.gap.totals) || {};
+    const foot = document.getElementById('gapFoot');
+    if (foot) {
+      foot.innerHTML = `
+        <span>عدد التقارير: <b>${SamDB.fmt(t.rows || 0)}</b></span>
+        <span>العجز: <b class="minus">${SamDB.fmt(t.shortage || 0)}</b></span>
+        <span>الزيادة: <b class="plus">${SamDB.fmt(t.surplus || 0)}</b></span>
+        <span>التالف: <b class="minus">${SamDB.fmt(t.defect || 0)}</b></span>
+        <span class="dim">تقرير توثيقي — بلا أي أثر على المخزون</span>`;
+    }
+  }
+
+  /** the printed report of the shortage section */
+  function printGap() {
+    const rows = gapRows();
+    if (!rows.length) return toast('لا توجد بيانات للطباعة', 'warn');
+    const t = (state.gap && state.gap.totals) || {};
+    const from = (document.getElementById('gapFrom') || {}).value || '';
+    const to = (document.getElementById('gapTo') || {}).value || '';
+    const html = tableHtml(
+      [
+        { key: 'no', label: 'م', align: 'center' },
+        { key: 'date', label: 'التاريخ' },
+        { key: 'docNo', label: 'رقم التقرير' },
+        { key: 'cartonNo', label: 'رقم الكرتون' },
+        { key: 'raw', label: 'المادة الخام' },
+        { key: 'cartonPieces', label: 'حبات الكرتون', align: 'end' },
+        { key: 'produced', label: 'الإنتاج', align: 'end' },
+        { key: 'shortage', label: 'العجز', align: 'end' },
+        { key: 'surplus', label: 'الزيادة', align: 'end' },
+        { key: 'cans', label: 'تالف علب', align: 'end' },
+        { key: 'amps', label: 'تالف أمبولة', align: 'end' },
+        { key: 'breaks', label: 'الكسر', align: 'end' }
+      ],
+      rows.map((r, i) => ({
+        no: i + 1, date: r.docDate, docNo: r.docNo, cartonNo: r.cartonNo || '—',
+        raw: r.rawItem, cartonPieces: SamDB.fmt(r.cartonPieces), produced: SamDB.fmt(r.produced),
+        shortage: SamDB.fmt(r.shortage), surplus: SamDB.fmt(r.surplus),
+        cans: SamDB.fmt(r.defectCans), amps: SamDB.fmt(r.defectAmpoules), breaks: SamDB.fmt(r.breaks)
+      })),
+      `العجز ${SamDB.fmt(t.shortage || 0)} · الزيادة ${SamDB.fmt(t.surplus || 0)} · التالف ${SamDB.fmt(t.defect || 0)}`
+    );
+    printPreview({
+      title: 'تقرير عجز وتالف الإنتاج',
+      subtitle: 'تقرير توثيقي — بلا أثر على المخزون',
+      docRef: `GAP-${new Date().toISOString().slice(0, 10)}`,
+      docRefLabel: 'رقم التقرير',
+      head: [
+        { k: 'الفترة', v: `${from || 'البداية'} → ${to || 'اليوم'}` },
+        { k: 'عدد التقارير', v: SamDB.fmt(t.rows || 0) },
+        { k: 'إجمالي العجز', v: `${SamDB.fmt(t.shortage || 0)} حبة` },
+        { k: 'إجمالي التالف', v: `${SamDB.fmt(t.defect || 0)} حبة` }
+      ],
+      bodyHtml: html,
+      dense: true,
+      landscape: true,
+      footer: 'SAM Management System — تقرير عجز وتالف الإنتاج (الكميات بالوحدة الأساسية)',
+      signatures: ['مشرف المناوبة', 'أمين المخزن', 'المدير']
+    });
+  }
+
+  /** the Excel export of the shortage section */
+  async function exportGapExcel() {
+    const rows = gapRows();
+    if (!rows.length) return toast('لا توجد بيانات للتصدير', 'warn');
+    const t = (state.gap && state.gap.totals) || {};
+    const from = (document.getElementById('gapFrom') || {}).value || '';
+    const to = (document.getElementById('gapTo') || {}).value || '';
+    const r = await sam.app.saveXlsx({
+      fileName: `SAM-Production-Gap-${new Date().toISOString().slice(0, 10)}.xlsx`,
+      sheetName: 'عجز وتالف الإنتاج',
+      title: 'تقرير عجز وتالف الإنتاج',
+      subtitle: `SAM Management System — ${SamUI.WATERMARK}`,
+      meta: [
+        ['الفترة', `${from || 'البداية'} → ${to || 'اليوم'}`],
+        ['عدد التقارير', SamDB.fmt(t.rows || 0)],
+        ['إجمالي العجز', SamDB.fmt(t.shortage || 0)],
+        ['إجمالي الزيادة', SamDB.fmt(t.surplus || 0)],
+        ['إجمالي التالف', SamDB.fmt(t.defect || 0)],
+        ['ملاحظة', 'تقرير توثيقي — بلا أي أثر على المخزون']
+      ],
+      columns: [
+        { header: 'التاريخ', key: 'docDate' },
+        { header: 'رقم التقرير', key: 'docNo' },
+        { header: 'رقم الكرتون', key: 'cartonNo' },
+        { header: 'المادة الخام', key: 'rawItem' },
+        { header: 'حبات الكرتون', key: 'cartonPieces', num: true },
+        { header: 'الإنتاج', key: 'produced', num: true },
+        { header: 'العجز', key: 'shortage', num: true },
+        { header: 'الزيادة', key: 'surplus', num: true },
+        { header: 'تالف علب', key: 'defectCans', num: true },
+        { header: 'تالف أمبولة', key: 'defectAmpoules', num: true },
+        { header: 'الكسر', key: 'breaks', num: true },
+        { header: 'الأصناف', key: 'items' }
+      ],
+      rows: rows.map((x) => ({
+        docDate: x.docDate, docNo: x.docNo, cartonNo: x.cartonNo || '',
+        rawItem: x.rawItem, cartonPieces: SamDB.n(x.cartonPieces), produced: SamDB.n(x.produced),
+        shortage: SamDB.n(x.shortage), surplus: SamDB.n(x.surplus),
+        defectCans: SamDB.n(x.defectCans), defectAmpoules: SamDB.n(x.defectAmpoules),
+        breaks: SamDB.n(x.breaks), items: x.items || ''
+      })),
+      totals: [
+        { key: 'produced', value: rows.reduce((a, x) => a + SamDB.n(x.produced), 0) },
+        { key: 'shortage', value: SamDB.n(t.shortage || 0) },
+        { key: 'surplus', value: SamDB.n(t.surplus || 0) },
+        { key: 'defectCans', value: SamDB.n(t.defect || 0) }
+      ]
+    });
+    if (r && r.ok) {
+      toast(`تم حفظ ملف Excel: ${r.data.path} (${SamDB.fmt(r.data.rows)} سطر)`, 'ok', 5600);
+      sam.app.openPath(r.data.path.replace(/[\\/][^\\/]+$/, ''));
+    } else if (r && !r.canceled) {
+      toast(r.error || 'تعذّر حفظ الملف', 'bad', 5200);
+    }
+  }
+
   /* ---------------- tabs + wiring ---------------- */
-  const PANELS = ['issues', 'receipts', 'tolling', 'scrap', 'archive'];
+  const PANELS = ['issues', 'receipts', 'tolling', 'scrap', 'archive', 'prodreceipts', 'gap'];
   function showTab(tab) {
     state.tab = tab;
     document.querySelectorAll('#prodTabs .tab').forEach((x) => x.classList.toggle('active', x.dataset.tab === tab));
-    PANELS.forEach((p) => document.getElementById(`${p}Panel`).classList.toggle('hidden', p !== tab));
+    PANELS.forEach((p) => {
+      const n = document.getElementById(`${p}Panel`);
+      if (n) n.classList.toggle('hidden', p !== tab);
+    });
+    if (tab === 'gap') loadGap();
   }
 
   function newFromTab() {
     if (state.tab === 'receipts') return openReceiptForm(null);
     if (state.tab === 'tolling') return openTollingForm(null);
     if (state.tab === 'archive') return openArchiveForm(null);
+    if (state.tab === 'prodreceipts') return SamDocs.openEditor(null, 'prod_receipt');
+    if (state.tab === 'gap') return loadGap();
     return openIssueForm(null);
   }
 
@@ -1173,12 +1385,29 @@
   document.getElementById('btnNewReceipt').addEventListener('click', () => openReceiptForm(null));
   document.getElementById('btnNewTolling').addEventListener('click', () => openTollingForm(null));
   document.getElementById('btnNewArchive').addEventListener('click', () => openArchiveForm(null));
+  const btnNewProdReceipt = document.getElementById('btnNewProdReceipt');
+  if (btnNewProdReceipt) btnNewProdReceipt.addEventListener('click', () => SamDocs.openEditor(null, 'prod_receipt'));
+  const btnNewProdReceipt2 = document.getElementById('btnNewProdReceipt2');
+  if (btnNewProdReceipt2) btnNewProdReceipt2.addEventListener('click', () => SamDocs.openEditor(null, 'prod_receipt'));
+  const btnPrintGap = document.getElementById('btnPrintGap');
+  if (btnPrintGap) btnPrintGap.addEventListener('click', printGap);
+  const btnExcelGap = document.getElementById('btnExcelGap');
+  if (btnExcelGap) btnExcelGap.addEventListener('click', exportGapExcel);
+  const btnGapRefresh = document.getElementById('btnGapRefresh');
+  if (btnGapRefresh) btnGapRefresh.addEventListener('click', loadGap);
+  ['gapFrom', 'gapTo'].forEach((id) => {
+    const n = document.getElementById(id);
+    if (n) n.addEventListener('change', loadGap);
+  });
   document.getElementById('btnSaveRouting').addEventListener('click', saveRouting);
   document.getElementById('prodTabs').addEventListener('click', (e) => {
     const b = e.target.closest('.tab');
     if (b) showTab(b.dataset.tab);
   });
 
-  window.SamProd = { load, showTab, newFromTab, openIssueForm, openReceiptForm, openTollingForm, openArchiveForm, printReceipt, printTolling };
+  window.SamProd = {
+    load, showTab, newFromTab, openIssueForm, openReceiptForm, openTollingForm, openArchiveForm,
+    printReceipt, printTolling, renderProdDocs, loadGap, printGap, exportGapExcel
+  };
   SamUI.bus.on(load);
 })();

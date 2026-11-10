@@ -70,10 +70,10 @@
 
     const grid = el('div', 'form-grid');
     grid.append(
-      field('الاسم', name),
-      field('الهاتف', phone),
-      field('النوع', typeBox),
-      field('ملاحظات', notes),
+      field('الاسم', name, '', 'i-user'),
+      field('الهاتف', phone, '', 'i-hash'),
+      field('النوع', typeBox, '', 'i-tag'),
+      field('ملاحظات', notes, '', 'i-clipboard'),
       activeWrap
     );
 

@@ -5,6 +5,15 @@
    - type a few letters (Arabic-insensitive: تخطيط/همزة/تاء مربوطة/ياء)
    - instant filtering, keyboard driven: ↑ ↓ Enter Esc, plus mouse
    - optional [+] button to create a record without leaving the form
+
+   V4 — the customer found the old control confusing:
+     · the caret was a decorative shape, so clicking it did nothing,
+     · the "+" and the caret overlapped the text on narrow columns,
+     · the list only opened while typing, so an empty field looked dead,
+     · after picking an item the list could not be reopened without typing.
+   Now the caret is a real BUTTON, the "+" is an icon button, the list opens
+   on click / focus / typing and right after a pick, and the chosen item gets
+   a visible state so changing it is obvious.
    ===================================================================== */
 (function (global) {
   'use strict';
@@ -69,19 +78,38 @@
         <div class="combo-field">
           <input class="input combo-input" type="text" autocomplete="off" spellcheck="false"
                  placeholder="${esc(this.opts.placeholder || 'ابحث…')}" />
-          <span class="combo-caret"></span>
-          ${this.opts.onAdd ? '<button type="button" class="combo-plus" title="إضافة سريعة">+</button>' : ''}
+          <button type="button" class="combo-caret" title="إظهار القائمة" aria-label="إظهار القائمة">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 6L8 10.5 12.5 6" fill="none" stroke="currentColor"
+              stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          ${this.opts.onAdd ? `<button type="button" class="combo-plus" title="إضافة سجل جديد" aria-label="إضافة جديد">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3.2v9.6M3.2 8h9.6" fill="none" stroke="currentColor"
+              stroke-width="2.2" stroke-linecap="round"/></svg>
+          </button>` : ''}
         </div>
         <input type="hidden" class="combo-value" />`;
       this.input = this.root.querySelector('.combo-input');
       this.hidden = this.root.querySelector('.combo-value');
+      this.caret = this.root.querySelector('.combo-caret');
       this.input.addEventListener('input', () => this.onQuery());
       this.input.addEventListener('focus', () => { this.openList(); this.onQuery(); });
+      this.input.addEventListener('click', () => this.openList());
       this.input.addEventListener('keydown', (e) => this.onKey(e));
       this.input.addEventListener('blur', () => setTimeout(() => this.renderLabel(), 60));
+
+      // the caret is a real toggle — clicking it opens the list without typing
+      this.caret.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.toggleList();
+      });
+
       if (this.opts.onAdd) {
-        this.root.querySelector('.combo-plus').addEventListener('click', (e) => {
+        const plus = this.root.querySelector('.combo-plus');
+        plus.addEventListener('mousedown', (e) => e.preventDefault());
+        plus.addEventListener('click', (e) => {
           e.preventDefault();
+          e.stopPropagation();
           this.opts.onAdd();
         });
       }
@@ -94,8 +122,15 @@
       return this;
     }
 
+    /** the item the user picked */
+    current() {
+      return this.items.find((x) => x.id === this.value) || null;
+    }
+
     filtered() {
       const q = this.input.value;
+      // an empty field shows the WHOLE list — the dropdown must appear even
+      // before the first letter is typed
       const search = this._typing ? q : '';
       const list = !search ? this.items : this.items
         .map((it) => ({ it, s: Math.max(score(it.label, search), score(it.code, search) * 0.95, score(it.sub, search) * 0.7) }))
@@ -111,6 +146,15 @@
       this.renderList();
     }
 
+    toggleList() {
+      if (this.pop && this.pop.style.display !== 'none') this.closeList();
+      else {
+        this._typing = false;
+        this.openList();
+        this.renderList();
+      }
+    }
+
     openList() {
       if (!this.pop) {
         this.pop = el('div', 'combo-pop');
@@ -119,10 +163,18 @@
       }
       const r = this.input.getBoundingClientRect();
       this.pop.style.minWidth = `${Math.max(r.width, 220)}px`;
+      // keep the list on screen when the field sits near the bottom edge
+      const spaceBelow = window.innerHeight - r.bottom;
+      const spaceAbove = r.top;
+      const flip = spaceBelow < 260 && spaceAbove > spaceBelow;
       this.pop.style.left = `${r.left}px`;
-      this.pop.style.top = `${r.bottom + 6}px`;
+      this.pop.style.maxHeight = `${Math.max(180, Math.min(320, flip ? spaceAbove - 16 : spaceBelow - 16))}px`;
+      this.pop.style.top = flip ? 'auto' : `${r.bottom + 6}px`;
+      this.pop.style.bottom = flip ? `${window.innerHeight - r.top + 6}px` : 'auto';
       this.pop.style.display = 'block';
       openCombo = this;
+      this.root.classList.add('open');
+      if (this.caret) this.caret.classList.add('up');
       this.renderList();
     }
 
@@ -130,6 +182,8 @@
       if (this.pop) this.pop.style.display = 'none';
       if (openCombo === this) openCombo = null;
       this._typing = false;
+      this.root.classList.remove('open');
+      if (this.caret) this.caret.classList.remove('up');
       this.renderLabel();
     }
 
@@ -167,7 +221,10 @@
       const it = (this._list || [])[i];
       if (!it) return;
       this.setValue(it.id, true);
+      // the list stays reachable — the customer must be able to CHANGE the
+      // item straight away without clearing the field first
       this.closeList();
+      this.renderLabel();
     }
 
     onKey(e) {
@@ -204,12 +261,17 @@
     }
 
     renderLabel() {
-      const it = this.items.find((x) => x.id === this.value);
+      const it = this.current();
       if (it && !this._typing) this.input.value = it.code ? `${it.code} — ${it.label}` : it.label;
       else if (!it) { if (!this._typing) this.input.value = ''; }
+      // a filled field gets a subtle highlight so the chosen item is obvious
+      this.root.classList.toggle('filled', !!it && !this._typing);
     }
 
     focus() { this.input.focus(); }
+
+    /** open the list on demand — used by the keyboard shortcut */
+    open() { this._typing = false; this.openList(); this.renderList(); }
   }
 
   function combo(root, opts) {

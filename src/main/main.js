@@ -124,8 +124,17 @@ if (!gotLock) {
       startupLog('app ready');
       Menu.setApplicationMenu(null);
       const db = require('./db');
-      db.init(process.env.SAM_DATA_DIR || app.getPath('userData'));
-      startupLog('database opened');
+      /* V4 — the user may choose where the data lives; the choice is read
+         before the database opens so the very first launch already honours it.
+         applyPending runs first: when the user picked a new folder while the
+         app was running, this copies the FRESH database into that folder —
+         so nothing he typed after the pick is lost. */
+      const datadir = require('./datadir');
+      const pending = datadir.applyPending(app);
+      if (pending) startupLog('data folder switched to ' + pending.dir + ' (copied=' + pending.copied + ')');
+      const dataDir = datadir.resolveDir(app);
+      db.init(dataDir);
+      startupLog('database opened at ' + dataDir);
       const session = require('./session');
       const seeded = session.ensureSeed();
       require('./ipc-db')();

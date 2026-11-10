@@ -6,22 +6,20 @@
 
 const { el, icon, esc, toast, bindRow, modal, confirmHardDelete } = SamUI;
 
-/** what V2 changed — shown on the dashboard so the update is self-documenting */
-/** what V3 changed — shown on the dashboard so the update is self-documenting */
-const V3_CHANGES = [
-  { t: 'لا يوجد مخزن رئيسي: كل مخزن متساوٍ، وأنت من يعرّف المخازن', view: 'warehouses' },
-  { t: 'التقرير اليومي: صنف × مخزن — دخل اليوم والمتبقي، مع إجمالي كل المخازن', view: 'daily' },
-  { t: 'الوحدة الأساسية للصنف مرتبطة به في كل شيء: الفواتير والتقارير والطباعة', view: 'items' },
-  { t: 'الكمية تُحسب بالوحدة الأساسية دائماً، والكرتونة والكيس معلوماتيان فقط', view: 'items' },
-  { t: 'الفاتورة: رقم خارجي من نظام آخر + اسم العميل + التاريخ — إلزامية', view: 'transactions' },
-  { t: 'مخزن لكل سطر صنف: يمكن أن تخرج الفاتورة من مخزنين في آن واحد', view: 'transactions' },
-  { t: 'تصريح خروج لكل مخزن عند الحفظ — بمخزنه وحارسه وأرقامه فقط بلا أسعار', view: 'transactions' },
-  { t: 'تصريح انتقال من مخزن إلى مخزن لكل عملية نقل', view: 'transactions' },
-  { t: 'الكمية في التصاريح مطابقة تماماً لِمجموع الفاتورة', view: 'transactions' },
-  { t: 'كل حركة لها تاريخ عمل مستقل — التقارير تُصفّى بتاريخ الفاتورة لا بتاريخ الإدخال', view: 'reports' },
-  { t: 'تحذير النقص يذكر المخزن والكمية المتوفرة فيه', view: 'transactions' },
-  { t: 'تصدير Excel حقيقي للفاتورة والتقرير اليومي', view: 'reports' },
-  { t: 'اختصارات: Ctrl+S حفظ · Ctrl+N جديد · Ctrl+P طباعة · Esc إغلاق', view: null }
+/** what V4 changed — shown on the dashboard so the update is self-documenting */
+const V4_CHANGES = [
+  { t: 'مجلد البيانات: تختاره بنفسك — والنسخة القديمة تبقى سليمة كنسخة احتياطية', view: 'settings' },
+  { t: 'المزامنة السحابية: بريدك الإلكتروني فقط — البرنامج يكتشف Google Drive ويكتب النسخة', view: 'settings' },
+  { t: 'دليل الاستخدام داخل البرنامج: زر «؟» في شريط العنوان يشرح كل شيء', view: null },
+  { t: 'نافذة التحديث: الحالة والنسبة والسرعة والحجم وأزرار فحص/تحميل/تثبيت', view: null },
+  { t: 'التقارير تفتح في نافذة مستقلة: معاينة ثم تصدير أو طباعة — لا داخل الشاشة', view: 'reports' },
+  { t: 'سند استلام الإنتاج يزيد رصيد المنتج التام في المخزن الذي تختاره، ويطبع تصريح خروج', view: 'production' },
+  { t: 'قسم العجز والتالف: مستقل تماماً بلا أي أثر على المخزون، وله تقريره الخاص', view: 'production' },
+  { t: 'الإدخال الذكي: القائمة تظهر بالضغط على العلامة، وتبقى مفتوحة بعد اختيار الصنف', view: 'transactions' },
+  { t: 'هوية بصرية لكل نوع مستند: لون وأيقونة وترويسة مختلفة — لا لبس في الترويسة', view: 'transactions' },
+  { t: 'أيقونة ثابتة أمام كل خانة إدخال — تعرف معناها قبل أن تقرأها', view: 'items' },
+  { t: 'الطباعة على ورق A4 بهوامش صغيرة، عمودي أو أفقي حسب عرض التقرير', view: 'reports' },
+  { t: 'تصدير Excel حقيقي بخط واضح واتجاه صحيح — لا صورة ولا نص مبتور', view: 'reports' }
 ];
 
 const VIEW_TITLE = {
@@ -148,7 +146,7 @@ function fillUserChip() {
 function renderChanges() {
   const host = document.getElementById('roadmap');
   host.innerHTML = '';
-  V3_CHANGES.forEach((c, i) => {
+  V4_CHANGES.forEach((c, i) => {
     const li = el('li', 'done');
     li.innerHTML = `<span class="n">${i + 1}</span><span>${esc(c.t)}</span><span class="st">${c.view ? 'افتح الشاشة' : 'جاهز'}</span>`;
     if (c.view) {
@@ -166,7 +164,7 @@ async function loadDashboard() {
   document.getElementById('kpiItems').textContent = SamDB.fmt(s.items);
   document.getElementById('kpiStock').textContent = SamDB.fmt(s.mainPieces);
   document.getElementById('kpiStockNote').textContent =
-    `سليم ${SamDB.fmt(s.mainGood)} · تالف ${SamDB.fmt(s.mainDefect)} · محرز ${SamDB.fmt(s.mainHeld)}`
+    `سليم ${SamDB.fmt(s.mainGood)} · تالف ${SamDB.fmt(s.mainDefect)}`
     + (s.customerPieces ? ` · مادة العملاء ${SamDB.fmt(s.customerPieces)}` : '');
   document.getElementById('kpiDocs').textContent = SamDB.fmt(s.todayMoves);
   document.getElementById('kpiAlerts').textContent = SamDB.fmt(s.alerts);
@@ -220,7 +218,7 @@ async function renderMoves() {
 }
 
 function bucketAr(b) {
-  return { good: 'سليم', defect: 'تالف', held: 'محرز' }[b] || b;
+  return { good: 'سليم', defect: 'تالف' }[b] || b;
 }
 
 function viewMove(m) {
@@ -280,7 +278,7 @@ async function renderAlerts() {
       ? `<span class="chip bad">جيد ${SamDB.fmt(i.mainStock.good)} تحت الحد ${SamDB.fmt(i.min_good_alert)}</span>`
       : `<span class="chip warn">تالف ${SamDB.fmt(i.mainStock.defect)} تجاوز الحد ${SamDB.fmt(i.max_defect_alert)}</span>`;
     tr.innerHTML = `<td>${esc(i.code)} — ${esc(i.name)}</td>
-      <td class="num"><bdi>${SamDB.fmt(i.mainStock.good)}</bdi> / <bdi>${SamDB.fmt(i.mainStock.defect)}</bdi> / <bdi>${SamDB.fmt(i.mainStock.held)}</bdi></td>
+      <td class="num"><bdi>${SamDB.fmt(i.mainStock.good)}</bdi> / <bdi>${SamDB.fmt(i.mainStock.defect)}</bdi></td>
       <td>${kind}</td>`;
     bindRow(tr, { view: () => go('items'), edit: () => { go('items'); window.SamItems.openForm(i); } });
     tb.appendChild(tr);
@@ -320,6 +318,36 @@ document.getElementById('btnLogout').addEventListener('click', async () => {
     if (!res || !res.ok) sam.nav.toLogin();
   }
 });
+
+/* ---------------- the guide + the update window ----------------
+   Two small windows that live in the title bar: the "?" opens the guide,
+   the update arrow opens the updater. The update button wears the state —
+   it turns gold the moment a new version is waiting. */
+document.getElementById('btnHelp').addEventListener('click', () => {
+  if (window.SamGuide) window.SamGuide.open();
+});
+document.getElementById('btnUpdate').addEventListener('click', () => {
+  if (window.SamUpdateWindow) window.SamUpdateWindow.open();
+});
+
+const UPD_TITLES = {
+  idle: 'تحديث البرنامج — اضغط للفحص عن الإصدارات المتاحة',
+  checking: 'جارٍ فحص الإصدارات…',
+  available: 'يتوفر تحديث جديد — اضغط للتحميل',
+  'up-to-date': 'أنت على أحدث إصدار',
+  downloading: 'جارٍ تحميل التحديث…',
+  downloaded: 'التحديث جاهز للتثبيت',
+  installing: 'جارٍ التثبيت…',
+  error: 'حدث خطأ في التحديث — اضغط للتفاصيل'
+};
+function paintUpdateBtn(s) {
+  const b = document.getElementById('btnUpdate');
+  if (!b || !s) return;
+  b.classList.toggle('has-update', s.status === 'available' || s.status === 'downloaded');
+  b.title = UPD_TITLES[s.status] || UPD_TITLES.idle;
+}
+sam.on('app:update-state', paintUpdateBtn);
+sam.update.state().then((r) => paintUpdateBtn(r && r.ok ? r.data : r)).catch(() => {});
 
 /* ---------------- settings ---------------- */
 async function fillSysInfo() {

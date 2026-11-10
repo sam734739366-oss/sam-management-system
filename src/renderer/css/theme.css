@@ -508,24 +508,40 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--brand); width:
 
 /* ---------- searchable dropdown (SamUI.combo) ---------- */
 .combo { position: relative; width: 100%; }
-.combo-field { position: relative; display: flex; align-items: center; }
-.combo-input { padding-inline-end: 34px; }
-.combo.has-plus .combo-input { padding-inline-end: 70px; }
+.combo-field { position: relative; display: flex; align-items: center; gap: 6px; }
+.combo-input { flex: 1 1 auto; min-width: 0; padding-inline-end: 38px; }
+/* the + button is a SIBLING of the field, never an overlay on the text */
+.combo.has-plus .combo-input { padding-inline-end: 38px; }
+
+/* the caret is a real button — it opens and closes the list */
 .combo-caret {
-  position: absolute; inset-inline-end: 12px; top: 50%;
-  width: 8px; height: 8px; transform: translateY(-70%) rotate(45deg);
-  border-inline-end: 2px solid var(--brand-500); border-bottom: 2px solid var(--brand-500);
-  pointer-events: none; opacity: .75;
+  position: absolute; inset-inline-end: 6px; top: 50%;
+  transform: translateY(-50%);
+  width: 26px; height: 26px; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  border: 1px solid transparent; border-radius: 8px;
+  background: transparent; color: var(--brand-600);
+  cursor: pointer; transition: background var(--dur), color var(--dur), transform var(--dur);
 }
+.combo-caret svg { width: 15px; height: 15px; }
+.combo-caret:hover { background: var(--brand-050); border-color: var(--brand-200); color: var(--brand-700); }
+.combo-caret.up svg { transform: rotate(180deg); }
+.combo.open .combo-caret { color: var(--brand-700); background: var(--brand-050); }
+
+/* the + button — an icon, never a bare "+" that overlaps the caret */
 .combo-plus {
-  width: 38px; height: 38px; margin-inline-start: 6px;
-  flex: none; border-radius: 10px; cursor: pointer;
+  width: 34px; height: 34px; flex: none;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 9px; cursor: pointer;
   border: 1px solid var(--accent); color: var(--accent-600);
   background: var(--accent-050);
-  font-size: 20px; font-weight: 800; line-height: 1;
   transition: background var(--dur), transform var(--dur), color var(--dur);
 }
+.combo-plus svg { width: 16px; height: 16px; }
 .combo-plus:hover { background: var(--accent); color: #fff; transform: translateY(-1px); }
+
+/* a filled field looks picked, so changing it is obvious */
+.combo.filled .combo-input { border-color: var(--brand-300); background: var(--brand-050); }
 
 .combo-pop {
   position: fixed; z-index: 9600; display: none;

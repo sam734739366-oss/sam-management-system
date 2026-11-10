@@ -1,15 +1,16 @@
 'use strict';
 
 /* =====================================================================
-   Report center — V2
-     · one dynamic report, buckets picked by checkbox (Good only by default)
-     · IN / OUT columns, optional per-warehouse breakdown
-     · footer totals sum ONLY the columns that are visible
-     · real .xlsx export (exceljs in the main process), no CSV
+   مركز التقارير — V4
+     · الشاشة مُشغِّل: بطاقة لكل تقرير جاهز، والنقر يفتح النافذة
+     · النافذة تحمل الفلاتر + المعاينة + أزرار التصدير والطباعة
+     · كل التقارير تشترك في مسار واحد: معاينة ← تذييل ← Excel ← طباعة
+     · دبل-كليك على السطر ⇒ المستند المصدر (تعديل / حذف نهائي)
    ===================================================================== */
 (function () {
-  const { el, icon, esc, toast, combo, printPreview, tableHtml, emptyState, toggleEmpty } = SamUI;
+  const { el, icon, esc, toast, combo, printPreview, emptyState, toggleEmpty, bindRow } = SamUI;
 
+  /* ---------------- الأعمدة القابلة للاختيار في تقرير الحركة ---------------- */
   const COLUMNS = [
     { key: 'moveDate', label: 'التاريخ', on: true },
     { key: 'createdAt', label: 'وقت التسجيل', on: false },
@@ -25,26 +26,25 @@
     { key: 'bags', label: 'أكياس', on: false, num: true },
     { key: 'inQty', label: 'وارد', on: true, num: true },
     { key: 'outQty', label: 'صادر', on: true, num: true },
-    { key: 'delta', label: 'صافي الحركة', on: true, num: true, signed: true, sum: 'net' },
+    { key: 'delta', label: 'صافي الحركة', on: true, num: true, signed: true },
     { key: 'mainBalance', label: 'الرصيد الحالي', on: true, num: true },
     { key: 'movingBalance', label: 'الرصيد المتحرك', on: true, num: true },
-    { key: 'invoiceValue', label: 'قيمة الفاتورة', on: true, money: true, sum: 'value' },
+    { key: 'invoiceValue', label: 'قيمة الفاتورة', on: true, money: true },
     { key: 'isCustomer', label: 'مادة العميل', on: false },
     { key: 'note', label: 'ملاحظة', on: false }
   ];
 
-  /** checkboxes that decide which buckets enter the report */
+  /** الحالات القابلة للاختيار */
   const BUCKETS = [
     { key: 'good', label: 'سليم', on: true },
-    { key: 'defect', label: 'تالف', on: false },
-    { key: 'held', label: 'محرز', on: false }
+    { key: 'defect', label: 'تالف', on: false }
   ];
+  /** الخيارات الإضافية */
   const OPTIONS = [
     { key: 'byLocation', label: 'تفصيل حسب المخزن', on: false },
     { key: 'includeCustomer', label: 'ضمّ مادة العملاء (النفخ للغير)', on: false }
   ];
-
-  /* period presets — the report is date-driven, so the period is one click */
+  /** الفترات الجاهزة */
   const PERIODS = [
     { key: 'today', label: 'اليوم' },
     { key: 'd30', label: 'آخر ٣٠ يوم' },
@@ -52,14 +52,82 @@
     { key: 'all', label: 'كل الفترات' }
   ];
 
-  /** shift a YYYY-MM-DD string by whole days, keeping it local */
+  /** أيقونة كل تقرير — التمييز البصري بين التقارير */
+  const REPORT_ICONS = {
+    movements: 'i-swap',
+    stock_status: 'i-box',
+    item_ledger: 'i-list',
+    warehouse_flow: 'i-wh',
+    movement_summary: 'i-chart',
+    shortage: 'i-alert',
+    damage: 'i-scrap',
+    party_balance: 'i-users',
+    production_gap: 'i-factory'
+  };
+
+  /** أعمدة لا تُجمع — الأرصدة ليست أرقاماً قابلة للجمع */
+  const NO_SUM = ['mainBalance', 'movingBalance', 'balance', 'minAlert', 'maxDefect', 'alert', 'alertKind', 'invoiceValue'];
+
+  /** أنواع حركات إضافية لا تندرج تحت مستندات الفواتير */
+  const EXTRA_KINDS = {
+    opening: 'رصيد افتتاحي',
+    issue: 'صرف إنتاج',
+    receipt: 'استلام إنتاج',
+    tolling_in: 'استلام نفخ للغير',
+    tolling_out: 'إصدار نفخ للغير',
+    scrap: 'هدر'
+  };
+
+  /** بديل عن قاعدة البيانات لو لم يجهز الجسر بعد */
+  const FALLBACK_CATALOGUE = [
+    { key: 'movements', title: 'حركة المخزون', hint: 'كل حركات الدخول والخروج بالتفصيل', landscape: true },
+    { key: 'stock_status', title: 'أرصدة الأصناف', hint: 'الرصيد الحالي لكل صنف في كل مخزن', landscape: false },
+    { key: 'item_ledger', title: 'كشف حساب صنف', hint: 'حركة الصنف سطراً سطراً مع الرصيد الجاري', landscape: false },
+    { key: 'warehouse_flow', title: 'حركة المخازن', hint: 'الداخل والخالص لكل مخزن خلال الفترة', landscape: false },
+    { key: 'movement_summary', title: 'ملخص الحركات', hint: 'عدد وقيمة كل نوع مستند', landscape: false },
+    { key: 'shortage', title: 'الأصناف الناقصة', hint: 'ما وصل حد التنبيه أو نفد من المخزون', landscape: false },
+    { key: 'damage', title: 'التالف والهدر', hint: 'حركة التالف والهدر لكل صنف', landscape: false },
+    { key: 'party_balance', title: 'حساب الأطراف', hint: 'ماذا دخل وماذا خرج لكل عميل أو مورد', landscape: false },
+    { key: 'production_gap', title: 'عجز وتالف الإنتاج', hint: 'عجز الكراتين وتالفها — تقرير توثيقي بلا أثر على المخزون', landscape: true }
+  ];
+
+  const state = {
+    catalogue: [],
+    result: null,
+    error: '',
+    report: 'movements',
+    period: 'd30',
+    ran: false,
+    win: null
+  };
+
+  /** حالة الفلاتر — تبقى كما هي عبر كل إعادة رسم للنافذة */
+  const filters = {
+    dateFrom: '',
+    dateTo: '',
+    warehouseId: null,
+    kind: null,
+    partyId: null,
+    itemId: null,
+    buckets: ['good'],
+    byLocation: false,
+    includeCustomer: false
+  };
+
+  /** البيانات المرجعية (المخازن / الأصناف / الأطراف) */
+  const ref = { items: [], warehouses: [], parties: [], kinds: {}, loaded: false };
+
+  let combos = null;      // قوائم الفلاتر
+  let filterHost = null;  // لوحة الفلاتر (تُعاد إضافتها بعد كل رسم)
+  let refs = null;        // عناصر لوحة الفلاتر
+  let winGen = 0;         // رقم النافذة الحالية — يمنع نافذة قديمة من تدمير حديثة
+
+  /* ---------------- تواريخ ---------------- */
   function shiftDays(dateStr, days) {
     const d = new Date(dateStr + 'T00:00:00');
     d.setDate(d.getDate() + days);
     return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
   }
-
-  /** the date range each preset stands for ('' means "no bound") */
   function periodRange(key) {
     const today = SamUI.today();
     if (key === 'today') return [today, today];
@@ -68,84 +136,117 @@
     return ['', ''];
   }
 
-  /** paint the period chips and reflect the current one as active */
-  function renderPeriods() {
-    const host = document.getElementById('periodWrap');
-    if (!host) return;
-    host.innerHTML = '';
-    PERIODS.forEach((p) => {
-      const b = el('button', `period-chip${state.period === p.key ? ' on' : ''}`, esc(p.label));
-      b.type = 'button';
-      b.addEventListener('click', () => {
-        state.period = p.key;
-        const [from, to] = periodRange(p.key);
-        document.getElementById('fFrom').value = from;
-        document.getElementById('fTo').value = to;
-        renderPeriods();
-        if (state.ran) run();
-      });
-      host.appendChild(b);
-    });
-  }
+  /* ---------------- البناء: لوحة الفلاتر ---------------- */
+  function buildFilterHost() {
+    const host = el('div', 'rw-panel');
 
-  const DOC_LABELS = {
-    opening: 'رصيد افتتاحي', purchase: 'مشتريات', sale: 'مبيعات', sale_return: 'مرتجع مبيعات',
-    purchase_return: 'مرتجع مشتريات', transfer: 'نقل بين المخازن', issue: 'صرف إنتاج',
-    receipt: 'استلام إنتاج', bags: 'أكياس مستخدمة',
-    tolling_in: 'استلام نفخ للغير', tolling_out: 'إصدار نفخ للغير', scrap: 'هدر'
-  };
+    /* الصف 1 — الفترة */
+    const r1 = el('div', 'rw-frow rw-f-period');
+    r1.innerHTML = `<div class="rw-flabel"><svg class="ic"><use href="#i-calendar"/></svg><span>الفترة</span></div>`;
+    const b1 = el('div', 'rw-fbody rw-dates');
+    b1.innerHTML = `<div class="rw-chips" id="periodWrap"></div>
+      <label class="field"><span>من تاريخ</span><input type="date" id="fFrom" class="input" /></label>
+      <label class="field"><span>إلى تاريخ</span><input type="date" id="fTo" class="input" /></label>`;
+    r1.appendChild(b1);
 
-  const state = { rows: [], totals: null, ran: false, period: 'd30' };
-  let combos = null;
+    /* الصف 2 — النطاق */
+    const r2 = el('div', 'rw-frow rw-f-scope');
+    r2.innerHTML = `<div class="rw-flabel"><svg class="ic"><use href="#i-search"/></svg><span>النطاق</span></div>`;
+    const b2 = el('div', 'rw-fbody rw-scope');
+    b2.innerHTML = `
+      <div class="field"><span>المخزن</span><div id="fWh"></div></div>
+      <div class="field"><span>نوع المستند</span><div id="fKind"></div></div>
+      <div class="field"><span>العميل / المورد</span><div id="fParty"></div></div>
+      <div class="field"><span>الصنف</span><div id="fItem"></div></div>`;
+    r2.appendChild(b2);
 
-  /* ---------------- filter UI ---------------- */
-  function initCombos() {
-    if (combos) return;
-    combos = {
-      wh: combo(document.getElementById('fWh'), { placeholder: 'كل المخازن…', emptyText: 'لا توجد مخازن' }),
-      kind: combo(document.getElementById('fKind'), { placeholder: 'كل الأنواع…', items: Object.entries(DOC_LABELS).map(([id, label]) => ({ id, label })) }),
-      party: combo(document.getElementById('fParty'), { placeholder: 'كل الأطراف…', emptyText: 'لا توجد أطراف' }),
-      item: combo(document.getElementById('fItem'), { placeholder: 'كل الأصناف…', emptyText: 'لا توجد أصناف' })
+    /* الصف 3 — الحالة والخيارات */
+    const r3 = el('div', 'rw-frow rw-f-state');
+    r3.innerHTML = `<div class="rw-flabel"><svg class="ic"><use href="#i-box"/></svg><span>الحالة</span></div>`;
+    const b3 = el('div', 'rw-fbody rw-state');
+    b3.innerHTML = `<div class="rw-chips" id="bucketWrap"></div><div class="rw-chips" id="optWrap"></div>`;
+    r3.appendChild(b3);
+
+    /* الصف 4 — الأعمدة (تقرير الحركة فقط) */
+    const r4 = el('div', 'rw-frow rw-f-cols');
+    r4.innerHTML = `<div class="rw-flabel"><svg class="ic"><use href="#i-list"/></svg><span>الأعمدة</span></div>`;
+    const b4 = el('div', 'rw-fbody');
+    b4.innerHTML = `<div class="rw-col-tools">
+        <button class="btn btn-sm btn-ghost" id="btnAllCols" type="button">تحديد الكل</button>
+        <button class="btn btn-sm btn-ghost" id="btnNoCols" type="button">إلغاء الكل</button>
+      </div><div class="rw-cols" id="colsWrap"></div>`;
+    r4.appendChild(b4);
+
+    /* الصف 5 — الأدوات */
+    const r5 = el('div', 'rw-frow rw-f-tools');
+    const b5 = el('div', 'rw-fbody rw-tools');
+    b5.innerHTML = `<button class="btn btn-sm btn-ghost" id="btnResetFilters" type="button">تفريغ الفلاتر</button>
+      <button class="btn btn-sm btn-primary" id="btnRunReport" type="button"><svg class="ic"><use href="#i-refresh"/></svg><span>تشغيل التقرير</span><span class="kbd">F5</span></button>`;
+    r5.appendChild(b5);
+
+    host.append(r1, r2, r3, r4, r5);
+
+    refs = {
+      node: host,
+      periodWrap: host.querySelector('#periodWrap'),
+      fFrom: host.querySelector('#fFrom'),
+      fTo: host.querySelector('#fTo'),
+      fWh: host.querySelector('#fWh'),
+      fKind: host.querySelector('#fKind'),
+      fParty: host.querySelector('#fParty'),
+      fItem: host.querySelector('#fItem'),
+      bucketWrap: host.querySelector('#bucketWrap'),
+      optWrap: host.querySelector('#optWrap'),
+      colsWrap: host.querySelector('#colsWrap'),
+      btnAllCols: host.querySelector('#btnAllCols'),
+      btnNoCols: host.querySelector('#btnNoCols'),
+      btnReset: host.querySelector('#btnResetFilters'),
+      btnRun: host.querySelector('#btnRunReport'),
+      colRow: r4
     };
-    combos.kind.input.addEventListener('blur', () => {
-      const v = combos.kind.getValue();
-      combos.kind.input.value = v ? DOC_LABELS[v] || '' : '';
+
+    wireFilters();
+    return host;
+  }
+
+  function wireFilters() {
+    refs.fFrom.value = filters.dateFrom;
+    refs.fTo.value = filters.dateTo;
+
+    refs.fFrom.addEventListener('change', () => {
+      filters.dateFrom = refs.fFrom.value;
+      state.period = null;
+      renderPeriods();
+      rerun();
     });
+    refs.fTo.addEventListener('change', () => {
+      filters.dateTo = refs.fTo.value;
+      state.period = null;
+      renderPeriods();
+      rerun();
+    });
+    refs.btnRun.addEventListener('click', () => rerun());
+    refs.btnReset.addEventListener('click', () => resetFilters());
+    refs.btnAllCols.addEventListener('click', () => {
+      COLUMNS.forEach((c) => { c.on = true; });
+      renderColumns();
+      rerun();
+    });
+    refs.btnNoCols.addEventListener('click', () => {
+      COLUMNS.forEach((c) => { c.on = false; });
+      renderColumns();
+      rerun();
+    });
+
+    renderPeriods();
+    renderColumns();
+    renderBuckets();
+    renderOptions();
   }
 
-  async function refreshComboData() {
-    try {
-      const [items, whs, parties] = await Promise.all([
-        SamDB.call('listItems', ''),
-        SamDB.call('listWarehouses'),
-        SamDB.call('listParties', '')
-      ]);
-      initCombos();
-      combos.item.setItems(items.map((i) => ({ id: i.id, label: i.name, code: i.code, sub: i.base_unit })));
-      combos.wh.setItems(whs.map((w) => ({ id: w.id, label: w.name, code: w.code })));
-      combos.party.setItems(parties.map((p) => ({ id: p.id, label: p.name, code: p.phone || '', sub: SamParties.TYPE_AR[p.type] })));
-    } catch (e) { toast(e.message, 'bad'); }
-  }
-
-  const activeBuckets = () => BUCKETS.filter((b) => b.on).map((b) => b.key);
-  const optOn = (key) => (OPTIONS.find((o) => o.key === key) || {}).on;
-
-  function collectFilters() {
-    return {
-      dateFrom: document.getElementById('fFrom').value,
-      dateTo: document.getElementById('fTo').value,
-      warehouseId: combos.wh.getValue(),
-      kind: combos.kind.getValue(),
-      partyId: combos.party.getValue(),
-      itemId: combos.item.getValue(),
-      buckets: activeBuckets(),
-      byLocation: !!optOn('byLocation'),
-      includeCustomer: !!optOn('includeCustomer')
-    };
-  }
-
-  /* ---------------- checkbox groups ---------------- */
+  /* ---------------- مجموعات الاختيار ---------------- */
   function checkGroup(host, list, onChange, extraCls) {
+    if (!host) return;
     host.innerHTML = '';
     list.forEach((c) => {
       const box = el('label', `col-check ${extraCls || ''}`);
@@ -161,38 +262,199 @@
     });
   }
 
+  function renderPeriods() {
+    if (!refs) return;
+    const host = refs.periodWrap;
+    host.innerHTML = '';
+    PERIODS.forEach((p) => {
+      const b = el('button', `period-chip${state.period === p.key ? ' on' : ''}`, esc(p.label));
+      b.type = 'button';
+      b.addEventListener('click', () => {
+        state.period = p.key;
+        const [from, to] = periodRange(p.key);
+        filters.dateFrom = from;
+        filters.dateTo = to;
+        refs.fFrom.value = from;
+        refs.fTo.value = to;
+        renderPeriods();
+        rerun();
+      });
+      host.appendChild(b);
+    });
+  }
+
   function renderColumns() {
-    checkGroup(document.getElementById('colsWrap'), COLUMNS, () => { if (state.ran) renderTable(); });
+    if (!refs) return;
+    // الأعمدة تخصّ تقرير الحركة التفصيلي فقط
+    refs.colRow.style.display = state.report === 'movements' ? '' : 'none';
+    checkGroup(refs.colsWrap, COLUMNS, () => rerun());
   }
+
   function renderBuckets() {
-    checkGroup(document.getElementById('bucketWrap'), BUCKETS, () => { if (state.ran) run(); }, 'bucket');
+    checkGroup(refs.bucketWrap, BUCKETS, () => { syncBuckets(); rerun(); }, 'bucket');
   }
+
   function renderOptions() {
-    checkGroup(document.getElementById('optWrap'), OPTIONS, () => { if (state.ran) run(); });
+    checkGroup(refs.optWrap, OPTIONS, () => { syncOptions(); rerun(); });
   }
 
-  const visible = () => COLUMNS.filter((c) => c.on);
+  function syncBuckets() { filters.buckets = BUCKETS.filter((b) => b.on).map((b) => b.key); }
+  function syncOptions() {
+    filters.byLocation = !!(OPTIONS.find((o) => o.key === 'byLocation') || {}).on;
+    filters.includeCustomer = !!(OPTIONS.find((o) => o.key === 'includeCustomer') || {}).on;
+  }
 
-  /* ---------------- run + render ---------------- */
-  async function run() {
-    initCombos();
-    const filters = collectFilters();
-    if (!filters.buckets.length) {
-      toast('حدّد حالة واحدة على الأقل (سليم / تالف / محرز)', 'warn');
-      return;
-    }
-    let res;
+  function resetFilters() {
+    filters.dateFrom = '';
+    filters.dateTo = '';
+    filters.warehouseId = null;
+    filters.kind = null;
+    filters.partyId = null;
+    filters.itemId = null;
+    BUCKETS.forEach((b) => { b.on = b.key === 'good'; });
+    OPTIONS.forEach((o) => { o.on = false; });
+    state.period = 'all';
+    if (refs) { refs.fFrom.value = ''; refs.fTo.value = ''; }
+    renderPeriods();
+    renderBuckets();
+    renderOptions();
+    syncCombos();
+    rerun();
+  }
+
+  /* ---------------- القوائم المنسدلة ---------------- */
+  function initCombos() {
+    if (combos) return;
+    if (!refs) return;
+    combos = {
+      wh: combo(refs.fWh, { placeholder: 'كل المخازن…', emptyText: 'لا توجد مخازن' }),
+      kind: combo(refs.fKind, { placeholder: 'كل الأنواع…', emptyText: 'لا توجد أنواع مستندات' }),
+      party: combo(refs.fParty, { placeholder: 'كل الأطراف…', emptyText: 'لا توجد أطراف' }),
+      item: combo(refs.fItem, { placeholder: 'كل الأصناف…', emptyText: 'لا توجد أصناف' })
+    };
+    combos.wh.opts.onChange = (v) => { filters.warehouseId = v; rerun(); };
+    combos.kind.opts.onChange = (v) => { filters.kind = v; rerun(); };
+    combos.party.opts.onChange = (v) => { filters.partyId = v; rerun(); };
+    combos.item.opts.onChange = (v) => { filters.itemId = v; rerun(); };
+    fillComboItems();
+    syncCombos();
+  }
+
+  function fillComboItems() {
+    if (!combos) return;
+    combos.item.setItems(ref.items.map((i) => ({ id: i.id, label: i.name, code: i.code, sub: i.base_unit })));
+    combos.wh.setItems(ref.warehouses.map((w) => ({ id: w.id, label: w.name, code: w.code })));
+    combos.party.setItems(ref.parties.map((p) => ({
+      id: p.id, label: p.name, code: p.phone || '', sub: (window.SamParties && SamParties.TYPE_AR[p.type]) || ''
+    })));
+    const kinds = Object.assign({}, EXTRA_KINDS, ref.kinds);
+    /* the DB catalogue carries {ar, sign, prefix} while the extra kinds are
+       plain labels — both must end up as a readable name */
+    combos.kind.setItems(Object.entries(kinds).map(([id, v]) => ({
+      id,
+      label: typeof v === 'string' ? v : ((v && v.ar) || id)
+    })));
+  }
+
+  function syncCombos() {
+    if (!combos) return;
+    combos.wh.setValue(filters.warehouseId, false);
+    combos.kind.setValue(filters.kind, false);
+    combos.party.setValue(filters.partyId, false);
+    combos.item.setValue(filters.itemId, false);
+  }
+
+  /* ---------------- البيانات المرجعية ---------------- */
+  async function loadRef() {
     try {
-      res = await SamDB.call('reportQuery', filters);
-    } catch (e) { return toast(e.message, 'bad'); }
-    state.rows = res.rows;
-    state.totals = res.totals;
-    state.filters = filters;
-    state.ran = true;
-    renderTable();
-    toast(`التقرير: ${SamDB.fmt(state.rows.length)} سطر · الحالات: ${res.totals.bucketLabels.join(' + ')}`, 'ok');
+      const [items, whs, parties, kinds] = await Promise.all([
+        SamDB.call('listItems', ''),
+        SamDB.call('listWarehouses'),
+        SamDB.call('listParties', ''),
+        SamDB.call('DOC_KINDS')
+      ]);
+      ref.items = items || [];
+      ref.warehouses = whs || [];
+      ref.parties = parties || [];
+      ref.kinds = kinds || {};
+      ref.loaded = true;
+    } catch (e) {
+      toast(e && e.message ? e.message : String(e), 'bad');
+    }
+    if (combos) { fillComboItems(); syncCombos(); }
+    return ref;
   }
 
+  async function ensureCatalogue() {
+    if (state.catalogue.length) return state.catalogue;
+    try {
+      const list = await SamDB.call('REPORTS');
+      state.catalogue = (list && list.length) ? list : FALLBACK_CATALOGUE.slice();
+    } catch (e) {
+      state.catalogue = FALLBACK_CATALOGUE.slice();
+    }
+    renderCards();
+    return state.catalogue;
+  }
+
+  /* ---------------- تشغيل التقرير ---------------- */
+  function collectFilters() {
+    syncBuckets();
+    syncOptions();
+    return {
+      dateFrom: filters.dateFrom,
+      dateTo: filters.dateTo,
+      warehouseId: filters.warehouseId,
+      kind: filters.kind,
+      partyId: filters.partyId,
+      itemId: filters.itemId,
+      buckets: filters.buckets.slice(),
+      byLocation: filters.byLocation,
+      includeCustomer: filters.includeCustomer
+    };
+  }
+
+  async function runReport(key) {
+    state.report = key;
+    state.error = '';
+    const f = collectFilters();
+    try {
+      if (key === 'movements') {
+        const cols = COLUMNS.filter((c) => c.on);
+        if (!cols.length) {
+          state.result = null;
+          state.error = 'اختر عموداً واحداً على الأقل من «الأعمدة» لعرض التقرير';
+          return null;
+        }
+        const q = await SamDB.call('reportQuery', f);
+        state.result = {
+          report: 'movements',
+          title: 'حركة المخزون',
+          columns: cols,
+          rows: q.rows || [],
+          totals: q.totals || {},
+          buckets: ((q.totals && q.totals.bucketLabels) || []).join(' + ')
+        };
+      } else {
+        const r = await SamDB.call('runReport', Object.assign({ report: key }, f));
+        state.result = {
+          report: r.report || key,
+          title: r.title || key,
+          columns: (r.columns || []).map((c) => Object.assign({}, c)),
+          rows: r.rows || [],
+          totals: r.totals || {}
+        };
+      }
+    } catch (e) {
+      state.result = null;
+      state.error = e && e.message ? e.message : String(e);
+      return null;
+    }
+    state.ran = true;
+    return state.result;
+  }
+
+  /* ---------------- الرسم ---------------- */
   function cellText(row, c) {
     const v = row[c.key];
     if (c.signed) {
@@ -206,83 +468,293 @@
     return String(v);
   }
 
-  /** footer sums ONLY the columns that are visible right now */
-  function visibleTotals() {
-    const cols = visible();
-    const sums = {};
+  /** الأرقام القابلة للجمع في هذا التقرير */
+  function sumParts(res) {
+    const cols = res.columns || [];
+    const rows = res.rows || [];
+    const parts = [];
     cols.forEach((c) => {
       if (!c.num && !c.money) return;
-      if (c.key === 'mainBalance' || c.key === 'movingBalance') return; // balances never add up
-      sums[c.key] = state.rows.reduce((a, r) => a + SamDB.n(r[c.key]), 0);
+      if (NO_SUM.indexOf(c.key) >= 0) return;
+      const v = rows.reduce((a, r) => a + SamDB.n(r[c.key]), 0);
+      parts.push({ key: c.key, label: c.label, value: v, money: !!c.money, signed: !!c.signed });
     });
-    const t = state.totals || {};
-    return { sums, cols, net: t.qty || 0, value: t.value || 0 };
+    return parts;
   }
 
-  function renderTable() {
-    const cols = visible();
-    const tbl = document.getElementById('reportTbl');
-    tbl.innerHTML = `
-      <thead><tr>${cols.map((c) => `<th>${esc(c.label)}</th>`).join('')}</tr></thead>
-      <tbody>${state.rows.map((r) => `<tr>${cols.map((c) => {
-    const cls = c.signed ? `num qty ${SamDB.n(r[c.key]) >= 0 ? 'plus' : 'minus'}` : c.num ? 'num' : '';
-    return `<td class="${cls}">${esc(cellText(r, c))}</td>`;
-  }).join('')}</tr>`).join('')}</tbody>`;
-
-    const hasRows = state.rows.length > 0;
-    emptyState('reportEmpty', {
-      icon: 'i-chart',
-      title: hasRows ? '' : 'لا توجد حركات مطابقة',
-      hint: hasRows ? '' : 'غيّر الفلاتر أو حدّد حالة إضافية (تالف / محرز) ثم اضغط «تشغيل التقرير».'
+  function footHtml(res) {
+    const rows = res.rows || [];
+    const parts = sumParts(res).map((p) => {
+      const txt = p.money ? SamDB.money(p.value) : SamDB.fmt(p.value);
+      return `<span>${esc(p.label)}: <b class="${p.signed ? 'big' : ''}">${txt}</b></span>`;
     });
-    toggleEmpty('reportEmpty', hasRows);
-
-    const { sums, cols: vis } = visibleTotals();
-    const t = state.totals || {};
-    const parts = [];
-    vis.forEach((c) => {
-      if (sums[c.key] === undefined) return;
-      parts.push(`<span>${esc(c.label)}: <b class="${c.key === 'delta' ? 'big' : ''}">${SamDB.fmt(sums[c.key])}</b></span>`);
-    });
-    const bucketNote = (t.bucketLabels || []).join(' + ');
-    const unitNote = [...new Set(state.rows.map((r) => r.baseUnit).filter(Boolean))].join(' / ');
-    document.getElementById('reportFoot').innerHTML = `
-      <span>عدد الأسطر: <b>${SamDB.fmt(t.rows || 0)}</b></span>
+    const units = [...new Set(rows.map((r) => r.baseUnit).filter(Boolean))].join(' / ');
+    const t = res.totals || {};
+    const value = (t.value != null && res.report === 'movements')
+      ? `<span>إجمالي القيمة: <b class="big">${SamDB.money(t.value)}</b> <span class="chip sub">${esc(SamUI.CURRENCY)}</span></span>`
+      : '';
+    return `<span>عدد الأسطر: <b>${SamDB.fmt(rows.length)}</b></span>
       ${parts.join('')}
-      <span>إجمالي القيمة: <b class="big">${SamDB.money(t.value || 0)}</b> <span class="chip sub">${esc(SamUI.CURRENCY)}</span></span>
-      <span class="dim">الحالات: ${esc(bucketNote || '—')}${t.locations && t.locations.length ? ' · تفصيل المخازن مفعّل' : ''}</span>
-      ${unitNote ? `<span class="dim">الوحدة: ${esc(unitNote)}</span>` : ''}
-      ${t.nonNumeric ? `<span class="warn-note">${t.nonNumeric} قيمة فاتورة نصية غير رقمية لم تُحتسب</span>` : ''}`;
+      ${value}
+      <span class="dim">${esc(periodLabel())}</span>
+      ${units ? `<span class="dim">الوحدة: ${esc(units)}</span>` : ''}`;
   }
 
-  /* ---------------- real xlsx export ---------------- */
+  /** جدول تفصيل الدخول والخروج لكل مخزن — يظهر في المعاينة وفي الطباعة */
+  function locationHtml(res) {
+    const locs = (res.totals && res.totals.locations) || [];
+    if (!locs.length) return '';
+    const rows = locs.map((l) => `<tr>
+        <td>${esc(l.name)}</td>
+        <td style="text-align:left">${SamDB.fmt(l.inQty)}</td>
+        <td style="text-align:left">${SamDB.fmt(l.outQty)}</td>
+        <td style="text-align:left">${SamDB.fmt(l.net)}</td>
+      </tr>`).join('');
+    const net = locs.reduce((a, l) => a + SamDB.n(l.net), 0);
+    return `<div class="rw-loc">
+      <h4 class="rw-loc-t">تفصيل حسب المخزن</h4>
+      <table class="tbl" style="font-size:9pt;width:100%;margin-top:6px">
+        <thead><tr><th>المخزن</th><th style="text-align:left">وارد</th><th style="text-align:left">صادر</th><th style="text-align:left">الصافي</th></tr></thead>
+        <tbody>${rows}</tbody>
+        <tfoot><tr class="tot-row"><td>الإجمالي</td><td colspan="3" style="text-align:left">صافي الحركة: ${SamDB.fmt(net)}</td></tr></tfoot>
+      </table></div>`;
+  }
+
+  function previewNode() {
+    const wrap = el('div', 'rw-preview');
+    const res = state.result;
+
+    const head = el('div', 'rw-phead');
+    head.innerHTML = `
+      <div class="rw-pt"><b>${esc(res ? res.title : 'التقرير')}</b><span>${esc(rangeLabel())}</span></div>
+      <div class="rw-pmeta"></div>`;
+    const meta = head.querySelector('.rw-pmeta');
+    if (res) {
+      meta.innerHTML = `<span class="chip">${esc(periodLabel())}</span>
+        ${res.buckets ? `<span class="chip sub">${esc(res.buckets)}</span>` : ''}
+        <span class="chip sub">${SamDB.fmt(res.rows.length)} سطر</span>`;
+    }
+    wrap.appendChild(head);
+
+    if (state.error) {
+      const err = el('div', 'rw-error');
+      err.innerHTML = `${icon('i-warn')}<span>${esc(state.error)}</span>`;
+      wrap.appendChild(err);
+      return wrap;
+    }
+    if (!res) {
+      const none = el('div', 'rw-error');
+      none.innerHTML = `${icon('i-inbox')}<span>اضغط «تشغيل التقرير» لعرض النتائج</span>`;
+      wrap.appendChild(none);
+      return wrap;
+    }
+
+    const body = el('div', 'rw-pbody');
+    body.innerHTML = `<div class="tbl-wrap tall"><table class="tbl" id="reportTbl"></table></div>
+      <div class="empty" id="reportEmpty"></div>
+      <div id="reportLoc"></div>
+      <div class="report-foot" id="reportFoot"></div>`;
+    wrap.appendChild(body);
+    paintTable(res, wrap);
+    return wrap;
+  }
+
+  function paintTable(res, wrap) {
+    const tbl = wrap.querySelector('#reportTbl');
+    const emptyHost = wrap.querySelector('#reportEmpty');
+    const footHost = wrap.querySelector('#reportFoot');
+    if (!tbl) return;
+
+    const cols = res.columns || [];
+    const rows = res.rows || [];
+
+    tbl.innerHTML = `<thead><tr>${cols.map((c) => `<th>${esc(c.label)}</th>`).join('')}</tr></thead>
+      <tbody>${rows.map((r) => `<tr>${cols.map((c) => {
+      const cls = c.signed
+        ? `num qty ${SamDB.n(r[c.key]) >= 0 ? 'plus' : 'minus'}`
+        : (c.num || c.money) ? 'num' : '';
+      return `<td class="${cls}">${esc(cellText(r, c))}</td>`;
+    }).join('')}</tr>`).join('')}</tbody>`;
+
+    // السطر المزدوج يفتح المستند المصدر (فاتورة / مرتجع / سند …)
+    [...tbl.querySelectorAll('tbody tr')].forEach((tr, i) => {
+      const row = rows[i];
+      if (!row) return;
+      bindRow(tr, {
+        view: () => openSource(row),
+        del: row.docId
+          ? () => SamDocs.removeDoc({ id: row.docId, kindAr: row.docTypeAr, doc_no: row.docNo })
+          : null
+      });
+    });
+
+    const hasRows = rows.length > 0;
+    emptyState(emptyHost, {
+      icon: 'i-inbox',
+      title: hasRows ? '' : 'لا توجد نتائج مطابقة',
+      hint: hasRows ? '' : 'وسّع الفترة أو غيّر الفلاتر — المعايير في الأعلى تؤثر على كل التقارير.'
+    });
+    toggleEmpty(emptyHost, hasRows);
+
+    const locHost = wrap.querySelector('#reportLoc');
+    if (locHost) locHost.innerHTML = locationHtml(res);
+
+    if (footHost) footHost.innerHTML = footHtml(res);
+  }
+
+  /* ---------------- النزول إلى المصدر ---------------- */
+  function openSource(row) {
+    if (!row) return;
+    if (row.docId) {
+      SamDocs.viewDoc(row.docId);
+      return;
+    }
+    if (row.itemId) {
+      filters.itemId = row.itemId;
+      filters.warehouseId = row.warehouseId || null;
+      filters.partyId = null;
+      syncCombos();
+      toast('عرض حركة الصنف في المخزن المحدد', 'ok');
+      rerun('movements');
+      return;
+    }
+    if (row.partyId) {
+      filters.partyId = row.partyId;
+      filters.itemId = null;
+      filters.warehouseId = null;
+      syncCombos();
+      toast('عرض حركة الطرف خلال الفترة المختارة', 'ok');
+      rerun('movements');
+      return;
+    }
+    toast('هذا التقرير تجميعي — لا يوجد مستند مصدر لهذا السطر', 'warn');
+  }
+
+  /* ---------------- التسميات ---------------- */
+  function periodLabel() {
+    if (filters.dateFrom || filters.dateTo) {
+      return `${filters.dateFrom || 'البداية'} → ${filters.dateTo || 'اليوم'}`;
+    }
+    return 'كل الفترات';
+  }
+
+  function kindLabel(id) {
+    const k = ref.kinds[id];
+    if (k) return typeof k === 'string' ? k : (k.ar || id);
+    return EXTRA_KINDS[id] || id;
+  }
+
+  function scopeLabel() {
+    const parts = [];
+    if (filters.warehouseId) {
+      const w = ref.warehouses.find((x) => x.id === filters.warehouseId);
+      if (w) parts.push(`المخزن: ${w.name}`);
+    }
+    if (filters.kind) parts.push(`النوع: ${kindLabel(filters.kind)}`);
+    if (filters.partyId) {
+      const p = ref.parties.find((x) => x.id === filters.partyId);
+      if (p) parts.push(`الطرف: ${p.name}`);
+    }
+    if (filters.itemId) {
+      const i = ref.items.find((x) => x.id === filters.itemId);
+      if (i) parts.push(`الصنف: ${i.name}`);
+    }
+    return parts.length ? parts.join(' · ') : 'كل المخازن وكل الأصناف';
+  }
+
+  function rangeLabel() {
+    return `${periodLabel()} · ${scopeLabel()}`;
+  }
+
+  /* ---------------- الطباعة والتصدير ---------------- */
+  function isLandscape(res) {
+    const cat = (state.catalogue || []).find((r) => r.key === (res ? res.report : state.report));
+    if (cat && cat.landscape) return true;
+    return ((res && res.columns) || []).length > 8;
+  }
+
+  /** حجم الخط يتقلص مع زيادة عدد الأعمدة — لا نصّ باهت ولا صغير */
+  function fontFor(n) {
+    if (n <= 6) return '10pt';
+    if (n <= 10) return '8.5pt';
+    return '7.5pt';
+  }
+
+  function printTable(res) {
+    const cols = res.columns || [];
+    const rows = res.rows || [];
+    const fs = fontFor(cols.length);
+    const th = cols.map((c) => `<th${c.num || c.money ? ' style="text-align:left"' : ''}>${esc(c.label)}</th>`).join('');
+    const tr = rows.map((r) => `<tr>${cols.map((c) => `<td${c.num || c.money ? ' style="text-align:left"' : ''}>${esc(cellText(r, c))}</td>`).join('')}</tr>`).join('');
+    const parts = sumParts(res);
+    const tot = parts.length
+      ? `<tr class="tot-row"><td colspan="${cols.length}">${esc(parts.map((p) => `${p.label}: ${p.money ? SamDB.money(p.value) : SamDB.fmt(p.value)}`).join(' · '))}</td></tr>`
+      : '';
+    return `<table class="tbl" style="font-size:${fs};width:100%;table-layout:fixed">
+      <thead><tr>${th}</tr></thead><tbody>${tr}${tot}</tbody></table>`;
+  }
+
+  function sheetOpts() {
+    const res = state.result;
+    return {
+      title: res.title,
+      subtitle: rangeLabel(),
+      docRef: `RPT-${SamUI.today()}`,
+      docRefLabel: 'رقم التقرير',
+      head: [
+        { k: 'الفترة', v: periodLabel() },
+        { k: 'النطاق', v: scopeLabel() },
+        { k: 'عدد الأسطر', v: SamDB.fmt(res.rows.length) }
+      ],
+      bodyHtml: printTable(res) + locationHtml(res),
+      dense: true,
+      landscape: isLandscape(res),
+      footer: `SAM Management System — ${res.title} (الكميات بالوحدة الأساسية)`,
+      signatures: ['المعد', 'المراجع', 'المدير']
+    };
+  }
+
+  function printReport() {
+    if (!state.result) return toast('شغّل التقرير أولاً', 'bad');
+    printPreview(sheetOpts());
+  }
+
+  async function exportPdf() {
+    if (!state.result) return toast('شغّل التقرير أولاً', 'bad');
+    const res = state.result;
+    const node = SamUI.sheet(sheetOpts());
+    const r = await SamUI.exportPdf(node, {
+      landscape: isLandscape(res),
+      fileName: `SAM-${res.title.replace(/\s+/g, '-')}-${SamUI.today()}.pdf`
+    });
+    if (r && r.ok) toast(`تم حفظ الملف: ${r.path}`, 'ok', 5200);
+    else if (r && !r.canceled) toast(r.error || 'تعذّر حفظ الملف', 'bad');
+  }
+
   async function exportExcel() {
-    if (!state.ran) return toast('شغّل التقرير أولاً', 'bad');
-    const cols = visible();
-    const { sums } = visibleTotals();
-    const rows = state.rows.map((r) => {
+    const res = state.result;
+    if (!res) return toast('شغّل التقرير أولاً', 'bad');
+    const cols = res.columns || [];
+    const rows = res.rows.map((r) => {
       const o = {};
       cols.forEach((c) => {
-        o[c.key] = c.num || c.money ? SamDB.n(r[c.key]) : (c.key === 'isCustomer' ? (r[c.key] ? 'نعم' : 'لا') : (r[c.key] == null ? '' : String(r[c.key])));
+        if (c.num || c.money) o[c.key] = SamDB.n(r[c.key]);
+        else if (c.key === 'isCustomer') o[c.key] = r[c.key] ? 'نعم' : 'لا';
+        else o[c.key] = r[c.key] == null ? '' : String(r[c.key]);
       });
       return o;
     });
-    const totals = cols
-      .filter((c) => sums[c.key] !== undefined)
-      .map((c) => ({ key: c.key, value: sums[c.key] }));
-    const t = state.totals || {};
+    const totals = sumParts(res).map((p) => ({ key: p.key, value: p.value }));
 
-    const r = await sam.app.saveXlsx({
-      fileName: `SAM-Report-${new Date().toISOString().slice(0, 10)}.xlsx`,
-      sheetName: 'حركة المخزون',
-      title: 'تقرير حركة المخزون',
+    const out = await sam.app.saveXlsx({
+      fileName: `SAM-${res.title.replace(/\s+/g, '-')}-${SamUI.today()}.xlsx`,
+      sheetName: res.title.slice(0, 28),
+      title: res.title,
       subtitle: `SAM Management System — ${SamUI.WATERMARK}`,
       meta: [
-        ['الفترة', `${state.filters.dateFrom || 'البداية'} → ${state.filters.dateTo || 'اليوم'}`],
-        ['الحالات', (t.bucketLabels || []).join(' + ')],
-        ['عدد الأسطر', SamDB.fmt(t.rows || 0)],
-        ['العميل / المورد', combos && combos.party.getValue() ? (combos.party.items.find((x) => x.id === combos.party.getValue()) || {}).label : 'الكل'],
-        ['الصنف', combos && combos.item.getValue() ? (combos.item.items.find((x) => x.id === combos.item.getValue()) || {}).label : 'الكل']
+        ['الفترة', periodLabel()],
+        ['النطاق', scopeLabel()],
+        ['عدد الأسطر', SamDB.fmt(res.rows.length)]
       ],
       columns: cols.map((c) => ({
         header: c.label,
@@ -293,105 +765,141 @@
       rows,
       totals
     });
-    if (r && r.ok) {
-      toast(`تم حفظ ملف Excel: ${r.data.path} (${SamDB.fmt(r.data.rows)} سطر)`, 'ok', 5600);
-      sam.app.openPath(r.data.path.replace(/[\\/][^\\/]+$/, ''));
-    } else if (r && !r.canceled) {
-      toast(r.error || 'تعذّر حفظ الملف', 'bad', 5200);
+    if (out && out.ok) {
+      toast(`تم حفظ ملف Excel: ${out.data.path} (${SamDB.fmt(out.data.rows)} سطر)`, 'ok', 5600);
+      sam.app.openPath(out.data.path.replace(/[\\/][^\\/]+$/, ''));
+    } else if (out && !out.canceled) {
+      toast(out.error || 'تعذّر حفظ الملف', 'bad', 5200);
     }
   }
 
-  /* ---------------- print ---------------- */
-  function printReport() {
-    if (!state.ran) return toast('شغّل التقرير أولاً', 'bad');
-    const cols = visible();
-    const { sums } = visibleTotals();
-    const rows = state.rows.map((r) => {
-      const o = {};
-      cols.forEach((c) => (o[c.key] = cellText(r, c)));
-      return o;
+  /* ---------------- بطاقات التشغيل على الشاشة ---------------- */
+  function renderCards() {
+    const host = document.getElementById('rptCards');
+    if (!host) return;
+    host.innerHTML = '';
+    (state.catalogue || []).forEach((r) => {
+      const b = el('button', 'rpt-card');
+      b.type = 'button';
+      b.dataset.report = r.key;
+      b.innerHTML = `<span class="rc-ic">${icon(REPORT_ICONS[r.key] || 'i-chart')}</span>
+        <span class="rc-t"><b>${esc(r.title)}</b><i>${esc(r.hint || '')}</i></span>
+        <span class="rc-go">${icon('i-eye')}<span>فتح</span></span>`;
+      b.addEventListener('click', () => openWindow(r.key));
+      host.appendChild(b);
     });
-    const t = state.totals || {};
-    const html = tableHtml(cols.map((c) => ({ key: c.key, label: c.label, align: c.num || c.money ? 'end' : undefined })), rows,
-      `${SamDB.fmt(sums.delta || 0)} صافي · ${SamDB.money(t.value || 0)} ${SamUI.CURRENCY}`);
-    const locs = (t.locations || []);
-    printPreview({
-      title: 'تقرير حركة المخزون',
-      subtitle: reportRangeLabel(),
-      docRef: `RPT-${new Date().toISOString().slice(0, 10)}`,
-      docRefLabel: 'رقم التقرير',
-      head: [
-        { k: 'الفترة', v: `${state.filters.dateFrom || 'البداية'} → ${state.filters.dateTo || 'اليوم'}` },
-        { k: 'الحالات', v: (t.bucketLabels || []).join(' + ') },
-        { k: 'عدد الأسطر', v: SamDB.fmt(t.rows || 0) }
+  }
+
+  function railItems() {
+    return (state.catalogue || []).map((r) => ({
+      key: r.key,
+      title: r.title,
+      hint: r.hint,
+      icon: REPORT_ICONS[r.key] || 'i-chart'
+    }));
+  }
+
+  /* ---------------- النافذة ---------------- */
+  function rerun(key) {
+    if (!state.win) return;
+    const k = key || state.win.activeKey || state.report;
+    state.win.pick(k);
+  }
+
+  function openWindow(reportKey) {
+    const key = reportKey || state.report || 'movements';
+    const gen = ++winGen;
+    /* a fresh window means fresh nodes — the old combo instances point at
+       elements that no longer exist, so they are dropped */
+    combos = null;
+    filterHost = buildFilterHost();
+    state.win = SamReportWindow.open({
+      title: 'مركز التقارير',
+      subtitle: 'اختر التقرير من القائمة، وحدّد الفترة، ثم عاين أو صدّر أو اطبع',
+      icon: 'i-chart',
+      reports: railItems(),
+      active: key,
+      onPick: (k) => runReport(k),
+      render: () => {
+        const wrap = el('div', 'rw-stack');
+        wrap.appendChild(filterHost);
+        initCombos();
+        /* the columns row belongs to the detailed movement report only, so it
+           is re-evaluated on every repaint — the rail can switch reports */
+        renderColumns();
+        wrap.appendChild(previewNode());
+        return wrap;
+      },
+      actions: (api) => [
+        { label: 'تصدير Excel', icon: 'i-archive', kind: 'btn-ghost', onClick: () => exportExcel() },
+        { label: 'طباعة / معاينة', icon: 'i-print', kind: 'btn-ghost', onClick: () => printReport() },
+        { label: 'تصدير PDF', icon: 'i-clipboard', kind: 'btn-primary', onClick: () => exportPdf() },
+        { label: 'إغلاق', icon: 'i-x', kind: 'btn-ghost', onClick: () => api.close() }
       ],
-      bodyHtml: `${html}
-        ${locs.length ? `<div style="margin-top:6mm"><b>تفصيل حسب المخزن (وارد / صادر / صافي)</b>${tableHtml(
-    [{ key: 'name', label: 'المخزن' }, { key: 'inQty', label: 'وارد', align: 'end' }, { key: 'outQty', label: 'صادر', align: 'end' }, { key: 'net', label: 'صافي', align: 'end' }],
-    locs.map((l) => ({ name: `${l.code} — ${l.name}`, inQty: SamDB.fmt(l.inQty), outQty: SamDB.fmt(l.outQty), net: SamDB.fmt(l.net) }))
-  )}</div>` : ''}`,
-      dense: true,
-      landscape: true,
-      footer: 'SAM Management System — تقرير حركة المخزون (الكميات بالوحدة الأساسية)',
-      signatures: ['المعد', 'المراجع', 'المدير']
+      onClose: () => {
+        /* a window that was replaced by a newer one must not clean up the
+           newer window's state */
+        if (gen !== winGen) return;
+        state.win = null;
+        filterHost = null;
+        refs = null;
+        combos = null;
+      }
     });
+    return state.win;
   }
 
-  function reportRangeLabel() {
-    const f = document.getElementById('fFrom').value;
-    const t = document.getElementById('fTo').value;
-    const parts = [];
-    if (f || t) parts.push(`${f || 'البداية'} → ${t || 'اليوم'}`);
-    if (combos && combos.wh.getValue()) {
-      const w = combos.wh.items.find((x) => x.id === combos.wh.getValue());
-      if (w) parts.push(`المخزن: ${w.label}`);
+  /* ---------------- التشغيل العام ---------------- */
+  async function run() {
+    await ensureCatalogue();
+    if (!ref.loaded) await loadRef();
+    /* the window is already open — re-run the current report inside it */
+    if (state.win) {
+      rerun(state.win.activeKey || state.report);
+      return state.win;
     }
-    if (combos && combos.kind.getValue()) parts.push(`النوع: ${DOC_LABELS[combos.kind.getValue()]}`);
-    return parts.length ? parts.join(' · ') : 'كل الفترات وكل المخازن';
+    return openWindow(state.report);
   }
-
-  /* ---------------- wiring ---------------- */
-  document.getElementById('btnRunReport').addEventListener('click', run);
-  // typing a date by hand means "a custom period" — no preset chip stays lit
-  ['fFrom', 'fTo'].forEach((id) => document.getElementById(id).addEventListener('change', () => {
-    if (state.period) { state.period = null; renderPeriods(); }
-  }));
-  document.getElementById('btnPrintReport').addEventListener('click', printReport);
-  document.getElementById('btnExcelReport').addEventListener('click', exportExcel);
-  document.getElementById('btnAllCols').addEventListener('click', () => { COLUMNS.forEach((c) => (c.on = true)); renderColumns(); if (state.ran) renderTable(); });
-  document.getElementById('btnNoCols').addEventListener('click', () => { COLUMNS.forEach((c) => (c.on = false)); renderColumns(); if (state.ran) renderTable(); });
-  document.getElementById('btnResetFilters').addEventListener('click', async () => {
-    ['fFrom', 'fTo'].forEach((id) => (document.getElementById(id).value = ''));
-    state.period = 'all';
-    renderPeriods();
-    if (combos) Object.values(combos).forEach((c) => c.setValue(null, false));
-    BUCKETS.forEach((b) => { b.on = b.key === 'good'; });
-    OPTIONS.forEach((o) => { o.on = false; });
-    renderBuckets();
-    renderOptions();
-    await run();
-  });
 
   async function load() {
-    initCombos();
-    renderColumns();
-    renderBuckets();
-    renderOptions();
-    await refreshComboData();
-    if (!state.ran) {
-      // sensible default: the last 30 days (local dates, not UTC) — a stock
-      // report that opens on a single day is useless on the 1st of a month.
+    await ensureCatalogue();
+    if (!ref.loaded) await loadRef();
+    if (!filters.dateFrom && !filters.dateTo) {
       state.period = 'd30';
       const [from, to] = periodRange('d30');
-      document.getElementById('fFrom').value = from;
-      document.getElementById('fTo').value = to;
-      renderPeriods();
+      filters.dateFrom = from;
+      filters.dateTo = to;
     }
+    renderCards();
   }
 
-  // F5 / Ctrl+N both re-run the report when this screen is on top
+  /* ---------------- الربط ---------------- */
+  const btnOpen = document.getElementById('btnOpenReports');
+  if (btnOpen) btnOpen.addEventListener('click', () => run());
+
   SamUI.pushKeys({ refresh: () => run(), new: () => run() });
 
-  window.SamReports = { load, run, refreshComboData, columns: COLUMNS, buckets: BUCKETS, options: OPTIONS };
-  SamUI.bus.on(() => { if (window.SamReports && document.getElementById('v-reports').classList.contains('active')) refreshComboData(); });
+  window.SamReports = {
+    load,
+    run,
+    openWindow,
+    printReport,
+    exportExcel,
+    exportPdf,
+    refreshComboData: loadRef,
+    columns: COLUMNS,
+    buckets: BUCKETS,
+    options: OPTIONS,
+    state,
+    filters
+  };
+
+  SamUI.bus.on(async () => {
+    if (!window.SamReports) return;
+    const v = document.getElementById('v-reports');
+    if (v && !v.classList.contains('active') && !state.win) return;
+    ref.loaded = false;
+    await loadRef();
+    if (state.win) rerun();
+  });
 })();

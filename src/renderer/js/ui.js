@@ -482,6 +482,20 @@
     };
   }
 
+  /** export a sheet straight to a PDF file — no preview, the app asks where */
+  async function exportPdf(node, opts = {}) {
+    const release = stageForPrint(node);
+    if (!release) return { ok: false, error: 'تعذّر تجهيز الملف للطباعة' };
+    try {
+      return await global.sam.win.savePdf({
+        landscape: !!opts.landscape,
+        fileName: opts.fileName || `SAM-${global.WATERMARK}.pdf`
+      });
+    } finally {
+      release();
+    }
+  }
+
   /** print only the given sheet, hiding the whole app chrome */
   async function doPrint(node, opts = {}) {
     const release = stageForPrint(node);
@@ -579,10 +593,21 @@
     return promise;
   }
 
-  /** labelled input block used inside form() bodies */
-  function field(label, node, hint) {
+  /**
+   * labelled input block used inside form() bodies.
+   * The optional icon is drawn INSIDE the label, on a fixed baseline, so
+   * every field says what it is before you read the text.
+   * @param {string} label
+   * @param {HTMLElement} node
+   * @param {string} [hint]
+   * @param {string} [iconId] — a symbol id from the sprite (i-hash, i-user…)
+   */
+  function field(label, node, hint, iconId) {
     const f = el('label', 'field');
-    f.appendChild(el('span', '', esc(label)));
+    const lab = el('span', 'field-label');
+    if (iconId) lab.appendChild(el('span', 'field-ic', icon(iconId)));
+    lab.appendChild(el('span', 'field-txt', esc(label)));
+    f.appendChild(lab);
     f.appendChild(node);
     if (hint) f.appendChild(el('em', 'hint-txt', esc(hint)));
     return f;
@@ -648,7 +673,7 @@
     form, field, input, textarea, numInput, affixInput,
     parseNum, groupNum, numValue, makeNumInput,
     pushKeys,
-    sheet, tableHtml, printPreview, doPrint,
+    sheet, tableHtml, printPreview, doPrint, exportPdf,
     bus
   };
 })(window);

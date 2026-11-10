@@ -59,10 +59,10 @@
 
     const grid = el('div', 'form-grid');
     grid.append(
-      field('الكود', code),
-      field('الاسم', name),
-      field('الموقع / العنوان', location),
-      field('ملاحظة', note),
+      field('الكود', code, '', 'i-hash'),
+      field('الاسم', name, '', 'i-warehouse'),
+      field('الموقع / العنوان', location, '', 'i-pin'),
+      field('ملاحظة', note, '', 'i-clipboard'),
       activeWrap
     );
     const body = el('div');

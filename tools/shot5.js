@@ -16,6 +16,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const errors = [];
 
 const dbMod = require(path.join(ROOT, 'src', 'main', 'db.js'));
+const session = require(path.join(ROOT, 'src', 'main', 'session.js'));
 
 async function rmRetry(target, { tries = 8, base = 100, label = target } = {}) {
   for (let attempt = 1; attempt <= tries; attempt++) {
@@ -53,6 +54,7 @@ app.on('will-quit', (e) => { if (!cleanedUp) { e.preventDefault(); shutdown(erro
 process.env.SAM_DATA_DIR = DATA;
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 require(path.join(ROOT, 'src', 'main', 'ipc-db.js'))();
+require(path.join(ROOT, 'src', 'main', 'ipc-auth.js'))(() => win);
 require(path.join(ROOT, 'src', 'main', 'ipc.js'))(() => win);
 
 async function shot(name, settle = 1200) {
@@ -70,6 +72,7 @@ app.whenReady().then(async () => {
   await rmRetry(OUT, { tries: 4 });
   fs.mkdirSync(DATA, { recursive: true });
   dbMod.init(DATA);
+  session.ensureSeed();
 
   /* ---------------- seed a full ledger ---------------- */
   const main = dbMod.getMainWarehouse();
@@ -118,10 +121,24 @@ app.whenReady().then(async () => {
     catch (e) { console.log('  ' + label + ' FAILED: ' + e.message); throw e; }
   };
 
+  /* V4: the app needs a session — log in through the real login page */
+  await win.loadFile(path.join(RENDERER, 'login.html'));
+  await sleep(700);
+  await js(`sessionStorage.setItem('sam.justLoggedIn','1'); sam.auth.login('admin','admin123'); 1`);
+  await sleep(2600);
   await win.loadFile(path.join(RENDERER, 'app.html'));
   await sleep(1300);
   await js(`document.querySelector('.nav-item[data-view=reports]').click()`);
   await sleep(900);
+
+  /* V4: the report centre is a WINDOW now — the screen is only a launcher */
+  await step('open the report window', `window.SamReports.run().then(() => 'opened')`);
+  await sleep(1500);
+  await step('the window is up', `(() => ({
+    overlay: document.querySelectorAll('.rw-overlay').length,
+    rail: document.querySelectorAll('.rw-rail .rw-item').length,
+    cols: document.querySelectorAll('#colsWrap .col-check').length
+  }))()`);
 
   /* clear the default "today" range so every row is in scope */
   await step('filters cleared', `(() => { document.getElementById('btnResetFilters').click(); return [document.getElementById('fFrom').value, document.getElementById('fTo').value]; })()`);
@@ -171,14 +188,21 @@ app.whenReady().then(async () => {
   }))`);
   await shot('p5-03-report-filtered');
 
-  /* CSV payload (the save dialog itself is not automated) */
-  await step('csv head lines', `window.SamReports.buildCsv().split('\\r\\n').slice(0,3)`);
-  await step('csv totals line', `window.SamReports.buildCsv().split('\\r\\n').slice(-1)[0]`);
+  /* the export payload (the save dialog itself is not automated) */
+  await step('the result carries its columns and rows', `(() => {
+    const r = window.SamReports.state.result;
+    return { report: r.report, cols: r.columns.map(c => c.label), rows: r.rows.length };
+  })()`);
+  await step('the footer totals the visible numeric columns', `document.getElementById('reportFoot').textContent.replace(/\\s+/g,' ').trim()`);
 
   /* print preview of the full report */
   await js(`document.getElementById('btnResetFilters').click()`);
-  await sleep(600);
-  await js(`window.SamReports.run().then(() => document.getElementById('btnPrintReport').click())`);
+  await sleep(900);
+  await step('press the print action', `(() => {
+    const b = [...document.querySelectorAll('.rw-actions .btn')].find(x => /طباعة/.test(x.textContent));
+    if (!b) return 'no-btn';
+    b.click(); return 'clicked';
+  })()`);
   await shot('p5-04-report-print', 1600);
   await js(`document.querySelector('.pv .btn-ghost:last-child').click()`);
   await sleep(300);

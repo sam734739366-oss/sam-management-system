@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld('sam', {
     close: () => ipcRenderer.invoke('win:close'),
     isMaximized: () => ipcRenderer.invoke('win:isMaximized'),
     print: (opts) => ipcRenderer.invoke('win:print', opts || {}),
+    printers: () => ipcRenderer.invoke('win:printers'),
     savePdf: (opts) => ipcRenderer.invoke('win:savePdf', opts || {})
   },
   app: {
@@ -27,6 +28,17 @@ contextBridge.exposeInMainWorld('sam', {
     saveFile: (opts) => ipcRenderer.invoke('app:saveFile', opts || {}),
     saveXlsx: (spec) => ipcRenderer.invoke('app:saveXlsx', spec || {}),
     relaunch: () => ipcRenderer.invoke('app:relaunch')
+  },
+  datadir: {
+    info: () => ipcRenderer.invoke('datadir:info'),
+    pick: () => ipcRenderer.invoke('datadir:pick'),
+    reset: () => ipcRenderer.invoke('datadir:reset'),
+    exportCopy: () => ipcRenderer.invoke('datadir:export')
+  },
+  cloud: {
+    status: () => ipcRenderer.invoke('cloud:status'),
+    sync: (email, clientId) => ipcRenderer.invoke('cloud:sync', email, clientId),
+    installPage: (clientId) => ipcRenderer.invoke('cloud:installPage', clientId)
   },
   nav: {
     toMain: () => ipcRenderer.invoke('nav:toMain'),
@@ -63,6 +75,7 @@ contextBridge.exposeInMainWorld('sam', {
     check: () => ipcRenderer.invoke('update:check'),
     download: () => ipcRenderer.invoke('update:download'),
     install: () => ipcRenderer.invoke('update:install'),
+    backup: () => ipcRenderer.invoke('update:backup'),
     simulate: () => ipcRenderer.invoke('update:simulate'),
     feed: () => ipcRenderer.invoke('update:feed')
   },

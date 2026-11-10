@@ -70,6 +70,34 @@ function wire() {
 
 function devMode() { return !app.isPackaged; }
 
+/**
+ * V4 — a copy of the database is taken BEFORE any update is installed.
+ * The customer asked that an update must never damage the data he entered,
+ * so the copy is taken twice: before downloading and before installing.
+ * A failure here never blocks the update — it only means no copy was made.
+ */
+async function safetyBackup() {
+  try {
+    const backup = require('./backup');
+    const res = await backup.backupNow('pre-update');
+    return `أُخذت نسخة احتياطية: ${res && res.path ? res.path : ''}`;
+  } catch (e) {
+    try {
+      const db = require('./db');
+      const path = require('path');
+      const os = require('os');
+      const fs = require('fs');
+      const dir = path.join(os.tmpdir(), 'sam-pre-update');
+      fs.mkdirSync(dir, { recursive: true });
+      const file = path.join(dir, `sam-${Date.now()}.db`);
+      await db.backupTo(file);
+      return `أُخذت نسخة احتياطية: ${file}`;
+    } catch (e2) {
+      return '';
+    }
+  }
+}
+
 function feedUrl() {
   // published GitHub releases feed; overridable without touching code
   const cfg = require(path.join(__dirname, '..', '..', 'updater.config.json'));
@@ -100,19 +128,36 @@ function init(getWindowFn) {
   ipcMain.handle('update:download', async () => {
     if (devMode()) return set({ status: 'dev', message: 'غير متاح في وضع التطوير' });
     try {
+      // V4 — never let an update touch the data without a safety copy first
+      const safety = await safetyBackup();
       await loadAutoUpdater().downloadUpdate();
-      return state;
+      return set({ status: 'downloading', message: safety ? `${safety} — جارٍ التحميل` : 'جارٍ التحميل' });
     } catch (e) {
       return set({ status: 'error', message: fmtError(e) });
     }
   });
 
-  ipcMain.handle('update:install', () => {
+  ipcMain.handle('update:install', async () => {
     if (devMode()) return set({ status: 'dev', message: 'غير متاح في وضع التطوير' });
+    // the last line of defence: copy the database before the app restarts
+    const safety = await safetyBackup();
     setImmediate(() => {
       try { loadAutoUpdater().quitAndInstall(false, true); } catch (e) { /* ignore */ }
     });
-    return set({ status: 'installing', message: 'جارٍ إعادة التشغيل والتثبيت…' });
+    return set({
+      status: 'installing',
+      message: safety ? `${safety} — جارٍ إعادة التشغيل والتثبيت…` : 'جارٍ إعادة التشغيل والتثبيت…'
+    });
+  });
+
+  /* the safety copy the user can find if anything goes wrong */
+  ipcMain.handle('update:backup', async () => {
+    try {
+      const r = await safetyBackup();
+      return { ok: true, data: r };
+    } catch (e) {
+      return { ok: false, error: fmtError(e) };
+    }
   });
 
   /* honest preview of the progress UI while developing */

@@ -319,6 +319,19 @@
 .combo-result .cr-row.total b { color: var(--brand-700); font-size: 17px; }
 .combo-result .muted { grid-column: 1 / -1; color: var(--ink-soft); font-size: 13px; }
 
+/* ---------------- the field label: a fixed icon + the text ----------------
+   Every input says what it is before you read it. The icon sits on the
+   same baseline as the text, in the brand colour, and never moves. */
+.field-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.field-ic { display: inline-flex; flex: none; color: var(--brand); }
+.field-ic .ic { width: 15px; height: 15px; stroke-width: 1.9; }
+.field-txt { min-width: 0; overflow-wrap: anywhere; }
+
 /* ---------------- document editor ---------------- */
 .tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
 .tab {
@@ -342,25 +355,106 @@
 .ed-body { flex: 1; overflow: auto; padding: 14px 22px 8px; }
 .ed-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(206px, 1fr)); gap: 12px; }
 .ed-cell { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-.ed-cell > label { font-size: 12.5px; font-weight: 700; color: var(--label-fg); }
+/* the label carries an icon + the text — one row, never wrapping apart */
+.ed-cell > label,
+.ed-label { display: flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 700; color: var(--label-fg); min-width: 0; }
 .ed-cell.full { grid-column: 1 / -1; }
 .ed-sec {
   margin: 18px 0 10px; padding-top: 12px; border-top: 1px solid var(--line);
   font-weight: 800; color: var(--ink); font-size: 14px; display: flex; align-items: center; gap: 8px;
 }
 .ed-sec .ic { width: 18px; height: 18px; color: var(--brand); }
+/* the quick-fill button sits at the far end of the section title */
+.ed-sec .route-fill { margin-inline-start: auto; font-weight: 700; }
+.ed-sec .route-fill .ic { color: var(--tone, var(--brand)); }
 
-.seg { display: flex; gap: 4px; flex-wrap: wrap; padding: 4px; background: var(--surface-2); border-radius: 13px; border: 1px solid var(--line); }
-.seg-btn {
-  padding: 8px 15px; border-radius: 10px; border: none; background: transparent;
-  font-family: var(--font-body); font-weight: 700; font-size: 13px; color: var(--ink-soft); cursor: pointer;
-  transition: all var(--dur) var(--ease);
+/* ---------- the identity of every document kind ----------
+   Each kind owns a colour. The tone class redefines these variables, so
+   the card, the chip, the badge and the editor frame all follow the chosen
+   kind — the header never stays grey and never lies about the document. */
+.tone-buy     { --tone: #2563eb; --tone-bg: #eff6ff; --tone-bd: #bfdbfe; --tone-soft: #dbeafe; }
+.tone-sell    { --tone: #b45309; --tone-bg: #fffbeb; --tone-bd: #fde68a; --tone-soft: #fef3c7; }
+.tone-sreturn { --tone: #7c3aed; --tone-bg: #f5f3ff; --tone-bd: #ddd6fe; --tone-soft: #ede9fe; }
+.tone-pretn   { --tone: #be123c; --tone-bg: #fff1f2; --tone-bd: #fecdd3; --tone-soft: #ffe4e6; }
+.tone-move    { --tone: #4f46e5; --tone-bg: #eef2ff; --tone-bd: #c7d2fe; --tone-soft: #e0e7ff; }
+.tone-produce { --tone: #0d9488; --tone-bg: #f0fdfa; --tone-bd: #99f6e4; --tone-soft: #ccfbf1; }
+.tone-gin     { --tone: #0e7490; --tone-bg: #ecfeff; --tone-bd: #a5f3fc; --tone-soft: #cffafe; }
+.tone-gout    { --tone: #0369a1; --tone-bg: #f0f9ff; --tone-bd: #bae6fd; --tone-soft: #e0f2fe; }
+.tone-adjust  { --tone: #b91c1c; --tone-bg: #fef2f2; --tone-bd: #fecaca; --tone-soft: #fee2e2; }
+.tone-plain   { --tone: #475569; --tone-bg: #f1f5f9; --tone-bd: #cbd5e1; --tone-soft: #e2e8f0; }
+
+.modal.editor { border-top: 4px solid var(--tone, var(--brand)); }
+.ed-head { border-bottom: 1px solid var(--tone-bd, var(--line)); background: linear-gradient(180deg, var(--tone-bg, var(--surface-2)) 0%, var(--surface) 100%); }
+.ed-title { display: flex; align-items: center; gap: 12px; }
+.ed-badge {
+  width: 42px; height: 42px; flex: none; border-radius: 13px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--tone-bg, var(--brand-050)); color: var(--tone, var(--brand));
+  border: 1px solid var(--tone-bd, var(--brand-100));
 }
-.seg-btn:hover { color: var(--brand-700); background: rgba(255, 255, 255, .8); }
-.seg-btn.on { background: var(--brand); color: #fff; box-shadow: var(--shadow-s); }
+.ed-badge .ic { width: 22px; height: 22px; stroke-width: 1.9; }
+.ed-txt { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ed-txt h3 { margin: 0; font-size: 19px; color: var(--ink); }
+.ed-sub { font-size: 12.5px; font-weight: 600; color: var(--muted-fg); }
+.ed-title .kind-chip { margin-inline-start: auto; }
+.kind-chip { background: var(--tone-bg); color: var(--tone); border: 1px solid var(--tone-bd); }
+.kind-chip .ic { width: 13px; height: 13px; stroke-width: 2; }
 
-.lines-tbl { table-layout: fixed; }
+/* the kind picker — one card per document kind */
+.kind-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(224px, 1fr)); gap: 9px; }
+.kind-card {
+  display: flex; align-items: center; gap: 11px; text-align: start;
+  padding: 10px 12px; border-radius: var(--radius);
+  border: 1.5px solid var(--line); background: var(--surface);
+  font-family: var(--font-body); cursor: pointer;
+  transition: border-color var(--dur), background var(--dur), transform var(--dur), box-shadow var(--dur);
+}
+.kind-card:hover { border-color: var(--tone-bd); background: var(--tone-bg); transform: translateY(-1px); box-shadow: var(--shadow-s); }
+.kc-ic {
+  width: 36px; height: 36px; flex: none; border-radius: 11px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--tone-bg); color: var(--tone); border: 1px solid var(--tone-bd);
+}
+.kc-ic .ic { width: 19px; height: 19px; stroke-width: 1.9; }
+.kc-txt { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.kc-name { font-size: 13.5px; font-weight: 800; color: var(--ink); }
+.kc-hint { font-size: 11px; font-weight: 600; color: var(--muted-fg); line-height: 1.45; }
+.kind-card.on { border-color: var(--tone); background: var(--tone-bg); box-shadow: 0 0 0 3px var(--tone-soft); }
+.kind-card.on .kc-name { color: var(--tone); }
+.kind-card.on .kc-ic { background: var(--tone); color: #fff; border-color: transparent; }
+
+/* the direction of an adjustment line (زيادة / عجز) */
+.sign-seg { display: flex; gap: 4px; }
+.s-btn {
+  flex: 1; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line);
+  background: var(--surface); font-family: var(--font-body); font-size: 11.5px; font-weight: 700;
+  color: var(--muted-fg); cursor: pointer; transition: all var(--dur);
+}
+.s-btn:hover { border-color: var(--brand-300); color: var(--brand-700); }
+.s-btn.up.on { background: var(--ok); color: #fff; border-color: transparent; }
+.s-btn.down.on { background: var(--bad); color: #fff; border-color: transparent; }
+
+/* the header of the read-only document window */
+.doc-view-head {
+  display: flex; align-items: center; gap: 12px; margin-bottom: 14px;
+  padding: 11px 14px; border-radius: var(--radius);
+  background: var(--tone-bg); border: 1px solid var(--tone-bd);
+}
+.doc-view-head .ed-badge { background: var(--tone); color: #fff; border-color: transparent; }
+.doc-view-head b { display: block; font-size: 15px; color: var(--tone); }
+
+/* ---------- the document line grid ----------
+   The customer complained that the item column was squeezed while the
+   narrow columns kept their fixed width. With `table-layout: fixed` the
+   FIRST column takes whatever space is left, so the item column now has a
+   real minimum and the table scrolls sideways instead of crushing it.
+   The min-width is the sum of every fixed column plus a 260px item
+   column — with the widest set of columns (transfer + adjustment) the
+   item still keeps more than 400px. */
+.lines-wrap { width: 100%; overflow-x: auto; overflow-y: visible; }
+.lines-tbl { table-layout: fixed; width: 100%; min-width: 1320px; }
 .lines-tbl td { vertical-align: middle; }
+.lines-tbl th.item-h, .lines-tbl td.item-c { width: auto; min-width: 260px; }
 .lines-tbl .combo-input { font-size: 13.5px; padding: 8px 11px; }
 .lines-tbl th.unit-h, .lines-tbl td.unit-c { width: 74px; text-align: center; }
 .unit-chip {
@@ -613,3 +707,181 @@
 }
 .period-chip:hover { border-color: var(--brand-300); color: var(--brand-700); }
 .period-chip.on { background: var(--brand-600); border-color: var(--brand-600); color: #fff; }
+
+/* =====================================================================
+   دليل الاستخدام — the guide window
+   Two panes: the topics on the right (RTL start side), the page on the
+   left. The topic list never scrolls away, the page always does.
+   ===================================================================== */
+.guide-overlay { z-index: 8200; }
+.guide-window {
+  width: min(980px, 95vw);
+  height: min(760px, 90vh);
+  display: flex; flex-direction: column; overflow: hidden;
+  background: var(--surface);
+  border-radius: var(--radius-l);
+  box-shadow: var(--shadow-l);
+  border-top: 3px solid var(--brand);
+  animation: pop 200ms var(--ease);
+}
+.guide-top {
+  flex: none;
+  display: flex; align-items: center; gap: 13px;
+  padding: 16px 20px 14px;
+  border-bottom: 1px solid var(--line);
+  background: linear-gradient(180deg, var(--brand-050), var(--surface));
+}
+.gt-badge {
+  width: 42px; height: 42px; flex: none; border-radius: 13px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--brand); color: #fff;
+  box-shadow: var(--shadow-s);
+}
+.gt-badge .ic { width: 22px; height: 22px; stroke-width: 1.9; }
+.gt-txt { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.gt-txt h3 { margin: 0; font-size: 19px; color: var(--ink); }
+.gt-txt span { font-size: 12.5px; font-weight: 600; color: var(--muted-fg); }
+.guide-x {
+  margin-inline-start: auto; flex: none;
+  width: 32px; height: 32px; border-radius: 9px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid var(--line); background: var(--surface);
+  color: var(--muted-fg); cursor: pointer;
+  transition: all var(--dur) var(--ease);
+}
+.guide-x:hover { background: var(--bad-bg); color: var(--bad); border-color: var(--bad-line); }
+.guide-x .ic { width: 16px; height: 16px; }
+
+.guide-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 250px; }
+.guide-content { overflow: auto; padding: 22px 26px 26px; }
+.guide-rail {
+  overflow: auto; padding: 12px 10px;
+  border-inline-start: 1px solid var(--line);
+  background: var(--bg);
+  display: flex; flex-direction: column; gap: 3px;
+}
+.guide-item-btn {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 11px; border-radius: 10px;
+  border: 1px solid transparent; background: transparent;
+  font-family: var(--font-body); font-size: 13px; font-weight: 700;
+  color: var(--ink-soft); cursor: pointer; text-align: start;
+  transition: all var(--dur) var(--ease);
+}
+.guide-item-btn:hover { background: var(--surface); color: var(--brand-700); }
+.guide-item-btn.on { background: var(--brand-050); color: var(--brand-700); border-color: var(--brand-100); }
+.gib-ic { display: inline-flex; flex: none; color: var(--brand); }
+.gib-ic .ic { width: 17px; height: 17px; stroke-width: 1.9; }
+.guide-item-btn.on .gib-ic { color: var(--brand); }
+
+.guide-sec { display: flex; flex-direction: column; gap: 14px; }
+.guide-head { display: flex; align-items: flex-start; gap: 12px; }
+.gh-ic {
+  width: 38px; height: 38px; flex: none; border-radius: 12px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--brand-050); color: var(--brand); border: 1px solid var(--brand-100);
+}
+.gh-ic .ic { width: 20px; height: 20px; stroke-width: 1.9; }
+.gh-txt { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.gh-txt b { font-size: 16.5px; color: var(--ink); font-family: var(--font-display); }
+.gh-txt span { font-size: 13.5px; color: var(--ink-soft); line-height: 1.8; font-weight: 600; }
+
+.guide-tbl { width: 100%; }
+.guide-tbl td { vertical-align: middle; }
+.gt-name { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; color: var(--ink); }
+.gt-ic { display: inline-flex; flex: none; color: var(--brand); }
+.gt-ic .ic { width: 16px; height: 16px; stroke-width: 1.9; }
+
+.guide-list { display: flex; flex-direction: column; gap: 10px; }
+.guide-item {
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: 12px 14px; border-radius: 13px;
+  background: var(--bg); border: 1px solid var(--line);
+}
+.gi-ic {
+  width: 34px; height: 34px; flex: none; border-radius: 10px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--accent-050); color: var(--accent-600); border: 1px solid var(--accent-100);
+}
+.gi-ic .ic { width: 18px; height: 18px; stroke-width: 1.9; }
+.gi-txt { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.gi-txt b { font-size: 14px; color: var(--ink); }
+.gi-txt span { font-size: 13px; color: var(--ink-soft); line-height: 1.85; font-weight: 600; }
+
+.guide-keys { display: flex; flex-direction: column; gap: 7px; }
+.gk-row { display: flex; align-items: center; gap: 12px; font-size: 13px; color: var(--ink-soft); font-weight: 600; }
+.gk-row kbd {
+  min-width: 96px; text-align: center; direction: ltr;
+  padding: 5px 11px; border-radius: 8px;
+  background: var(--surface); border: 1px solid var(--line-strong);
+  box-shadow: var(--shadow-s);
+  font-family: var(--font-body); font-size: 12px; font-weight: 800; color: var(--brand-700);
+}
+
+/* =====================================================================
+   نافذة التحديث — the update window
+   ===================================================================== */
+.updwin-overlay { z-index: 8200; }
+.updwin-window {
+  width: min(640px, 94vw);
+  max-height: 90vh;
+  display: flex; flex-direction: column; overflow: hidden;
+  background: var(--surface);
+  border-radius: var(--radius-l);
+  box-shadow: var(--shadow-l);
+  border-top: 3px solid var(--accent);
+  animation: pop 200ms var(--ease);
+}
+.updwin-head {
+  flex: none;
+  display: flex; align-items: center; gap: 13px;
+  padding: 16px 20px 14px;
+  border-bottom: 1px solid var(--line);
+  background: linear-gradient(180deg, var(--accent-050), var(--surface));
+}
+.uw-badge {
+  width: 42px; height: 42px; flex: none; border-radius: 13px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--accent); color: #fff; box-shadow: var(--shadow-s);
+}
+.uw-badge .ic { width: 22px; height: 22px; stroke-width: 1.9; }
+.uw-txt { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.uw-txt h3 { margin: 0; font-size: 19px; color: var(--ink); }
+.uw-txt span { font-size: 12.5px; font-weight: 600; color: var(--muted-fg); }
+.updwin-x {
+  margin-inline-start: auto; flex: none;
+  width: 32px; height: 32px; border-radius: 9px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid var(--line); background: var(--surface);
+  color: var(--muted-fg); cursor: pointer;
+  transition: all var(--dur) var(--ease);
+}
+.updwin-x:hover { background: var(--bad-bg); color: var(--bad); border-color: var(--bad-line); }
+.updwin-x .ic { width: 16px; height: 16px; }
+
+.updwin-body { flex: 1; overflow: auto; padding: 18px 22px 6px; }
+.uw-status { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+.updwin-body .info { margin-bottom: 4px; }
+.updwin-foot {
+  flex: none; display: flex; gap: 9px; flex-wrap: wrap;
+  padding: 14px 22px 18px;
+  border-top: 1px solid var(--line);
+  background: linear-gradient(180deg, #fff, var(--bg));
+}
+.updwin-foot .btn.hidden { display: none; }
+
+/* the title-bar buttons: update + help */
+.tb-act {
+  width: 30px; height: 30px; border-radius: 9px; flex: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid var(--line); background: var(--surface);
+  color: var(--muted-fg); cursor: pointer;
+  transition: all var(--dur) var(--ease);
+}
+.tb-act:hover { background: var(--brand-050); color: var(--brand); border-color: var(--brand-300); transform: translateY(-1px); }
+.tb-act .ic { width: 16px; height: 16px; stroke-width: 1.9; }
+/* NOTE: never reuse the global `.busy` class here — it is the loading pill
+   (position: fixed, top: 62px, z-index: 9700) and would hijack the button. */
+.tb-act.has-update { color: var(--accent-600); border-color: var(--accent-300); background: var(--accent-050); }
+.tb-act.has-update .ic { stroke-width: 2.2; }
+.tb-acts { display: flex; align-items: center; gap: 7px; margin-inline-start: 4px; -webkit-app-region: no-drag; }
