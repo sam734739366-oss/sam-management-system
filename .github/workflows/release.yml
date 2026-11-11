@@ -39,6 +39,22 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # A plain syntax error in one of our scripts used to fail the release
+      # at the very last step, AFTER the installers were already published —
+      # which left a half-done release and a red build. This step catches it
+      # in the first minute instead, with a clear message.
+      - name: Syntax-check the sources and the scripts
+        shell: pwsh
+        run: |
+          $files = Get-ChildItem -Path src, tools -Recurse -Filter *.js | Select-Object -ExpandProperty FullName
+          $bad = 0
+          foreach ($f in $files) {
+            node --check $f
+            if ($LASTEXITCODE -ne 0) { $bad = 1; Write-Host "BROKEN: $f" }
+          }
+          if ($bad -ne 0) { throw "a script has a syntax error — the release stops here" }
+          Write-Host ("checked {0} files — all good" -f $files.Count)
+
       - name: Rebuild better-sqlite3 for the Electron ABI
         run: npm run rebuild:native
 

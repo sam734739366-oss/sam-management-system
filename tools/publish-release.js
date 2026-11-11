@@ -54,6 +54,11 @@ function api(pathname, method, body, token, raw) {
   });
 }
 
+/** يحذف ملفاً مرفوعاً — لتفادي «الاسم مستعمل» عند إعادة النشر */
+function deleteAsset(assetId, token) {
+  return api('/repos/' + OWNER + '/' + REPO + '/releases/assets/' + assetId, 'DELETE', null, token);
+}
+
 /** يرفع ملفاً واحداً إلى إصدار — يستعمل نقطة uploads الخاصة بـ GitHub */
 function uploadFile(releaseId, filePath, name, token) {
   const data = fs.readFileSync(filePath);
@@ -131,7 +136,7 @@ function wantedFiles(version) {
   console.log('release id=' + release.id + ' tag=' + release.tag_name + ' assets=' + release.assets.length);
 
   /* 2. الملفات — نرفع ما هو ناقص فقط */
-  const have = new Map((release.assets || []).map((a) => [a.name, a.size]));
+  const have = new Map((release.assets || []).map((a) => [a.name, { size: a.size, id: a.id }]));
   const files = wantedFiles(version);
   if (!files.length) throw new Error('لا توجد ملفات للنشر في dist');
 
@@ -150,9 +155,19 @@ function wantedFiles(version) {
   for (const f of files) {
     const name = path.basename(f);
     const size = fs.statSync(f).size;
-    if (have.get(name) === size) {
+    const existing = have.get(name);
+    if (existing && existing.size === size) {
       console.log('skip (already uploaded) ' + name + ' (' + size + ' bytes)');
       continue;
+    }
+    /* الملف موجود بنفس الاسم لكن بحجم مختلف (بناء جديد): نحذف القديم
+       أولاً، وإلا رفض GitHub الرفع بـ «already_exists». */
+    if (existing) {
+      const del = await deleteAsset(existing.id, token);
+      if (del.status !== 204) {
+        throw new Error('could not replace ' + name + ': ' + del.status + ' ' + del.text.slice(0, 200));
+      }
+      console.log('removed the old ' + name + ' (' + existing.size + ' bytes)');
     }
     const up = await uploadFile(release.id, f, name, token);
     if (up.status !== 201) throw new Error('upload failed for ' + name + ': ' + up.status + ' ' + up.text.slice(0, 200));
