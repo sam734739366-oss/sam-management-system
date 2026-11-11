@@ -209,19 +209,25 @@
          <tbody>${sums}${grandRow}</tbody>`;
     }
 
-    /* --- the headline numbers --- */
+    /* --- the headline numbers ---
+       every tile carries its own colour and its own 3D plate, exactly
+       like the tiles on the main board. */
     if (t.kpis) {
       t.kpis.innerHTML = `
-        <div class="kpi gold"><span class="k-top">إجمالي المتبقي في كل المخازن</span>
+        <div class="kpi gold tone-produce"><span class="t3d tone-produce"><svg class="ic"><use href="#i-archive-box"/></svg></span>
+          <span class="k-top">إجمالي المتبقي في كل المخازن</span>
           <span class="k-val">${SamDB.fmt(grandBal)}</span>
           <span class="k-note">${esc(state.whFilter ? 'المخزن المختار' : `${whs.length} مخازن`)} · تاريخ ${esc(res.date)}</span></div>
-        <div class="kpi"><span class="k-top">دخل اليوم</span>
+        <div class="kpi tone-gin"><span class="t3d tone-gin"><svg class="ic"><use href="#i-in"/></svg></span>
+          <span class="k-top">دخل اليوم</span>
           <span class="k-val">${SamDB.fmt(grandIn)}</span>
           <span class="k-note">وارد في تاريخ ${esc(res.date)}</span></div>
-        <div class="kpi"><span class="k-top">صادر اليوم</span>
+        <div class="kpi tone-gout"><span class="t3d tone-gout"><svg class="ic"><use href="#i-out"/></svg></span>
+          <span class="k-top">صادر اليوم</span>
           <span class="k-val">${SamDB.fmt(grandOut)}</span>
           <span class="k-note">خروج في تاريخ ${esc(res.date)}</span></div>
-        <div class="kpi"><span class="k-top">الأصناف</span>
+        <div class="kpi tone-move"><span class="t3d tone-move"><svg class="ic"><use href="#i-box"/></svg></span>
+          <span class="k-top">الأصناف</span>
           <span class="k-val">${SamDB.fmt(rows.length)}</span>
           <span class="k-note">${esc((res.bucketLabels || []).join(' + '))}</span></div>`;
     }
@@ -391,14 +397,14 @@
     /* --- filters --- */
     const panel = el('div', 'rw-panel');
     const r1 = el('div', 'rw-frow rw-f-period');
-    r1.innerHTML = `<div class="rw-flabel"><svg class="ic"><use href="#i-calendar"/></svg><span>التاريخ</span></div>`;
+    r1.innerHTML = `<div class="rw-flabel">${SamUI.plate('rw-fic', 'i-calendar', null, 'xs')}<span>التاريخ</span></div>`;
     const b1 = el('div', 'rw-fbody rw-dates');
     b1.innerHTML = `<label class="field"><span>تاريخ التقرير</span><input type="date" id="dwDate" class="input" /></label>
       <div class="field"><span>المخزن</span><div id="dwWh"></div></div>`;
     r1.appendChild(b1);
 
     const r2 = el('div', 'rw-frow rw-f-state');
-    r2.innerHTML = `<div class="rw-flabel"><svg class="ic"><use href="#i-box"/></svg><span>الحالة</span></div>`;
+    r2.innerHTML = `<div class="rw-flabel">${SamUI.plate('rw-fic', 'i-box', null, 'xs')}<span>الحالة</span></div>`;
     const b2 = el('div', 'rw-fbody rw-state');
     b2.innerHTML = `<div class="rw-chips" id="dwBuckets"></div>
       <label class="col-check"><input type="checkbox" id="dwAll" /><span>إظهار كل الأصناف</span></label>

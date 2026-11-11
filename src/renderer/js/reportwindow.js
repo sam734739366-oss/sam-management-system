@@ -35,12 +35,12 @@
     /* ---------------- header ---------------- */
     const head = el('div', 'rw-head');
     head.innerHTML = `
-      <span class="rw-badge">${icon(opts.icon || 'i-chart')}</span>
+      ${SamUI.plate('rw-badge', opts.icon || 'i-chart', null, 'xl')}
       <div class="rw-txt">
         <h3>${esc(opts.title || 'التقارير')}</h3>
         <span class="rw-sub">${esc(opts.subtitle || '')}</span>
       </div>`;
-    const xBtn = el('button', 'rw-x', icon('i-x'));
+    const xBtn = el('button', 'rw-x t3d tone-adjust xs', icon('i-x'));
     xBtn.type = 'button';
     xBtn.title = 'إغلاق النافذة';
     head.appendChild(xBtn);
@@ -86,8 +86,8 @@
         const b = el('button', `rw-item${r.key === activeKey ? ' on' : ''}`);
         b.type = 'button';
         b.dataset.key = r.key;
-        b.innerHTML = `<span class="rw-ic">${icon(r.icon || 'i-chart')}</span>
-          <span class="rw-t"><b>${esc(r.title)}</b><i>${esc(r.hint || '')}</i></span>`;
+        b.innerHTML = `${SamUI.plate('rw-ic', r.icon || 'i-chart', null, 'xs')}
+          <span class="rw-t btn-txt"><b>${esc(r.title)}</b><i>${esc(r.hint || '')}</i></span>`;
         b.addEventListener('click', () => pick(r.key));
         rail.appendChild(b);
       });
@@ -118,7 +118,7 @@
       (opts.actions ? opts.actions(api) : []).forEach((a) => {
         const btn = el('button', `btn ${a.kind || 'btn-ghost'}`);
         btn.type = 'button';
-        btn.innerHTML = `${a.icon ? icon(a.icon) : ''}<span>${esc(a.label)}</span>`;
+        btn.innerHTML = `${a.icon ? SamUI.iconTile(a.icon, null, 'xs') : ''}<span class="btn-txt">${esc(a.label)}</span>`;
         btn.addEventListener('click', () => a.onClick && a.onClick(api));
         actWrap.appendChild(btn);
       });

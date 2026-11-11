@@ -142,7 +142,7 @@
       tr.innerHTML = `
         <td class="num">${idx + 1}</td>
         <td class="mono">${esc(d.doc_no)}</td>
-        <td><span class="chip kind-chip tone-${st.tone}"><svg class="ic"><use href="#${st.icon}"/></svg>${esc(d.kindAr)}</span></td>
+        <td><span class="chip kind-chip tone-${st.tone}"><span class="t3d tiny tone-${st.tone}">${SamUI.icon(st.icon)}</span>${esc(d.kindAr)}</span></td>
         <td>${esc(d.doc_date)}</td>
         <td>${esc(d.partyName || '—')}</td>
         <td>${whCell}</td>
@@ -213,7 +213,7 @@
       const card = el('button', `kind-card tone-${st.tone} ${val === kind ? 'on' : ''}`);
       card.type = 'button';
       card.innerHTML = `
-        <span class="kc-ic"><svg class="ic"><use href="#${st.icon}"/></svg></span>
+        <span class="kc-ic t3d">${SamUI.icon(st.icon)}</span>
         <span class="kc-txt">
           <span class="kc-name">${esc(st.ar)}</span>
           <span class="kc-hint">${esc(st.hint)}</span>
@@ -234,7 +234,10 @@
       value: doc ? doc.doc_no : '',
       placeholder: 'رقم الفاتورة من النظام الآخر'
     });
-    const docDate = input({ class: 'input', type: 'date', value: doc ? doc.doc_date : SamUI.today() });
+    /* The edit carries TODAY's date, never the date the voucher was first
+       made — the customer asked for exactly that. The original date stays
+       visible under the box so nothing is lost. */
+    const docDate = input({ class: 'input', type: 'date', value: SamUI.today() });
     // empty by default, grouped with commas, currency spelled out beside it
     const invoiceValue = numInput({ value: doc ? doc.invoice_value : '', placeholder: '0' });
     const notes = textarea({ rows: 2, value: doc ? doc.notes || '' : '', placeholder: 'ملاحظات المستند' });
@@ -287,7 +290,7 @@
     const cell = (label, node, cls, iconId) => {
       const c = el('div', `ed-cell ${cls || ''}`);
       const lab = el('label', 'ed-label');
-      if (iconId) lab.appendChild(el('span', 'field-ic', icon(iconId)));
+      if (iconId) lab.insertAdjacentHTML('afterbegin', SamUI.plate('field-ic', iconId, null, 'xs'));
       lab.appendChild(el('span', 'field-txt', esc(label)));
       c.appendChild(lab);
       c.appendChild(node);
@@ -296,7 +299,7 @@
     /* a "apply to every line" button under a default combo */
     const defaultCell = (label, node, cls, pick, what, iconId) => {
       const c = cell(label, node, cls, iconId);
-      const b = el('button', 'btn btn-sm btn-ghost', `${icon('i-swap')}<span>تطبيق على كل الأسطر</span>`);
+      const b = el('button', 'btn btn-sm btn-ghost', `${SamUI.iconTile('i-swap', 'tone-move', 'xs')}<span class="btn-txt">تطبيق على كل الأسطر</span>`);
       b.type = 'button';
       b.addEventListener('click', () => {
         const v = pick();
@@ -321,10 +324,17 @@
       cell(`قيمة الفاتورة (${CURRENCY})`, affixInput(invoiceValue, CURRENCY), 'value-cell', 'i-money'),
       cell('ملاحظات', notes, 'full', 'i-clipboard')
     );
+    /* the original creation date stays visible under the date box */
+    if (doc && doc.doc_date && doc.doc_date !== SamUI.today()) {
+      const dateCell = grid.querySelector('.ed-cell:nth-child(2)');
+      if (dateCell) {
+        dateCell.appendChild(el('em', 'hint-txt', `تاريخ الإنشاء الأصلي: ${esc(doc.doc_date)} — التعديل يُسجَّل بتاريخ اليوم`));
+      }
+    }
     body.appendChild(grid);
 
     /* --- lines table --- */
-    const linesSec = el('div', 'ed-sec', `${icon('i-box')}<span>أسطر المستند — لكل سطر مخزنه، والكمية بالوحدة الأساسية</span>`);
+    const linesSec = el('div', 'ed-sec', `${SamUI.iconTile('i-box', 'tone-move', 'sm')}<span>أسطر المستند — لكل سطر مخزنه، والكمية بالوحدة الأساسية</span>`);
     body.appendChild(linesSec);
     const linesTbl = el('table', 'tbl lines-tbl');
     linesTbl.innerHTML = `<thead><tr>
@@ -347,7 +357,7 @@
     const totals = el('div', 'totals-bar');
     body.appendChild(totals);
 
-    const addRow = el('button', 'btn btn-sm btn-ghost', `${icon('i-plus')}<span>إضافة سطر</span>`);
+    const addRow = el('button', 'btn btn-sm btn-ghost', `${SamUI.iconTile('i-plus', 'tone-ok', 'xs')}<span class="btn-txt">إضافة سطر</span>`);
     addRow.type = 'button';
     addRow.addEventListener('click', () => addLine());
     body.appendChild(el('div', 'row-add').appendChild(addRow).parentNode);
@@ -364,7 +374,7 @@
     /* «سند استلام الإنتاج» can take its warehouses from the production
        routing (سليم → مخزن السليم، تالف → مخزن التالف). Nothing is filled
        silently — the user presses the button and sees what happened. */
-    const routeBtn = el('button', 'btn btn-sm btn-ghost route-fill', `${icon('i-swap')}<span>تعبئة المخازن من التوجيه</span>`);
+    const routeBtn = el('button', 'btn btn-sm btn-ghost route-fill', `${SamUI.iconTile('i-swap', 'tone-move', 'xs')}<span class="btn-txt">تعبئة المخازن من التوجيه</span>`);
     routeBtn.type = 'button';
     routeBtn.addEventListener('click', async () => {
       let r = null;
@@ -587,7 +597,7 @@
       if (gateBtn) {
         const show = NEEDS_PERMIT.includes(kind);
         gateBtn.classList.toggle('hidden', !show);
-        const span = gateBtn.querySelector('span');
+        const span = gateBtn.querySelector('.btn-txt');
         if (span) span.textContent = PERMIT_BTN_LABEL[kind] || 'حفظ وطباعة تصاريح الخروج';
       }
       /* the helper text under the table follows the kind too */
@@ -597,7 +607,7 @@
 
     /* --- footer buttons --- */
     const mkBtn = (act, label, cls, kbd) => {
-      const b = el('button', `btn ${cls}`, `${act === 'cancel' ? '' : icon(act === 'gate' || act === 'print' ? 'i-print' : 'i-check')}<span>${esc(label)}</span>${kbd ? `<span class="kbd">${kbd}</span>` : ''}`);
+      const b = el('button', `btn ${cls}`, `${act === 'cancel' ? '' : SamUI.iconTile(act === 'gate' || act === 'print' ? 'i-print' : 'i-check', act === 'print' || act === 'gate' ? 'tone-info' : 'tone-ok', 'xs')}<span class="btn-txt">${esc(label)}</span>${kbd ? `<span class="kbd">${kbd}</span>` : ''}`);
       b.type = 'button';
       b.dataset.act = act;
       b.addEventListener('click', () => (act === 'cancel' ? close(null) : submit(act)));
@@ -658,12 +668,12 @@
       if (asking) return;
       errBar.innerHTML = '';
       if (!lines.length) {
-        errBar.innerHTML = `${icon('i-warn')}<span>أضف سطراً واحداً على الأقل</span>`;
+        errBar.innerHTML = `${SamUI.iconTile('i-warn', 'tone-adjust', 'xs')}<span>أضف سطراً واحداً على الأقل</span>`;
         return;
       }
       const miss = missingFields();
       if (miss.length) {
-        errBar.innerHTML = `${icon('i-warn')}<span>أكمل الحقول التالية: ${esc(miss.join(' · '))}</span>`;
+        errBar.innerHTML = `${SamUI.iconTile('i-warn', 'tone-adjust', 'xs')}<span>أكمل الحقول التالية: ${esc(miss.join(' · '))}</span>`;
         return;
       }
       if (!skipWarning) {
@@ -716,7 +726,7 @@
         if (action === 'print') printInvoice(saved.id);
         if (action === 'gate') printPermits(saved.id);
       } catch (e) {
-        errBar.innerHTML = `${icon('i-warn')}<span>${esc(e.message)}</span>`;
+        errBar.innerHTML = `${SamUI.iconTile('i-warn', 'tone-adjust', 'xs')}<span>${esc(e.message)}</span>`;
       } finally {
         foot.querySelectorAll('.btn').forEach((b) => (b.disabled = false));
       }
@@ -748,12 +758,12 @@
       box.className = 'modal editor';
       box.classList.add(`tone-${st.tone}`);
       titleRow.innerHTML = `
-        <span class="ed-badge"><svg class="ic"><use href="#${st.icon}"/></svg></span>
+        <span class="ed-badge t3d">${SamUI.icon(st.icon)}</span>
         <div class="ed-txt">
           <h3>${doc ? `تعديل ${esc(st.ar)}` : 'مستند جديد'}</h3>
           <span class="ed-sub">${doc ? `${esc(doc.doc_no)} — ${esc(doc.doc_date)}` : esc(st.hint)}</span>
         </div>
-        <span class="chip kind-chip tone-${st.tone}"><svg class="ic"><use href="#${st.icon}"/></svg>${esc(st.ar)}</span>`;
+        <span class="chip kind-chip tone-${st.tone}"><span class="t3d tiny tone-${st.tone}">${SamUI.icon(st.icon)}</span>${esc(st.ar)}</span>`;
     }
     applyKindTheme();
 
@@ -809,11 +819,12 @@
       title: `${d.kindAr} — ${d.doc_no}`,
       width: 'min(900px, 95vw)',
       body: `<div class="doc-view-head tone-${st.tone}">
-          <span class="ed-badge"><svg class="ic"><use href="#${st.icon}"/></svg></span>
+          <span class="ed-badge t3d">${SamUI.icon(st.icon)}</span>
           <div><b>${esc(d.kindAr)}</b><span class="ed-sub">${esc(st.hint)}</span></div>
         </div>
         <dl class="info">
           <dt>التاريخ</dt><dd>${esc(d.doc_date)}</dd>
+          ${d.updated_at ? `<dt>آخر تعديل</dt><dd>${esc(d.updated_at)}</dd>` : ''}
           <dt>العميل / المورد</dt><dd>${esc(d.partyName || '—')}</dd>
           <dt>المخازن</dt><dd>${esc(whSummary || '—')}</dd>
           <dt>قيمة الفاتورة</dt><dd>${d.invoice_value ? `${esc(d.invoice_value)} ${esc(CURRENCY)}` : '—'}</dd>
@@ -1012,7 +1023,9 @@
           : 'تصاريح خروج';
     printPreview({
       title: `${label} (${pages.length})`,
-      pages
+      pages,
+      /* one permit = half an A4 sheet (A5 landscape) — two permits per page */
+      half: true
     });
   }
 

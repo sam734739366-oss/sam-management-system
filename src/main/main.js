@@ -147,6 +147,16 @@ if (!gotLock) {
       if (seeded) startupLog('created default admin user');
       const backup = require('./backup');
       backup.autoSyncOnStart().then((r) => { if (r && r.error) startupLog('auto-sync: ' + r.error); }).catch(() => {});
+      /* V5 — the cloud backup: the saved e-mail is enough. It runs a moment
+         after the window is up, so the app never waits for the network. */
+      setTimeout(() => {
+        require('./cloudsync').autoSync(require('./db'))
+          .then((r) => {
+            if (r && r.ok) startupLog('cloud auto-sync -> ' + r.data.folder);
+            else if (r && r.error) startupLog('cloud auto-sync: ' + r.error);
+          })
+          .catch(() => {});
+      }, 8000);
       updater.autoCheck();
       app.on('activate', () => {
         if (BrowserWindow.getAllWindows().length === 0) createWindow();

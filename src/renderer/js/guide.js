@@ -55,7 +55,7 @@
         ['i-edit', 'تعديل', 'من الزر الأيمن ⇒ «تعديل»: يُعاد حساب الحركات من جديد، فالرصيد يبقى صحيحاً.'],
         ['i-trash', 'حذف نهائي', 'من الزر الأيمن ⇒ «حذف نهائي»: تظهر نافذة تحذير تذكر كل صنف ومخزن والكمية المتأثرة قبل التنفيذ.']
       ],
-      note: 'بعد الحذف تعود حسابات المخزون كما لو أن المستند لم يوجد من الأساس — لا يبقى أثر معلّق.'
+      note: 'بعد الحذف تعود حسابات المخزون كما لو أن المستند لم يوجد من الأساس — لا يبقى أثر معلّق. وتعديل أي مستند يُسجَّل بتاريخ اليوم (تاريخ التعديل)، بينما يبقى تاريخ إنشائه الأصلي محفوظاً داخل المستند كتلميح.'
     },
     {
       key: 'prod',
@@ -76,9 +76,10 @@
       intro: 'كل تقرير يفتح في نافذة مستقلة: تختار الفترة والمخزن والصنف والطرف، ثم تعاين قبل التصدير.',
       body: [
         ['i-calendar', 'الفترة', 'كل تقرير مقيد بتاريخ من وإلى — التقارير لا تخلط حركات تاريخها مختلف.'],
-        ['i-eye', 'المعاينة قبل الطباعة', 'زر «طباعة / معاينة» يعرض الشكل النهائي على ورق A4 قبل إرسال شيء إلى الطابعة.'],
+        ['i-eye', 'المعاينة قبل الطباعة', 'زر «طباعة / معاينة» يعرض الشكل النهائي على ورق A4 قبل إرسال شيء إلى الطابعة، مع أزرار تكبير وتصغير.'],
         ['i-archive', 'تصدير Excel', 'ملف xlsx حقيقي يفتح في Excel بخط واضح واتجاه صحيح — لا صورة ولا نص عادي.'],
-        ['i-print', 'طباعة أو PDF', 'اختر الطابعة المتصلة أو احفظ PDF. الهوامش صغيرة والورق A4 عمودي أو أفقي حسب عرض التقرير.']
+        ['i-print', 'طباعة أو PDF', 'اختر الطابعة المتصلة أو احفظ PDF. الهوامش صغيرة والورق A4 عمودي أو أفقي حسب عرض التقرير.'],
+        ['i-tag', 'التصاريح', 'التصريح الواحد يخرج بنصف ورقة A5 بالعرض — تصريحتان في ورقة A4 واحدة، مع خط القص بينهما.']
       ],
       note: 'نقر مزدوج على أي بند داخل التقرير يفتح المستند المصدر مباشرةً للتعديل أو الحذف.'
     },
@@ -90,7 +91,7 @@
       body: [
         ['i-folder', 'مجلد البيانات', 'من «الإعدادات» ⇒ «مجلد البيانات» تختار المجلد الذي يحتفظ بقاعدة بياناتك. تُنسخ البيانات إلى المجلد الجديد فوراً، وتبقى النسخة القديمة سليمة كنسخة احتياطية.'],
         ['i-db', 'نسخة احتياطية', 'من «النسخ الاحتياطي» تحفظ نسخة في أي مكان تختاره. نسخة تلقائية تُؤخذ قبل كل تحديث للبرنامج.'],
-        ['i-cloud', 'المزامنة السحابية', 'اكتب بريدك الإلكتروني فقط — يكتشف البرنامج Google Drive أو OneDrive أو Dropbox على جهازك ويكتب نسخة في مجلد السحابة مباشرة.']
+        ['i-cloud', 'المزامنة السحابية', 'اكتب بريدك الإلكتروني فقط — يكتشف البرنامج Google Drive أو OneDrive أو Dropbox على جهازك ويكتب نسخة في مجلد السحابة مباشرة. في Google Drive يقرأ البرنامج حسابك المسجّل فعلاً ويعرض المسار قبل المزامنة.']
       ],
       note: 'التحديث لا يمس بياناتك أبداً: قاعدة البيانات خارج مجلد التثبيت، وترحيل قاعدة البيانات إضافة فقط.'
     },
@@ -114,7 +115,7 @@
     const box = el('div', 'guide-sec');
 
     const head = el('div', 'guide-head');
-    head.innerHTML = `<span class="gh-ic">${icon(sec.icon)}</span>
+    head.innerHTML = `${SamUI.plate('gh-ic', sec.icon, null, 'lg')}
       <div class="gh-txt"><b>${esc(sec.title)}</b><span>${esc(sec.intro || '')}</span></div>`;
     box.appendChild(head);
 
@@ -125,7 +126,7 @@
       const tb = t.querySelector('tbody');
       sec.rows.forEach(([name, ic, effect, what]) => {
         const tr = el('tr');
-        tr.innerHTML = `<td><span class="gt-name"><span class="gt-ic">${icon(ic)}</span>${esc(name)}</span></td>
+        tr.innerHTML = `<td><span class="gt-name">${SamUI.plate('gt-ic', ic, null, 'xs')}${esc(name)}</span></td>
           <td><span class="chip ${effect.includes('يزيد') ? 'ok' : effect.includes('ينقص') ? 'bad' : 'accent'}">${esc(effect)}</span></td>
           <td>${esc(what)}</td>`;
         tb.appendChild(tr);
@@ -138,7 +139,7 @@
       const list = el('div', 'guide-list');
       sec.body.forEach(([ic, title, text]) => {
         const item = el('div', 'guide-item');
-        item.innerHTML = `<span class="gi-ic">${icon(ic)}</span>
+        item.innerHTML = `${SamUI.plate('gi-ic', ic, null, 'lg')}
           <div class="gi-txt"><b>${esc(title)}</b><span>${esc(text)}</span></div>`;
         list.appendChild(item);
       });
@@ -153,7 +154,7 @@
         row.innerHTML = `<kbd>${esc(k)}</kbd><span>${esc(v)}</span>`;
         wrap.appendChild(row);
       });
-      box.appendChild(el('div', 'form-sec', `${icon('i-gear')}<span>اختصارات لوحة المفاتيح</span>`));
+      box.appendChild(el('div', 'form-sec', `${SamUI.iconTile('i-gear', 'tone-info', 'xs')}<span>اختصارات لوحة المفاتيح</span>`));
       box.appendChild(wrap);
     }
 
@@ -175,10 +176,10 @@
     const box = el('div', 'guide-window');
 
     const head = el('div', 'guide-top');
-    head.innerHTML = `<span class="gt-badge">${icon('i-help')}</span>
+    head.innerHTML = `${SamUI.plate('gt-badge', 'i-help', 'tone-info', 'xl')}
       <div class="gt-txt"><h3>دليل الاستخدام</h3>
       <span>كل ما تحتاج معرفته لتشغيل النظام SAM بثقة</span></div>`;
-    const x = el('button', 'guide-x', icon('i-x'));
+    const x = el('button', 'guide-x t3d tone-adjust xs', icon('i-x'));
     x.type = 'button';
     x.title = 'إغلاق';
     head.appendChild(x);
@@ -201,7 +202,7 @@
       const b = el('button', 'guide-item-btn');
       b.type = 'button';
       b.dataset.key = s.key;
-      b.innerHTML = `<span class="gib-ic">${icon(s.icon)}</span><span>${esc(s.title)}</span>`;
+      b.innerHTML = `${SamUI.plate('gib-ic', s.icon, null, 'xs')}<span class="btn-txt">${esc(s.title)}</span>`;
       b.addEventListener('click', () => { active = s.key; paint(); });
       rail.appendChild(b);
     });

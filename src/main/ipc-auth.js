@@ -96,6 +96,11 @@ module.exports = function registerAuthIpc(getWindow) {
 
   ipcMain.handle('cloud:sync', (_e, email, clientId) => wrapAsync(() => cloudsync.syncByEmail(db, email, clientId)));
 
+  /* the automatic backup — the e-mail alone, every time the app opens */
+  ipcMain.handle('cloud:auto', (_e, on) => wrap(() => cloudsync.setAuto(db, on)));
+
+  ipcMain.handle('cloud:autoRun', () => wrapAsync(() => cloudsync.autoSync(db)));
+
   ipcMain.handle('cloud:installPage', (_e, clientId) => wrap(() => ({ url: cloudsync.openInstallerPage(clientId) })));
 
   /* ---------------- V4: where the data lives ---------------- */

@@ -19,6 +19,7 @@ const ROOT = path.resolve(__dirname, '..');
 const OUT = path.join(ROOT, '.tmp', 'v4shell');
 const DATA = path.join(ROOT, '.tmp', 'v4shelldata');
 const RENDERER = path.join(ROOT, 'src', 'renderer');
+const APP_VERSION = require(path.join(ROOT, 'package.json')).version;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const errors = [];
 
@@ -119,7 +120,7 @@ app.whenReady().then(async () => {
   check('the title bar carries the help button', bar && bar.help === true, bar);
   check('the title bar carries the update button', bar && bar.update === true, bar);
   check('both buttons carry an icon', bar && bar.helpIcon === '#i-help' && bar.updateIcon === '#i-update', bar);
-  check('the version badge reads v0.4.0', bar && bar.ver === 'v0.4.0', bar && bar.ver);
+  check('the version badge reads the packaged version', bar && bar.ver === 'v' + APP_VERSION, bar && bar.ver);
 
   /* the title-bar buttons must stay INSIDE the bar — a CSS class collision
      with the global `.busy` loading pill used to float them under the title */
@@ -312,7 +313,13 @@ app.whenReady().then(async () => {
   check('the data tab is visible', dataTab && dataTab.visible === true, dataTab && dataTab.visible);
   check('the folder card shows the live folder', dataTab && dataTab.ddKeys.indexOf('مجلد البيانات') === 0 && dataTab.ddValues[0].length > 3, dataTab && dataTab.ddValues);
   check('the folder card shows the database size', dataTab && dataTab.ddKeys.indexOf('حجم قاعدة البيانات') > 0, dataTab && dataTab.ddKeys);
-  check('the cloud card shows the e-mail field empty by default', dataTab && (dataTab.email === '' || dataTab.email === undefined), dataTab && dataTab.email);
+  /* V5: the field is no longer empty by default — the program fills in the
+     Google account it found on the machine, so the customer only presses
+     «مزامنة الآن». An empty field is still fine (no account detected). */
+  check('the cloud card carries a usable e-mail (filled or empty)',
+    dataTab && (dataTab.email === '' || dataTab.email === undefined ||
+      /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/.test(dataTab.email)),
+    dataTab && dataTab.email);
   check('the cloud card lists the detected clients or the download button',
     dataTab && (dataTab.clients.length > 0 || dataTab.install === true), dataTab && { clients: dataTab.clients, install: dataTab.install });
   await shot('04-settings-data');

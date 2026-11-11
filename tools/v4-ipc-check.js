@@ -163,7 +163,7 @@ fs.mkdirSync(TMP, { recursive: true });
   const fakeElectron = {
     ipcMain: fakeIpcMain,
     BrowserWindow: { fromWebContents: () => null },
-    app: { getPath: () => path.join(TMP, 'userdata'), isPackaged: false, getVersion: () => '0.4.0' },
+    app: { getPath: () => path.join(TMP, 'userdata'), isPackaged: false, getVersion: () => require(path.join(__dirname, '..', 'package.json')).version },
     dialog: { showSaveDialog: async () => ({ canceled: true }), showOpenDialog: async () => ({ canceled: true }) },
     shell: { openPath: async () => '' }
   };

@@ -142,7 +142,7 @@
 
     /* الصف 1 — الفترة */
     const r1 = el('div', 'rw-frow rw-f-period');
-    r1.innerHTML = `<div class="rw-flabel"><svg class="ic"><use href="#i-calendar"/></svg><span>الفترة</span></div>`;
+    r1.innerHTML = `<div class="rw-flabel">${SamUI.plate('rw-fic', 'i-calendar', null, 'xs')}<span>الفترة</span></div>`;
     const b1 = el('div', 'rw-fbody rw-dates');
     b1.innerHTML = `<div class="rw-chips" id="periodWrap"></div>
       <label class="field"><span>من تاريخ</span><input type="date" id="fFrom" class="input" /></label>
@@ -151,7 +151,7 @@
 
     /* الصف 2 — النطاق */
     const r2 = el('div', 'rw-frow rw-f-scope');
-    r2.innerHTML = `<div class="rw-flabel"><svg class="ic"><use href="#i-search"/></svg><span>النطاق</span></div>`;
+    r2.innerHTML = `<div class="rw-flabel">${SamUI.plate('rw-fic', 'i-search', null, 'xs')}<span>النطاق</span></div>`;
     const b2 = el('div', 'rw-fbody rw-scope');
     b2.innerHTML = `
       <div class="field"><span>المخزن</span><div id="fWh"></div></div>
@@ -162,14 +162,14 @@
 
     /* الصف 3 — الحالة والخيارات */
     const r3 = el('div', 'rw-frow rw-f-state');
-    r3.innerHTML = `<div class="rw-flabel"><svg class="ic"><use href="#i-box"/></svg><span>الحالة</span></div>`;
+    r3.innerHTML = `<div class="rw-flabel">${SamUI.plate('rw-fic', 'i-box', null, 'xs')}<span>الحالة</span></div>`;
     const b3 = el('div', 'rw-fbody rw-state');
     b3.innerHTML = `<div class="rw-chips" id="bucketWrap"></div><div class="rw-chips" id="optWrap"></div>`;
     r3.appendChild(b3);
 
     /* الصف 4 — الأعمدة (تقرير الحركة فقط) */
     const r4 = el('div', 'rw-frow rw-f-cols');
-    r4.innerHTML = `<div class="rw-flabel"><svg class="ic"><use href="#i-list"/></svg><span>الأعمدة</span></div>`;
+    r4.innerHTML = `<div class="rw-flabel">${SamUI.plate('rw-fic', 'i-list', null, 'xs')}<span>الأعمدة</span></div>`;
     const b4 = el('div', 'rw-fbody');
     b4.innerHTML = `<div class="rw-col-tools">
         <button class="btn btn-sm btn-ghost" id="btnAllCols" type="button">تحديد الكل</button>
@@ -181,7 +181,7 @@
     const r5 = el('div', 'rw-frow rw-f-tools');
     const b5 = el('div', 'rw-fbody rw-tools');
     b5.innerHTML = `<button class="btn btn-sm btn-ghost" id="btnResetFilters" type="button">تفريغ الفلاتر</button>
-      <button class="btn btn-sm btn-primary" id="btnRunReport" type="button"><svg class="ic"><use href="#i-refresh"/></svg><span>تشغيل التقرير</span><span class="kbd">F5</span></button>`;
+      <button class="btn btn-sm btn-primary" id="btnRunReport" type="button">${SamUI.iconTile('i-refresh', 'tone-info', 'xs')}<span class="btn-txt">تشغيل التقرير</span><span class="kbd">F5</span></button>`;
     r5.appendChild(b5);
 
     host.append(r1, r2, r3, r4, r5);
@@ -538,13 +538,13 @@
 
     if (state.error) {
       const err = el('div', 'rw-error');
-      err.innerHTML = `${icon('i-warn')}<span>${esc(state.error)}</span>`;
+      err.innerHTML = `${SamUI.iconTile('i-warn', 'tone-warn', 'xs')}<span>${esc(state.error)}</span>`;
       wrap.appendChild(err);
       return wrap;
     }
     if (!res) {
       const none = el('div', 'rw-error');
-      none.innerHTML = `${icon('i-inbox')}<span>اضغط «تشغيل التقرير» لعرض النتائج</span>`;
+      none.innerHTML = `${SamUI.iconTile('i-inbox', 'tone-info', 'sm')}<span>اضغط «تشغيل التقرير» لعرض النتائج</span>`;
       wrap.appendChild(none);
       return wrap;
     }
@@ -779,12 +779,13 @@
     if (!host) return;
     host.innerHTML = '';
     (state.catalogue || []).forEach((r) => {
-      const b = el('button', 'rpt-card');
+      const iconId = REPORT_ICONS[r.key] || 'i-chart';
+      const b = el('button', 'rpt-card ' + SamUI.toneOf(iconId));
       b.type = 'button';
       b.dataset.report = r.key;
-      b.innerHTML = `<span class="rc-ic">${icon(REPORT_ICONS[r.key] || 'i-chart')}</span>
+      b.innerHTML = `${SamUI.plate('rc-ic', iconId, null, 'lg')}
         <span class="rc-t"><b>${esc(r.title)}</b><i>${esc(r.hint || '')}</i></span>
-        <span class="rc-go">${icon('i-eye')}<span>فتح</span></span>`;
+        <span class="rc-go">${SamUI.iconTile('i-eye', 'tone-info', 'xs')}<span class="btn-txt">فتح</span></span>`;
       b.addEventListener('click', () => openWindow(r.key));
       host.appendChild(b);
     });

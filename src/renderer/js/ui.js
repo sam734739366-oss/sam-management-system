@@ -18,17 +18,93 @@
     return n;
   };
   const icon = (id, cls) => `<svg class="${cls || 'ic'}" aria-hidden="true"><use href="#${id}"/></svg>`;
+
+  /* ---------------- the 3D icon plate ----------------
+     Every icon in the program can wear a small coloured 3D square. The
+     colour is looked up from the icon id, so the same icon always wears
+     the same colour everywhere — the user asked for that consistency. */
+  const ICON_TONE = {
+    'i-dash': 'tone-info',
+    'i-box': 'tone-move',
+    'i-pin': 'tone-warn',
+    'i-warehouse': 'tone-warn',
+    'i-users': 'tone-sreturn',
+    'i-user': 'tone-sreturn',
+    'i-swap': 'tone-gout',
+    'i-factory': 'tone-produce',
+    'i-day': 'tone-gin',
+    'i-chart': 'tone-pretn',
+    'i-gear': 'tone-plain',
+    'i-cart': 'tone-buy',
+    'i-in': 'tone-gin',
+    'i-out': 'tone-gout',
+    'i-gate-in': 'tone-gin',
+    'i-gate-out': 'tone-gout',
+    'i-return': 'tone-sreturn',
+    'i-sigma': 'tone-produce',
+    'i-archive': 'tone-plain',
+    'i-archive-box': 'tone-move',
+    'i-clipboard': 'tone-sell',
+    'i-scale': 'tone-sell',
+    'i-scrap': 'tone-adjust',
+    'i-money': 'tone-sell',
+    'i-tag': 'tone-sreturn',
+    'i-hash': 'tone-plain',
+    'i-list': 'tone-plain',
+    'i-cloud': 'tone-info',
+    'i-db': 'tone-info',
+    'i-folder': 'tone-warn',
+    'i-update': 'tone-ok',
+    'i-refresh': 'tone-info',
+    'i-download': 'tone-info',
+    'i-print': 'tone-plain',
+    'i-check': 'tone-ok',
+    'i-alert': 'tone-warn',
+    'i-warn': 'tone-warn',
+    'i-info': 'tone-info',
+    'i-help': 'tone-info',
+    'i-book': 'tone-info',
+    'i-tolling': 'tone-produce',
+    'i-wh': 'tone-warn',
+    'i-bell': 'tone-info',
+    'i-calendar': 'tone-gout',
+    'i-edit': 'tone-sell',
+    'i-exit': 'tone-plain',
+    'i-eye': 'tone-info',
+    'i-inbox': 'tone-gin',
+    'i-lock': 'tone-plain',
+    'i-mail': 'tone-info',
+    'i-max': 'tone-plain',
+    'i-min': 'tone-plain',
+    'i-play': 'tone-ok',
+    'i-plus': 'tone-ok',
+    'i-search': 'tone-info',
+    'i-shrink': 'tone-plain',
+    'i-trash': 'tone-adjust',
+    'i-truck': 'tone-move',
+    'i-x': 'tone-adjust'
+  };
+  const toneOf = (id) => ICON_TONE[id] || 'tone-plain';
+  /** a 3D plate that carries an icon */
+  const iconTile = (id, tone, size) =>
+    `<span class="t3d ${tone || toneOf(id)}${size ? ' ' + size : ''}">${icon(id)}</span>`;
+  /** the same plate, but it *becomes* an existing container element —
+      the container itself is the 3D square, so we never get a frame
+      inside a frame (which was what made the old icons look flat). */
+  const plate = (cls, id, tone, size) =>
+    `<span class="${cls} t3d ${tone || toneOf(id)}${size ? ' ' + size : ''}">${icon(id)}</span>`;
   const esc = (s) => String(s == null ? '' : s)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 
   /* ---------------- toasts (no blocking popups) ---------------- */
   const TOAST_ICON = { ok: 'i-check', bad: 'i-warn', warn: 'i-warn', info: 'i-bell' };
+  const TOAST_TONE = { ok: 'tone-ok', bad: 'tone-adjust', warn: 'tone-warn', info: 'tone-info' };
   function toast(msg, kind, ms = 3200) {
     const host = document.getElementById('toasts');
     if (!host) return;
     const k = kind || 'info';
-    const t = el('div', `toast ${k}`, `${icon(TOAST_ICON[k] || 'i-bell')}<span>${esc(msg)}</span>`);
+    const t = el('div', `toast ${k}`, `${iconTile(TOAST_ICON[k] || 'i-bell', TOAST_TONE[k] || 'tone-info', 'xs')}<span>${esc(msg)}</span>`);
     host.appendChild(t);
     const kill = () => {
       t.style.transition = 'opacity .3s, transform .3s';
@@ -62,10 +138,10 @@
     const node = typeof host === 'string' ? document.getElementById(host) : host;
     if (!node) return;
     node.innerHTML = `
-      <span class="e-ic">${icon(o.icon || 'i-inbox')}</span>
+      <span class="e-ic t3d ${o.tone || toneOf(o.icon || 'i-inbox')} xl">${icon(o.icon || 'i-inbox')}</span>
       <span class="e-title">${esc(o.title || 'لا توجد بيانات')}</span>
       ${o.hint ? `<span class="e-hint">${esc(o.hint)}</span>` : ''}
-      ${o.actionLabel ? `<button class="btn btn-primary btn-sm" type="button">${icon('i-plus')}<span>${esc(o.actionLabel)}</span></button>` : ''}`;
+      ${o.actionLabel ? `<button class="btn btn-primary btn-sm" type="button">${iconTile('i-plus', 'tone-ok', 'xs')}<span class="btn-txt">${esc(o.actionLabel)}</span></button>` : ''}`;
     node.dataset.filled = '1';
     if (o.actionLabel && o.onAction) {
       node.querySelector('button').addEventListener('click', (e) => { e.stopPropagation(); o.onAction(); });
@@ -149,7 +225,7 @@
     items.forEach((it) => {
       if (it === '-') { m.appendChild(el('div', 'ctx-sep')); return; }
       const row = el('div', `ctx-item ${it.danger ? 'danger' : ''}`);
-      row.innerHTML = `${it.icon ? icon(it.icon) : '<span style="width:16px"></span>'}<span>${esc(it.label)}</span>`;
+      row.innerHTML = `${it.icon ? iconTile(it.icon, null, 'xs') : '<span style="width:18px"></span>'}<span>${esc(it.label)}</span>`;
       if (it.disabled) row.setAttribute('disabled', '1');
       else row.addEventListener('click', () => { closeMenu(); it.onClick && it.onClick(); });
       m.appendChild(row);
@@ -251,7 +327,7 @@
 
       const foot = el('div', 'modal-foot');
       actions.forEach((a) => {
-        const btn = el('button', `btn ${a.kind || 'btn-ghost'}`, `${a.icon ? icon(a.icon) : ''}<span>${esc(a.label)}</span>`);
+        const btn = el('button', `btn ${a.kind || 'btn-ghost'}`, `${a.icon ? iconTile(a.icon, null, 'xs') : ''}<span class="btn-txt">${esc(a.label)}</span>`);
         btn.addEventListener('click', () => done(a.value));
         foot.appendChild(btn);
       });
@@ -291,7 +367,7 @@
       title,
       info: true,
       body: `<div style="display:flex;gap:12px;align-items:flex-start;background:var(--warn-bg);padding:12px 14px;border-radius:12px;border:1px solid var(--warn-line)">
-          ${icon('i-warn')}
+          ${iconTile('i-warn', 'tone-warn', 'xs')}
           <div><b style="color:var(--warn)">الرصيد غير كافٍ</b><br>
           <span style="font-size:13.5px">${esc(note || 'يمكنك المتابعة؛ سيصبح الرصيد سالباً وستراه في التقارير كما هو.')}</span></div>
         </div>${rows}`,
@@ -318,7 +394,7 @@
       : '';
     const body = `
       <div style="display:flex;gap:12px;align-items:center;background:var(--bad-bg);padding:12px 14px;border-radius:12px;border:1px solid var(--bad-line)">
-        ${icon('i-warn')}
+        ${iconTile('i-warn', 'tone-adjust', 'xs')}
         <div><b style="color:var(--bad)">تحذير: حذف نهائي</b><br>
         <span style="font-size:13px">هذا المستند لن يُترك بحالة "ملغي" — سيُحذف من قاعدة البيانات نهائياً ولا يمكن التراجع.</span></div>
       </div>
@@ -339,7 +415,7 @@
 
   /* ---------------- print sheet (premium A4 layout) ---------------- */
   function sheet(o) {
-    const s = el('section', `sheet ${o.landscape ? 'landscape' : ''}`);
+    const s = el('section', `sheet${o.landscape ? ' landscape' : ''}${o.half ? ' half' : ''}`);
     const now = new Date().toLocaleString('ar-EG-u-nu-latn');
     const meta = o.head || [];
     s.innerHTML = `
@@ -397,41 +473,102 @@
   /* ---------------- print preview ---------------- */
   function printPreview(opts) {
     /* opts.pages = array of sheet options → one printed page per entry
-       (used for per-warehouse gate/transfer permits). Otherwise a single sheet. */
-    let built;
-    if (Array.isArray(opts.pages) && opts.pages.length) {
-      built = el('div', 'pv-pages');
-      opts.pages.forEach((p) => {
-        const wrap = el('div', 'print-page');
-        wrap.appendChild(sheet(p));
-        built.appendChild(wrap);
-      });
+       (used for per-warehouse gate/transfer permits). Otherwise a single sheet.
+       opts.half = true → every sheet is half an A4 (A5 landscape); two of them
+       share one physical A4 page, so the paper can be cut in half and each
+       half still carries a complete permit.
+       The preview shows the real paper: a white sheet on a desk, with the
+       page number and the paper size, exactly as it will be printed. */
+    const pages = (Array.isArray(opts.pages) && opts.pages.length) ? opts.pages : [opts];
+    const half = !!opts.half;
+    const land = !!opts.landscape;
+
+    /* group the sheets into physical A4 pages */
+    const groups = [];
+    if (half) {
+      for (let i = 0; i < pages.length; i += 2) groups.push(pages.slice(i, i + 2));
     } else {
-      built = sheet(opts);
+      pages.forEach((p) => groups.push([p]));
     }
-    const pageCount = Array.isArray(opts.pages) && opts.pages.length ? opts.pages.length : 1;
+
+    const built = el('div', 'pv-pages');
+    groups.forEach((grp, gi) => {
+      const frame = el('div', `pv-frame${land ? ' land' : ''}`);
+      const cap = el('div', 'pv-cap');
+      cap.innerHTML = `<b>صفحة ${gi + 1}</b> من ${groups.length} — ${land ? 'A4 عرضي' : 'A4'}` +
+        (half ? ' — تصريحان بنصف ورقة' : '');
+      frame.appendChild(cap);
+
+      const page = el('div', `print-page${half ? ' perm' : ''}${land ? ' land' : ''}`);
+      grp.forEach((p, i) => {
+        if (half && i > 0) {
+          const cut = el('div', 'pv-cut', '<span>خط القص</span>');
+          page.appendChild(cut);
+        }
+        page.appendChild(sheet({ ...p, half: half || !!p.half, landscape: land || !!p.landscape }));
+      });
+      frame.appendChild(page);
+      built.appendChild(frame);
+    });
+
+    const pageCount = groups.length;
     return new Promise((resolve) => {
       const ov = el('div', 'pv no-print');
       const bar = el('div', 'pv-bar');
       bar.innerHTML = `<span class="t">معاينة قبل الطباعة</span>
-        <span class="pv-note">${esc(opts.title || '')} — ${opts.landscape ? 'A4 عرضي' : 'A4'}${pageCount > 1 ? ` — ${pageCount} صفحات` : ''} — علامة مائية خفيفة</span>`;
-      const bPdf = el('button', 'btn btn-sm btn-ghost', `${icon('i-print')}<span>حفظ PDF</span>`);
-      const bPrint = el('button', 'btn btn-sm btn-primary', `${icon('i-print')}<span>طباعة</span><span class="kbd">Ctrl+P</span>`);
-      const bClose = el('button', 'btn btn-sm btn-ghost', `${icon('i-x')}<span>إغلاق</span>`);
-      bar.append(bPrint, bPdf, bClose);
+        <span class="pv-note">${esc(opts.title || '')} — ${land ? 'A4 عرضي' : 'A4'}${pageCount > 1 ? ` — ${pageCount} صفحات` : ''}</span>`;
+
+      /* zoom: the preview is scaled to fit the window, and the user can
+         zoom in/out to check every detail before printing */
+      const zoom = el('div', 'pv-zoom');
+      const zOut = el('button', '', '−');
+      const zVal = el('span', 'pv-zv', '100%');
+      const zIn = el('button', '', '+');
+      const zFit = el('button', '', 'ملاءمة');
+      zOut.type = zIn.type = zFit.type = 'button';
+      zOut.title = 'تصغير'; zIn.title = 'تكبير'; zFit.title = 'ملاءمة العرض';
+      zoom.append(zOut, zVal, zIn, zFit);
+
+      const bPdf = el('button', 'btn btn-sm btn-ghost', `${iconTile('i-print', 'tone-info', 'xs')}<span class="btn-txt">حفظ PDF</span>`);
+      const bPrint = el('button', 'btn btn-sm btn-primary', `${iconTile('i-print', 'tone-plain', 'xs')}<span class="btn-txt">طباعة</span><span class="kbd">Ctrl+P</span>`);
+      const bClose = el('button', 'btn btn-sm btn-ghost', `${iconTile('i-x', 'tone-plain', 'xs')}<span class="btn-txt">إغلاق</span>`);
+      bar.append(zoom, bPrint, bPdf, bClose);
 
       const scroll = el('div', 'pv-scroll');
       scroll.appendChild(built);
       ov.append(bar, scroll);
       document.body.appendChild(ov);
 
+      /* A half sheet has a fixed height — if the permit has many lines the
+         block shrinks one step, so nothing is ever cut off the paper. */
+      const fitHalves = () => {
+        built.querySelectorAll('.sheet.half').forEach((s) => {
+          s.classList.remove('tight');
+          if (s.scrollHeight > s.clientHeight + 2) s.classList.add('tight');
+        });
+      };
+      fitHalves();
+
+      let zoomPct = 100;
+      let fitMode = true;
+      const applyZoom = () => {
+        built.style.transformOrigin = 'top center';
+        built.style.transform = `scale(${zoomPct / 100})`;
+        zVal.textContent = `${zoomPct}%`;
+      };
       const fit = () => {
-        const avail = scroll.clientWidth - 60;
-        const natural = (built.querySelector('.sheet') || built).offsetWidth || 794;
-        built.style.transform = `scale(${Math.min(1, Math.max(0.4, avail / natural))})`;
+        if (!fitMode) return;
+        const avail = scroll.clientWidth - 56;
+        const natural = (built.querySelector('.print-page') || built.querySelector('.sheet') || built).offsetWidth || 794;
+        zoomPct = Math.max(30, Math.min(150, Math.round((avail / natural) * 100)));
+        applyZoom();
       };
       fit();
       global.addEventListener('resize', fit);
+
+      zIn.addEventListener('click', () => { fitMode = false; zoomPct = Math.min(150, zoomPct + 10); applyZoom(); });
+      zOut.addEventListener('click', () => { fitMode = false; zoomPct = Math.max(30, zoomPct - 10); applyZoom(); });
+      zFit.addEventListener('click', () => { fitMode = true; fit(); });
 
       let pop = null;
       const close = () => {
@@ -440,7 +577,7 @@
         ov.remove();
         resolve(false);
       };
-      const doPrintNow = async () => { await doPrint(built, opts.landscape ? { landscape: true } : {}); };
+      const doPrintNow = async () => { await doPrint(built, { landscape: land }); };
       pop = pushKeys({ save: null, print: doPrintNow });
       bClose.addEventListener('click', close);
       bPrint.addEventListener('click', doPrintNow);
@@ -451,7 +588,7 @@
         if (!release) return toast('تعذّر تجهيز الملف للطباعة', 'bad');
         try {
           const r = await global.sam.win.savePdf({
-            landscape: !!opts.landscape,
+            landscape: land,
             fileName: `${opts.title || 'SAM'}${pageCount > 1 ? `-${pageCount} صفحات` : ''}.pdf`
           });
           if (r && r.ok) toast(`تم حفظ الملف: ${r.path}`, 'ok', 5200);
@@ -501,11 +638,16 @@
     const release = stageForPrint(node);
     if (!release) return { ok: false };
     try {
-      const printOpts = opts.landscape
-        ? { pageSize: { width: 29700, height: 21000 } }
-        : {};
+      /* The paper size comes from the CSS itself (@page + the named pages
+         `landscapeSheet` / `permitSheet`), and Chromium is told to prefer
+         it. The old code forced a custom pageSize of 29700×21000 — those
+         numbers are microns, so the sheet came out 100× too small and the
+         printer refused the job. */
+      const printOpts = { preferCSSPageSize: true };
+      if (opts.deviceName) printOpts.deviceName = opts.deviceName;
+      if (opts.copies) printOpts.copies = opts.copies;
       const r = await global.sam.win.print(printOpts);
-      if (r && !r.ok && r.error !== 'canceled') toast('الطباعة أُلغيت أو فشلت', 'bad');
+      if (r && !r.ok && r.error !== 'canceled') toast(r.error || 'الطباعة أُلغيت أو فشلت', 'bad');
       return r;
     } finally {
       setTimeout(release, 400);
@@ -534,8 +676,8 @@
     box.appendChild(bodyWrap);
 
     const foot = el('div', 'modal-foot');
-    const save = el('button', `btn ${opts.submitKind || 'btn-primary'}`, `${icon('i-check')}<span>${esc(opts.submitLabel || 'حفظ')}</span><span class="kbd">Ctrl+S</span>`);
-    const cancel = el('button', 'btn btn-ghost', `<span>${esc(opts.cancelLabel || 'إلغاء')}</span>`);
+    const save = el('button', `btn ${opts.submitKind || 'btn-primary'}`, `${iconTile('i-check', 'tone-ok', 'xs')}<span class="btn-txt">${esc(opts.submitLabel || 'حفظ')}</span><span class="kbd">Ctrl+S</span>`);
+    const cancel = el('button', 'btn btn-ghost', `<span class="btn-txt">${esc(opts.cancelLabel || 'إلغاء')}</span>`);
     foot.append(save, cancel);
     box.appendChild(foot);
     ov.appendChild(box);
@@ -557,19 +699,22 @@
       if (save.disabled) return;
       errBar.innerHTML = '';
       save.disabled = true;
-      const label = save.querySelector('span').textContent;
-      save.querySelector('span').textContent = 'جارٍ الحفظ…';
+      /* the plate is the first span of the button — the label has its own
+         class, or the busy message would be written INTO the icon */
+      const labelEl = save.querySelector('.btn-txt');
+      const label = labelEl.textContent;
+      labelEl.textContent = 'جارٍ الحفظ…';
       busy(true);
       try {
         const v = await opts.onSubmit();
         finish(v === undefined ? true : v);
       } catch (e) {
-        errBar.innerHTML = `${icon('i-warn')}<span>${esc(e && e.message ? e.message : String(e))}</span>`;
+        errBar.innerHTML = `${iconTile('i-warn', 'tone-adjust', 'xs')}<span>${esc(e && e.message ? e.message : String(e))}</span>`;
         opts.onError && opts.onError(e);
       } finally {
         busy(false);
         save.disabled = false;
-        save.querySelector('span').textContent = label;
+        labelEl.textContent = label;
       }
     }
 
@@ -605,7 +750,7 @@
   function field(label, node, hint, iconId) {
     const f = el('label', 'field');
     const lab = el('span', 'field-label');
-    if (iconId) lab.appendChild(el('span', 'field-ic', icon(iconId)));
+    if (iconId) lab.insertAdjacentHTML('afterbegin', plate('field-ic', iconId, null, 'xs'));
     lab.appendChild(el('span', 'field-txt', esc(label)));
     f.appendChild(lab);
     f.appendChild(node);
@@ -668,7 +813,7 @@
     APP_NAME,
     CURRENCY,
     today,
-    el, icon, esc,
+    el, icon, esc, iconTile, plate, toneOf,
     toast, busy, emptyState, toggleEmpty, menu, bindRow, modal, confirmHardDelete, confirmWarning,
     form, field, input, textarea, numInput, affixInput,
     parseNum, groupNum, numValue, makeNumInput,

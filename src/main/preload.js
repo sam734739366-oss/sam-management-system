@@ -38,6 +38,8 @@ contextBridge.exposeInMainWorld('sam', {
   cloud: {
     status: () => ipcRenderer.invoke('cloud:status'),
     sync: (email, clientId) => ipcRenderer.invoke('cloud:sync', email, clientId),
+    auto: (on) => ipcRenderer.invoke('cloud:auto', on),
+    autoRun: () => ipcRenderer.invoke('cloud:autoRun'),
     installPage: (clientId) => ipcRenderer.invoke('cloud:installPage', clientId)
   },
   nav: {

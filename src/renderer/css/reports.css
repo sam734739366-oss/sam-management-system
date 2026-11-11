@@ -16,7 +16,7 @@
   width: min(1320px, 97vw);
   max-height: 94vh;
   display: flex; flex-direction: column;
-  background: var(--surface);
+  background: var(--card-grad);
   border-radius: var(--radius-l);
   box-shadow: var(--shadow-l);
   border: 1px solid var(--line);
@@ -31,28 +31,16 @@
   color: #fff;
   border-bottom: 3px solid var(--accent);
 }
-.rw-badge {
-  width: 42px; height: 42px; flex: 0 0 42px;
-  display: grid; place-items: center;
-  border-radius: 12px;
-  background: rgba(255, 255, 255, .16);
-  border: 1px solid rgba(255, 255, 255, .28);
-}
-.rw-badge .ic { width: 22px; height: 22px; }
+.rw-badge { flex: none; }
 .rw-txt { flex: 1; min-width: 0; }
 .rw-txt h3 { margin: 0; font-size: 17px; font-weight: 800; letter-spacing: .2px; }
 .rw-sub { display: block; font-size: 12.5px; opacity: .88; margin-top: 2px; }
 .rw-x {
-  width: 34px; height: 34px; flex: 0 0 34px;
-  display: grid; place-items: center;
-  border-radius: 10px; cursor: pointer;
-  background: rgba(255, 255, 255, .14);
-  border: 1px solid rgba(255, 255, 255, .26);
-  color: #fff;
-  transition: background var(--dur) var(--ease);
+  flex: none;
+  cursor: pointer;
+  transition: transform var(--dur) var(--ease), filter var(--dur) var(--ease);
 }
-.rw-x:hover { background: rgba(255, 255, 255, .28); }
-.rw-x .ic { width: 16px; height: 16px; }
+.rw-x:hover { transform: translateY(-1px); filter: brightness(1.08); }
 
 /* ---------------- body: content + the ready-made report rail ---------------- */
 .rw-body {
@@ -60,10 +48,10 @@
   display: grid;
   grid-template-columns: 1fr 268px;
 }
-.rw-content { min-width: 0; overflow: auto; padding: 16px 18px; background: var(--bg); }
+.rw-content { min-width: 0; overflow: auto; padding: 16px 18px; background: var(--desk-grad); }
 .rw-rail {
   border-inline-start: 1px solid var(--line);
-  background: var(--surface);
+  background: var(--card-grad);
   overflow: auto;
   padding: 12px 10px;
   display: flex; flex-direction: column; gap: 6px;
@@ -79,15 +67,7 @@
 }
 .rw-item:hover { background: var(--brand-050); border-color: var(--brand-100); }
 .rw-item.on { background: var(--brand-050); border-color: var(--brand-300); }
-.rw-ic {
-  width: 30px; height: 30px; flex: 0 0 30px;
-  display: grid; place-items: center;
-  border-radius: 9px;
-  background: var(--surface-2); color: var(--brand);
-  border: 1px solid var(--line);
-}
-.rw-item.on .rw-ic { background: var(--brand); color: #fff; border-color: var(--brand); }
-.rw-ic .ic { width: 16px; height: 16px; }
+.rw-ic { flex: none; }
 .rw-t { display: flex; flex-direction: column; min-width: 0; }
 .rw-t b { font-size: 13.5px; font-weight: 700; color: var(--ink); }
 .rw-item.on .rw-t b { color: var(--brand-700); }
@@ -109,7 +89,7 @@
 /* ---------------- the filter panel ---------------- */
 .rw-stack { display: flex; flex-direction: column; gap: 14px; }
 .rw-panel {
-  background: var(--surface);
+  background: var(--card-grad);
   border: 1px solid var(--line);
   border-radius: var(--radius);
   box-shadow: var(--shadow-s);
@@ -131,7 +111,8 @@
   font-size: 13px; font-weight: 800; color: var(--brand-700);
   padding-top: 6px;
 }
-.rw-flabel .ic { width: 15px; height: 15px; }
+.rw-flabel .ic { flex: none; }
+.rw-fic { flex: none; }
 .rw-fbody { display: flex; flex-wrap: wrap; gap: 11px; align-items: flex-end; min-width: 0; }
 .rw-dates { align-items: flex-end; }
 .rw-dates .field { width: 152px; }
@@ -152,7 +133,7 @@
 .rw-phead {
   display: flex; align-items: center; justify-content: space-between;
   gap: 14px; flex-wrap: wrap;
-  background: var(--surface);
+  background: var(--card-grad);
   border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: 12px 15px;
@@ -163,7 +144,7 @@
 .rw-pt span { font-size: 12.5px; color: var(--muted-fg); margin-top: 2px; }
 .rw-pmeta { display: flex; flex-wrap: wrap; gap: 7px; }
 .rw-pbody {
-  background: var(--surface);
+  background: var(--card-grad);
   border: 1px solid var(--line);
   border-radius: var(--radius);
   box-shadow: var(--shadow-s);
@@ -196,7 +177,7 @@
   color: var(--warn);
   font-size: 13.5px; font-weight: 700;
 }
-.rw-error .ic { width: 17px; height: 17px; flex: 0 0 17px; }
+.rw-error .ic { flex: none; }
 
 /* ---------------- the launcher cards (the reports screen) ---------------- */
 .rpt-cards {
@@ -209,8 +190,12 @@
   width: 100%; text-align: start;
   padding: 14px 15px;
   border-radius: var(--radius);
-  border: 1px solid var(--line);
-  background: var(--surface);
+  /* the launcher card wears the colour of the plate it carries */
+  --rt: var(--tone, var(--brand));
+  border: 1px solid color-mix(in srgb, var(--rt) 16%, var(--line));
+  background:
+    radial-gradient(120% 140% at 100% 0%, color-mix(in srgb, var(--rt) 13%, #ffffff) 0%, rgba(255, 255, 255, 0) 64%),
+    var(--card-grad);
   box-shadow: var(--shadow-s);
   cursor: pointer;
   font-family: var(--font-body);
@@ -218,19 +203,11 @@
 }
 .rpt-card:hover {
   transform: translateY(-2px);
-  border-color: var(--brand-300);
+  border-color: color-mix(in srgb, var(--rt) 45%, var(--line));
   box-shadow: var(--shadow);
 }
 .rpt-card:hover .rc-go { background: var(--brand); color: #fff; border-color: var(--brand); }
-.rc-ic {
-  width: 42px; height: 42px; flex: 0 0 42px;
-  display: grid; place-items: center;
-  border-radius: 12px;
-  background: var(--brand-050);
-  border: 1px solid var(--brand-100);
-  color: var(--brand);
-}
-.rc-ic .ic { width: 21px; height: 21px; }
+.rc-ic { flex: none; }
 .rc-t { display: flex; flex-direction: column; flex: 1; min-width: 0; }
 .rc-t b { font-size: 14px; font-weight: 800; color: var(--ink); }
 .rc-t i {
@@ -247,7 +224,7 @@
   white-space: nowrap;
   transition: all var(--dur) var(--ease);
 }
-.rc-go .ic { width: 14px; height: 14px; }
+.rc-go .ic { flex: none; }
 
 /* ---------------- narrow screens ---------------- */
 @media (max-width: 900px) {

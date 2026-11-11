@@ -61,12 +61,17 @@ module.exports = function registerIpc(getWindow) {
       silent: silent === true,
       printBackground: true,
       copies: Math.max(1, Number(copies) || 1),
-      landscape: !!landscape,
       ...(deviceName ? { deviceName } : {}),
       ...(pageSize ? { pageSize } : {}),
       ...(margins ? { margins } : {}),
       ...rest
     };
+    /* When the document drives the paper (preferCSSPageSize), Chromium must
+       not be told "portrait" as well — the CSS named pages decide whether
+       the sheet is portrait, landscape or a half permit. */
+    if (printOptions.preferCSSPageSize !== true) {
+      printOptions.landscape = !!landscape;
+    }
     return new Promise((resolve) => {
       let settled = false;
       const done = (payload) => { if (!settled) { settled = true; resolve(payload); } };
@@ -120,15 +125,15 @@ module.exports = function registerIpc(getWindow) {
     });
     if (canceled || !filePath) return { ok: false, canceled: true };
     try {
+      /* The page geometry comes from the document's own CSS (@page and the
+         named pages `landscapeSheet` / `permitSheet`), so the PDF is
+         exactly the sheet the user previewed. The margins must be zero,
+         otherwise the printed area shrinks and a half-permit no longer
+         fits its half of the A4 page. */
       const data = await w.webContents.printToPDF({
         printBackground: true,
-        landscape: !!opts.landscape,
-        pageSize: opts.pageSize || 'A4',
         preferCSSPageSize: opts.preferCSSPageSize !== false,
-        marginLeft: 0.2,
-        marginRight: 0.2,
-        marginTop: 0.25,
-        marginBottom: 0.25
+        marginType: 'none'
       });
       fs.writeFileSync(filePath, data);
       return { ok: true, path: filePath };

@@ -68,7 +68,10 @@
     }
 
     const body = el('div');
-    const grid = el('div', 'form-grid');
+
+    /* --- section 1: the identity of the item --- */
+    body.appendChild(el('div', 'form-sec', `${SamUI.iconTile('i-tag', 'tone-sreturn', 'sm')}<span>بيانات الصنف</span>`));
+    const grid = el('div', 'form-grid form-grid-4');
 
     const code = input({ placeholder: 'مثال: 0001', value: item ? item.code : '' });
     const name = input({ placeholder: 'مثال: مياه جلدلة 1.5 لتر', value: item ? item.name : '' });
@@ -81,23 +84,30 @@
     const maxDefect = numInput({ value: item ? item.max_defect_alert : 0, placeholder: '0' });
 
     grid.append(
-      field('كود الصنف', code, '', 'i-hash'),
-      field('اسم الصنف', name, '', 'i-tag'),
-      field('الوحدة الأساسية', unit, 'هذه الوحدة تظهر في كل الفواتير والتقارير والتقرير اليومي', 'i-sigma'),
-      field('الفئة', cat, '', 'i-list'),
+      field('كود الصنف', code, 'كود فريد يميّز الصنف في كل الشاشات', 'i-hash'),
+      field('اسم الصنف', name, 'الاسم الذي يظهر في الفواتير والتقارير', 'i-tag'),
+      field('الوحدة الأساسية', unit, 'هذه الوحدة تظهر في كل الفواتير والتقارير', 'i-sigma'),
+      field('الفئة', cat, 'تصنيف يجمع الصنف في التقارير', 'i-list')
+    );
+    body.appendChild(grid);
+
+    /* --- section 2: packing and the stock alerts --- */
+    body.appendChild(el('div', 'form-sec', `${SamUI.iconTile('i-archive-box', 'tone-move', 'sm')}<span>التغليف وحدود التنبيه</span>`));
+    const grid2 = el('div', 'form-grid form-grid-4');
+    grid2.append(
       field('عدد الوحدات لكل كرتونة', perCtn, 'معلوماتي فقط — لا يدخل في أي حساب', 'i-archive-box'),
-      field('عدد الوحدات لكل كيس', perBag, 'معلوماتي فقط', 'i-archive'),
+      field('عدد الوحدات لكل كيس', perBag, 'معلوماتي فقط — لا يدخل في أي حساب', 'i-archive'),
       field('حد التنبيه الأدنى للجيد', minGood, 'تنبيه إذا قلّ الجيد عن هذا الرقم', 'i-warn'),
       field('حد التالف الأقصى', maxDefect, 'تنبيه إذا زاد التالف عن هذا الرقم', 'i-alert')
     );
-    body.appendChild(grid);
+    body.appendChild(grid2);
 
     // free-text fields stay text inputs but suggest values already stored in the DB
     SamSuggest.attach(unit, 'base_unit');
     SamSuggest.attach(cat, 'category');
 
     /* ---- opening balances ---- */
-    body.appendChild(el('div', 'form-sec', `${icon('i-pin')}<span>الأرصدة الافتتاحية (حبة)</span>`));
+    body.appendChild(el('div', 'form-sec', `${SamUI.iconTile('i-pin', 'tone-warn', 'sm')}<span>الأرصدة الافتتاحية (حبة)</span>`));
     const bal = el('div', 'bal-grid');
     bal.append(
       el('div', 'hd', 'المخزن'),

@@ -11,7 +11,7 @@ const $ = (id) => document.getElementById(id);
 const form = $('loginForm');
 const card = $('loginCard');
 const btn = $('loginBtn');
-const btnLabel = btn.querySelector('span');
+const btnLabel = btn.querySelector('.btn-txt');
 
 $('btnMin').addEventListener('click', () => window.sam.win.minimize());
 $('btnClose').addEventListener('click', () => window.sam.win.close());

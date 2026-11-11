@@ -296,6 +296,15 @@ function migrate() {
   const dlCols = db.prepare('PRAGMA table_info(doc_lines)').all().map((c) => c.name);
   if (!dlCols.includes('sign')) db.exec('ALTER TABLE doc_lines ADD COLUMN sign INTEGER NOT NULL DEFAULT 1');
 
+  /* V5 — the moment of the last edit. The creation date never changes
+     (created_at), but every record that is edited again carries the time
+     of that edit, so the history stays honest. */
+  const editable = ['documents', 'prod_issues', 'prod_receipts', 'prod_archive', 'tolling_orders'];
+  editable.forEach((t) => {
+    const c = db.prepare(`PRAGMA table_info(${t})`).all().map((x) => x.name);
+    if (!c.includes('updated_at')) db.exec(`ALTER TABLE ${t} ADD COLUMN updated_at TEXT`);
+  });
+
   // V4 — widen the document kinds and retire the «محرز» bucket
   widenDocumentKinds();
   mergeHeldBucket();
@@ -942,7 +951,7 @@ function saveDocument(payload) {
     if (docId) {
       db.prepare(
         `UPDATE documents SET kind=?, doc_no=?, doc_date=?, party_id=?, warehouse_id=?, dest_warehouse_id=?,
-         invoice_value=?, notes=? WHERE id=?`
+         invoice_value=?, notes=?, updated_at=datetime('now','localtime') WHERE id=?`
       ).run(
         payload.kind, docNo, payload.doc_date,
         int(payload.party_id) || null, int(payload.warehouse_id) || null, int(payload.dest_warehouse_id) || null,
@@ -1327,7 +1336,7 @@ function saveIssue(payload) {
     if (id) db.prepare("DELETE FROM stock_moves WHERE doc_id=? AND doc_type='issue'").run(id);
     let docId = id;
     if (id) {
-      db.prepare('UPDATE prod_issues SET doc_no=?, doc_date=?, item_id=?, warehouse_id=?, cartons=?, pieces=?, note=? WHERE id=?')
+      db.prepare("UPDATE prod_issues SET doc_no=?, doc_date=?, item_id=?, warehouse_id=?, cartons=?, pieces=?, note=?, updated_at=datetime('now','localtime') WHERE id=?")
         .run(payload.doc_no, payload.doc_date, itemId, whId, cartons, pieces, str(payload.note), id);
     } else {
       const info = db.prepare(
@@ -1465,7 +1474,7 @@ function saveReceipt(payload) {
       db.prepare('DELETE FROM prod_receipt_lines WHERE receipt_id=?').run(id);
       db.prepare(
         `UPDATE prod_receipts SET doc_no=?, doc_date=?, issue_id=?, raw_item_id=?, carton_no=?, carton_pieces=?,
-         bags_used=?, produced_total=?, shortage=?, surplus=?, note=? WHERE id=?`
+         bags_used=?, produced_total=?, shortage=?, surplus=?, note=?, updated_at=datetime('now','localtime') WHERE id=?`
       ).run(payload.doc_no, docDate, int(payload.issue_id) || null, rawItemId, String(payload.carton_no).trim(),
         cartonPieces, bagsTotal, produced, shortage, surplus, str(payload.note), id);
     } else {
@@ -1628,7 +1637,7 @@ function saveTolling(payload) {
     let orderId = id;
     if (orderId) {
       db.prepare(
-        'UPDATE tolling_orders SET doc_no=?, doc_date=?, party_id=?, raw_item_id=?, warehouse_id=?, pieces_in=?, bags_in=?, note=? WHERE id=?'
+        "UPDATE tolling_orders SET doc_no=?, doc_date=?, party_id=?, raw_item_id=?, warehouse_id=?, pieces_in=?, bags_in=?, note=?, updated_at=datetime('now','localtime') WHERE id=?"
       ).run((payload.doc_no || '').trim() || nextProdNo('tolling_orders', 'TOL'), payload.doc_date, partyId,
         rawItemId, whId, piecesIn, int(payload.bags_in), str(payload.note), orderId);
     } else {
@@ -1801,7 +1810,7 @@ function saveArchive(payload) {
     if (!getArchive(id)) throw new Error('السجل غير موجود');
     db.prepare(
       `UPDATE prod_archive SET doc_no=?, doc_date=?, shift=?, machine=?, raw_item_id=?, product_item_id=?,
-       cartons=?, bags=?, good=?, defect=?, pieces=?, note=? WHERE id=?`
+       cartons=?, bags=?, good=?, defect=?, pieces=?, note=?, updated_at=datetime('now','localtime') WHERE id=?`
     ).run(row.doc_no, row.doc_date, row.shift, row.machine, row.raw_item_id, row.product_item_id,
       row.cartons, row.bags, row.good, row.defect, row.pieces, row.note, id);
     return getArchive(id);

@@ -98,10 +98,10 @@
         <strong>SAM</strong>
         <span>Management System</span>
       </div>
-      <span class="tb-ver" id="tbVer">v0.4.0</span>
+      <span class="tb-ver" id="tbVer">v0.5.0</span>
       <div class="tb-acts">
-        <button class="tb-act" id="btnUpdate" title="تحديث البرنامج — فحص الإصدارات المتاحة"><svg class="ic"><use href="#i-update"/></svg></button>
-        <button class="tb-act" id="btnHelp" title="دليل الاستخدام — كل شيء عن البرنامج داخله"><svg class="ic"><use href="#i-help"/></svg></button>
+        <button class="tb-act t3d tone-ok sm" id="btnUpdate" title="تحديث البرنامج — فحص الإصدارات المتاحة"><svg class="ic"><use href="#i-update"/></svg></button>
+        <button class="tb-act t3d tone-info sm" id="btnHelp" title="دليل الاستخدام — كل شيء عن البرنامج داخله"><svg class="ic"><use href="#i-help"/></svg></button>
       </div>
     </div>
 
@@ -117,7 +117,7 @@
         </span>
       </div>
       <button class="tb-btn" id="btnLogout" title="تسجيل الخروج">
-        <svg class="ic"><use href="#i-exit"/></svg>
+        <span class="t3d xs tone-plain"><svg class="ic"><use href="#i-exit"/></svg></span>
       </button>
     </div>
 
@@ -133,25 +133,25 @@
     <aside class="sidebar">
       <nav class="nav" id="nav">
         <span class="nav-cap">الرئيسية</span>
-        <button class="nav-item active" data-view="dashboard"><svg class="ic"><use href="#i-dash"/></svg><span>لوحة التحكم</span></button>
+        <button class="nav-item active" data-view="dashboard"><span class="t3d tone-info"><svg class="ic"><use href="#i-dash"/></svg></span><span class="btn-txt">لوحة التحكم</span></button>
         <span class="nav-cap">البيانات الأساسية</span>
-        <button class="nav-item" data-view="items"><svg class="ic"><use href="#i-box"/></svg><span>الأصناف</span></button>
-        <button class="nav-item" data-view="warehouses"><svg class="ic"><use href="#i-pin"/></svg><span>المخازن</span></button>
-        <button class="nav-item" data-view="parties"><svg class="ic"><use href="#i-users"/></svg><span>العملاء والموردين</span></button>
+        <button class="nav-item" data-view="items"><span class="t3d tone-move"><svg class="ic"><use href="#i-box"/></svg></span><span class="btn-txt">الأصناف</span></button>
+        <button class="nav-item" data-view="warehouses"><span class="t3d tone-warn"><svg class="ic"><use href="#i-pin"/></svg></span><span class="btn-txt">المخازن</span></button>
+        <button class="nav-item" data-view="parties"><span class="t3d tone-sreturn"><svg class="ic"><use href="#i-users"/></svg></span><span class="btn-txt">العملاء والموردين</span></button>
         <span class="nav-cap">الحركة</span>
-        <button class="nav-item" data-view="transactions"><svg class="ic"><use href="#i-swap"/></svg><span>العمليات</span></button>
-        <button class="nav-item" data-view="production"><svg class="ic"><use href="#i-factory"/></svg><span>الإنتاج</span></button>
-        <button class="nav-item" data-view="daily"><svg class="ic"><use href="#i-day"/></svg><span>التقرير اليومي</span></button>
-        <button class="nav-item" data-view="reports"><svg class="ic"><use href="#i-chart"/></svg><span>التقارير</span></button>
+        <button class="nav-item" data-view="transactions"><span class="t3d tone-gout"><svg class="ic"><use href="#i-swap"/></svg></span><span class="btn-txt">العمليات</span></button>
+        <button class="nav-item" data-view="production"><span class="t3d tone-produce"><svg class="ic"><use href="#i-factory"/></svg></span><span class="btn-txt">الإنتاج</span></button>
+        <button class="nav-item" data-view="daily"><span class="t3d tone-gin"><svg class="ic"><use href="#i-day"/></svg></span><span class="btn-txt">التقرير اليومي</span></button>
+        <button class="nav-item" data-view="reports"><span class="t3d tone-pretn"><svg class="ic"><use href="#i-chart"/></svg></span><span class="btn-txt">التقارير</span></button>
         <span class="nav-cap">النظام</span>
-        <button class="nav-item" data-view="settings"><svg class="ic"><use href="#i-gear"/></svg><span>الإعدادات</span></button>
+        <button class="nav-item" data-view="settings"><span class="t3d tone-plain"><svg class="ic"><use href="#i-gear"/></svg></span><span class="btn-txt">الإعدادات</span></button>
       </nav>
 
       <div class="side-foot">
         <div class="phase-card">
           <span class="pc-label">إصدار النظام</span>
-          <span class="pc-num">V4</span>
-          <span class="pc-txt">مجلد بيانات خاص · مزامنة سحابية · دليل مدمج · تقارير نافذة</span>
+          <span class="pc-num">V5</span>
+          <span class="pc-txt">تصميم مضغوط · أيقونات 3D ملوّنة · معاينة طباعة · مزامنة Google Drive</span>
         </div>
         <div class="shortcut-hint"><b>Ctrl+S</b> حفظ · <b>Ctrl+N</b> جديد · <b>Esc</b> إغلاق</div>
         <div class="wm-tag">SAM 775158678</div>
@@ -168,16 +168,16 @@
             <p class="sub" id="greetSub">أهلاً بك في نظام SAM</p>
           </div>
           <div class="view-actions">
-            <button class="btn btn-ghost" id="btnGoItems"><svg class="ic"><use href="#i-box"/></svg>إضافة صنف</button>
-            <button class="btn btn-primary" id="btnGoParties"><svg class="ic"><use href="#i-users"/></svg>إضافة عميل / مورد</button>
+            <button class="btn btn-ghost" id="btnGoItems"><span class="t3d xs tone-move"><svg class="ic"><use href="#i-box"/></svg></span><span class="btn-txt">إضافة صنف</span></button>
+            <button class="btn btn-primary" id="btnGoParties"><span class="t3d xs tone-sreturn"><svg class="ic"><use href="#i-users"/></svg></span><span class="btn-txt">إضافة عميل / مورد</span></button>
           </div>
         </div>
 
         <div class="kpi-row">
-          <div class="kpi"><span class="k-top">إجمالي الأصناف</span><span class="k-val" id="kpiItems">0</span><span class="k-note">جدول items</span></div>
-          <div class="kpi gold"><span class="k-top">الرصيد الكلي (حبة)</span><span class="k-val" id="kpiStock">0</span><span class="k-note" id="kpiStockNote">سليم + تالف — كل المخازن</span></div>
-          <div class="kpi"><span class="k-top">حركات اليوم</span><span class="k-val" id="kpiDocs">0</span><span class="k-note">أرصدة افتتاحية ومستندات</span></div>
-          <div class="kpi warn"><span class="k-top">تنبيهات</span><span class="k-val" id="kpiAlerts">0</span><span class="k-note">أقل من الحد الأدنى للجيد / تالف تجاوز الحد</span></div>
+          <div class="kpi tone-move"><span class="t3d tone-move"><svg class="ic"><use href="#i-box"/></svg></span><span class="k-top">إجمالي الأصناف</span><span class="k-val" id="kpiItems">0</span><span class="k-note">جدول items</span></div>
+          <div class="kpi gold tone-produce"><span class="t3d tone-produce"><svg class="ic"><use href="#i-archive-box"/></svg></span><span class="k-top">الرصيد الكلي (حبة)</span><span class="k-val" id="kpiStock">0</span><span class="k-note" id="kpiStockNote">سليم + تالف — كل المخازن</span></div>
+          <div class="kpi tone-gout"><span class="t3d tone-gout"><svg class="ic"><use href="#i-swap"/></svg></span><span class="k-top">حركات اليوم</span><span class="k-val" id="kpiDocs">0</span><span class="k-note">أرصدة افتتاحية ومستندات</span></div>
+          <div class="kpi warn tone-warn"><span class="t3d tone-warn"><svg class="ic"><use href="#i-alert"/></svg></span><span class="k-top">تنبيهات</span><span class="k-val" id="kpiAlerts">0</span><span class="k-note">أقل من الحد الأدنى للجيد / تالف تجاوز الحد</span></div>
         </div>
 
         <div class="grid-2">
@@ -213,7 +213,7 @@
         </div>
 
         <div class="card" style="margin-top:16px">
-          <div class="card-head"><h3>ما الذي تغيّر في V4</h3><span class="badge">تحديث شامل</span></div>
+          <div class="card-head"><h3>ما الذي تغيّر في V5</h3><span class="badge">تحديث شامل</span></div>
           <div class="card-body"><ol class="roadmap" id="roadmap"></ol></div>
         </div>
       </section>
@@ -227,8 +227,8 @@
           </div>
           <div class="view-actions">
             <label class="search"><svg class="ic"><use href="#i-search"/></svg><input id="itemSearch" class="input" placeholder="بحث بالكود أو الاسم أو الفئة…" /></label>
-            <button class="btn btn-ghost" id="btnSmartSearch"><svg class="ic"><use href="#i-search"/></svg>بحث ذكي</button>
-            <button class="btn btn-primary" id="btnAddItem"><svg class="ic"><use href="#i-plus"/></svg>إضافة صنف<span class="kbd">Ctrl+N</span></button>
+            <button class="btn btn-ghost" id="btnSmartSearch"><span class="t3d xs tone-info"><svg class="ic"><use href="#i-search"/></svg></span><span class="btn-txt">بحث ذكي</span></button>
+            <button class="btn btn-primary" id="btnAddItem"><span class="t3d xs tone-ok"><svg class="ic"><use href="#i-plus"/></svg></span><span class="btn-txt">إضافة صنف</span><span class="kbd">Ctrl+N</span></button>
           </div>
         </div>
         <div class="card">
@@ -257,7 +257,7 @@
             <p class="sub">مخازن متعددة متساوية يعرّفها المستخدم — كل صنف ينطبق عليها جميعًا، ولكل مخزن رصيده وحارسه</p>
           </div>
           <div class="view-actions">
-            <button class="btn btn-primary" id="btnAddWh"><svg class="ic"><use href="#i-plus"/></svg>إضافة مخزن</button>
+            <button class="btn btn-primary" id="btnAddWh"><span class="t3d xs tone-ok"><svg class="ic"><use href="#i-plus"/></svg></span><span class="btn-txt">إضافة مخزن</span></button>
           </div>
         </div>
         <div class="card">
@@ -283,7 +283,7 @@
           </div>
           <div class="view-actions">
             <label class="search"><svg class="ic"><use href="#i-search"/></svg><input id="partySearch" class="input" placeholder="بحث بالاسم أو الهاتف…" /></label>
-            <button class="btn btn-primary" id="btnAddParty"><svg class="ic"><use href="#i-plus"/></svg>إضافة طرف</button>
+            <button class="btn btn-primary" id="btnAddParty"><span class="t3d xs tone-ok"><svg class="ic"><use href="#i-plus"/></svg></span><span class="btn-txt">إضافة طرف</span></button>
           </div>
         </div>
         <div class="card">
@@ -308,21 +308,21 @@
           </div>
           <div class="view-actions">
             <label class="search"><svg class="ic"><use href="#i-search"/></svg><input id="docSearch" class="input" placeholder="بحث برقم المستند أو الطرف…" /></label>
-            <button class="btn btn-primary" id="btnNewDoc"><svg class="ic"><use href="#i-plus"/></svg>مستند جديد<span class="kbd">Ctrl+N</span></button>
+            <button class="btn btn-primary" id="btnNewDoc"><span class="t3d xs tone-ok"><svg class="ic"><use href="#i-plus"/></svg></span><span class="btn-txt">مستند جديد</span><span class="kbd">Ctrl+N</span></button>
           </div>
         </div>
 
         <div class="tabs" id="docTabs">
           <button class="tab active" data-kind="">الكل</button>
-          <button class="tab" data-kind="purchase"><svg class="ic"><use href="#i-cart"/></svg>مشتريات</button>
-          <button class="tab" data-kind="sale"><svg class="ic"><use href="#i-box"/></svg>مبيعات</button>
-          <button class="tab" data-kind="sale_return"><svg class="ic"><use href="#i-return"/></svg>مرتجع مبيعات</button>
-          <button class="tab" data-kind="purchase_return"><svg class="ic"><use href="#i-return"/></svg>مرتجع مشتريات</button>
-          <button class="tab" data-kind="transfer"><svg class="ic"><use href="#i-truck"/></svg>نقل بين المخازن</button>
-          <button class="tab" data-kind="prod_receipt"><svg class="ic"><use href="#i-factory"/></svg>سند استلام الإنتاج</button>
-          <button class="tab" data-kind="gate_in"><svg class="ic"><use href="#i-gate-in"/></svg>إذن إدخال</button>
-          <button class="tab" data-kind="gate_out"><svg class="ic"><use href="#i-gate-out"/></svg>إذن خروج</button>
-          <button class="tab" data-kind="adjustment"><svg class="ic"><use href="#i-scale"/></svg>تسوية جرد</button>
+          <button class="tab" data-kind="purchase"><span class="t3d xs tone-buy"><svg class="ic"><use href="#i-cart"/></svg></span><span class="btn-txt">مشتريات</span></button>
+          <button class="tab" data-kind="sale"><span class="t3d xs tone-move"><svg class="ic"><use href="#i-box"/></svg></span><span class="btn-txt">مبيعات</span></button>
+          <button class="tab" data-kind="sale_return"><span class="t3d xs tone-sreturn"><svg class="ic"><use href="#i-return"/></svg></span><span class="btn-txt">مرتجع مبيعات</span></button>
+          <button class="tab" data-kind="purchase_return"><span class="t3d xs tone-sreturn"><svg class="ic"><use href="#i-return"/></svg></span><span class="btn-txt">مرتجع مشتريات</span></button>
+          <button class="tab" data-kind="transfer"><span class="t3d xs tone-move"><svg class="ic"><use href="#i-truck"/></svg></span><span class="btn-txt">نقل بين المخازن</span></button>
+          <button class="tab" data-kind="prod_receipt"><span class="t3d xs tone-produce"><svg class="ic"><use href="#i-factory"/></svg></span><span class="btn-txt">سند استلام الإنتاج</span></button>
+          <button class="tab" data-kind="gate_in"><span class="t3d xs tone-gin"><svg class="ic"><use href="#i-gate-in"/></svg></span><span class="btn-txt">إذن إدخال</span></button>
+          <button class="tab" data-kind="gate_out"><span class="t3d xs tone-gout"><svg class="ic"><use href="#i-gate-out"/></svg></span><span class="btn-txt">إذن خروج</span></button>
+          <button class="tab" data-kind="adjustment"><span class="t3d xs tone-sell"><svg class="ic"><use href="#i-scale"/></svg></span><span class="btn-txt">تسوية جرد</span></button>
         </div>
 
         <div class="card">
@@ -350,18 +350,18 @@
             <p class="sub">سند استلام الإنتاج يزيد الرصيد · التقرير اليومي توثيقي بلا أثر · العجز والتالف قسم مستقل</p>
           </div>
           <div class="view-actions">
-            <button class="btn btn-primary" id="btnNewProdReceipt"><svg class="ic"><use href="#i-factory"/></svg>سند استلام الإنتاج</button>
-            <button class="btn btn-ghost" id="btnNewIssue"><svg class="ic"><use href="#i-swap"/></svg>صرف خام جديد</button>
-            <button class="btn btn-ghost" id="btnNewTolling"><svg class="ic"><use href="#i-tolling"/></svg>نفخ للغير</button>
-            <button class="btn btn-ghost" id="btnNewReceipt"><svg class="ic"><use href="#i-factory"/></svg>تقرير إنتاج يومي</button>
-            <button class="btn btn-ghost" id="btnNewArchive"><svg class="ic"><use href="#i-archive"/></svg>سجل أرشيف</button>
+            <button class="btn btn-primary" id="btnNewProdReceipt"><span class="t3d xs tone-produce"><svg class="ic"><use href="#i-factory"/></svg></span><span class="btn-txt">سند استلام الإنتاج</span></button>
+            <button class="btn btn-ghost" id="btnNewIssue"><span class="t3d xs tone-gout"><svg class="ic"><use href="#i-swap"/></svg></span><span class="btn-txt">صرف خام جديد</span></button>
+            <button class="btn btn-ghost" id="btnNewTolling"><span class="t3d xs tone-produce"><svg class="ic"><use href="#i-tolling"/></svg></span><span class="btn-txt">نفخ للغير</span></button>
+            <button class="btn btn-ghost" id="btnNewReceipt"><span class="t3d xs tone-produce"><svg class="ic"><use href="#i-factory"/></svg></span><span class="btn-txt">تقرير إنتاج يومي</span></button>
+            <button class="btn btn-ghost" id="btnNewArchive"><span class="t3d xs tone-plain"><svg class="ic"><use href="#i-archive"/></svg></span><span class="btn-txt">سجل أرشيف</span></button>
           </div>
         </div>
 
         <div class="card routing-card">
           <div class="card-head">
             <h3>توجيه الإنتاج</h3>
-            <button class="btn btn-sm btn-ghost" id="btnSaveRouting"><svg class="ic"><use href="#i-check"/></svg>حفظ التوجيه</button>
+            <button class="btn btn-sm btn-ghost" id="btnSaveRouting"><span class="t3d xs tone-ok"><svg class="ic"><use href="#i-check"/></svg></span><span class="btn-txt">حفظ التوجيه</span></button>
           </div>
           <div class="card-body">
             <p class="foot-note" style="margin:0 0 12px">التوجيه يُستخدم في زر «تعبئة المخازن من التوجيه» داخل «سند استلام الإنتاج»: السليم ← مخزن السليم، والتالف ← مخزن التالف (أو مخزن الخام التالف لصنف خام). لا يُملأ أي حقل تلقائياً — التعبئة بضغط الزر فقط.</p>
@@ -393,9 +393,9 @@
 
         <div class="tabs" id="prodTabs">
           <button class="tab active" data-tab="issues">صرف المواد الخام</button>
-          <button class="tab" data-tab="prodreceipts"><svg class="ic"><use href="#i-factory"/></svg>سند استلام الإنتاج</button>
+          <button class="tab" data-tab="prodreceipts"><span class="t3d xs tone-produce"><svg class="ic"><use href="#i-factory"/></svg></span><span class="btn-txt">سند استلام الإنتاج</span></button>
           <button class="tab" data-tab="receipts">تقارير الإنتاج</button>
-          <button class="tab" data-tab="gap"><svg class="ic"><use href="#i-scale"/></svg>العجز والتالف</button>
+          <button class="tab" data-tab="gap"><span class="t3d xs tone-sell"><svg class="ic"><use href="#i-scale"/></svg></span><span class="btn-txt">العجز والتالف</span></button>
           <button class="tab" data-tab="tolling">النفخ للغير</button>
           <button class="tab" data-tab="scrap">سجل الهدر</button>
           <button class="tab" data-tab="archive">أرشيف الإنتاج</button>
@@ -404,7 +404,7 @@
         <div class="card hidden" id="prodreceiptsPanel">
           <div class="card-head">
             <h3>سندات استلام الإنتاج — ما دخل المخزون فعلياً</h3>
-            <button class="btn btn-sm btn-primary" id="btnNewProdReceipt2"><svg class="ic"><use href="#i-factory"/></svg>سند استلام جديد</button>
+            <button class="btn btn-sm btn-primary" id="btnNewProdReceipt2"><span class="t3d xs tone-produce"><svg class="ic"><use href="#i-factory"/></svg></span><span class="btn-txt">سند استلام جديد</span></button>
           </div>
           <div class="card-body tight">
             <div class="tbl-wrap tall">
@@ -451,9 +451,9 @@
           <div class="card-head">
             <h3>العجز والتالف في الإنتاج</h3>
             <div class="col-actions">
-              <button class="btn btn-sm btn-ghost" id="btnGapRefresh"><svg class="ic"><use href="#i-refresh"/></svg>تحديث</button>
-              <button class="btn btn-sm btn-ghost" id="btnPrintGap"><svg class="ic"><use href="#i-print"/></svg>طباعة / PDF</button>
-              <button class="btn btn-sm btn-ghost" id="btnExcelGap"><svg class="ic"><use href="#i-archive"/></svg>تصدير Excel</button>
+              <button class="btn btn-sm btn-ghost" id="btnGapRefresh"><span class="t3d xs tone-info"><svg class="ic"><use href="#i-refresh"/></svg></span><span class="btn-txt">تحديث</span></button>
+              <button class="btn btn-sm btn-ghost" id="btnPrintGap"><span class="t3d xs tone-plain"><svg class="ic"><use href="#i-print"/></svg></span><span class="btn-txt">طباعة / PDF</span></button>
+              <button class="btn btn-sm btn-ghost" id="btnExcelGap"><span class="t3d xs tone-plain"><svg class="ic"><use href="#i-archive"/></svg></span><span class="btn-txt">تصدير Excel</span></button>
             </div>
           </div>
           <div class="card-body">
@@ -531,7 +531,7 @@
             <p class="sub">تسعة تقارير جاهزة · كل تقرير بنافذة مستقلة فيها الفلاتر والمعاينة والتصدير والطباعة</p>
           </div>
           <div class="view-actions">
-            <button class="btn btn-primary" id="btnOpenReports"><svg class="ic"><use href="#i-chart"/></svg>تشغيل التقرير<span class="kbd">F5</span></button>
+            <button class="btn btn-primary" id="btnOpenReports"><span class="t3d xs tone-pretn"><svg class="ic"><use href="#i-chart"/></svg></span><span class="btn-txt">تشغيل التقرير</span><span class="kbd">F5</span></button>
           </div>
         </div>
 
@@ -556,10 +556,10 @@
             <p class="sub">ما دخل اليوم في كل مخزن · ما هو المتبقي في كل مخزن · إجمالي المتبقي في كل المخازن</p>
           </div>
           <div class="view-actions">
-            <button class="btn btn-primary" id="btnRunDaily"><svg class="ic"><use href="#i-chart"/></svg>تحديث التقرير<span class="kbd">F5</span></button>
-            <button class="btn btn-ghost" id="btnDailyWindow"><svg class="ic"><use href="#i-eye"/></svg>فتح في نافذة</button>
-            <button class="btn btn-ghost" id="btnPrintDaily"><svg class="ic"><use href="#i-print"/></svg>طباعة / PDF</button>
-            <button class="btn btn-ghost" id="btnExcelDaily"><svg class="ic"><use href="#i-archive"/></svg>تصدير Excel</button>
+            <button class="btn btn-primary" id="btnRunDaily"><span class="t3d xs tone-pretn"><svg class="ic"><use href="#i-chart"/></svg></span><span class="btn-txt">تحديث التقرير</span><span class="kbd">F5</span></button>
+            <button class="btn btn-ghost" id="btnDailyWindow"><span class="t3d xs tone-info"><svg class="ic"><use href="#i-eye"/></svg></span><span class="btn-txt">فتح في نافذة</span></button>
+            <button class="btn btn-ghost" id="btnPrintDaily"><span class="t3d xs tone-plain"><svg class="ic"><use href="#i-print"/></svg></span><span class="btn-txt">طباعة / PDF</span></button>
+            <button class="btn btn-ghost" id="btnExcelDaily"><span class="t3d xs tone-plain"><svg class="ic"><use href="#i-archive"/></svg></span><span class="btn-txt">تصدير Excel</span></button>
           </div>
         </div>
 
@@ -574,7 +574,7 @@
               <div class="field"><span>المخزن</span><div id="dWh"></div></div>
             </div>
 
-            <div class="form-sec" style="margin-top:16px"><svg class="ic"><use href="#i-box"/></svg><span>الحالات داخلة في التقرير</span></div>
+            <div class="form-sec" style="margin-top:16px"><span class="t3d xs tone-move"><svg class="ic"><use href="#i-box"/></svg></span><span>الحالات داخلة في التقرير</span></div>
             <div class="cols-wrap" id="dBuckets"></div>
 
             <div class="check-row" style="margin-top:14px">
@@ -635,7 +635,7 @@
               <div class="card-body">
                 <dl class="info" id="dbInfo"></dl>
                 <div class="row-btns" style="margin-top:14px">
-                  <button class="btn btn-ghost" id="btnOpenDbFolder"><svg class="ic"><use href="#i-db"/></svg>فتح مجلد قاعدة البيانات</button>
+                  <button class="btn btn-ghost" id="btnOpenDbFolder"><span class="t3d xs tone-info"><svg class="ic"><use href="#i-db"/></svg></span><span class="btn-txt">فتح مجلد قاعدة البيانات</span></button>
                 </div>
               </div>
             </div>
@@ -644,10 +644,10 @@
               <div class="card-body">
                 <dl class="info" id="sysInfo"></dl>
                 <div class="row-btns" style="margin-top:14px">
-                  <button class="btn btn-ghost" id="btnReplayIntro"><svg class="ic"><use href="#i-play"/></svg>إعادة عرض المقدمة</button>
+                  <button class="btn btn-ghost" id="btnReplayIntro"><span class="t3d xs tone-ok"><svg class="ic"><use href="#i-play"/></svg></span><span class="btn-txt">إعادة عرض المقدمة</span></button>
                   <button class="btn btn-ghost" id="btnToggleSound">كتم صوت المقدمة</button>
                   <button class="btn btn-ghost" id="btnChangeOwnPw">تغيير كلمة مروري</button>
-                  <button class="btn btn-ghost" id="btnOpenGuide"><svg class="ic"><use href="#i-help"/></svg>دليل الاستخدام</button>
+                  <button class="btn btn-ghost" id="btnOpenGuide"><span class="t3d xs tone-info"><svg class="ic"><use href="#i-help"/></svg></span><span class="btn-txt">دليل الاستخدام</span></button>
                 </div>
                 <p class="foot-note">الحركة التقديمية تُعرض مرة واحدة بعد تسجيل الدخول (ثانيتان)، وهذا الزر يعيد تشغيلها للمعاينة.</p>
               </div>
@@ -659,7 +659,7 @@
           <div class="card">
             <div class="card-head">
               <h3>المستخدمون</h3>
-              <button class="btn btn-primary btn-sm" id="btnAddUser"><svg class="ic"><use href="#i-plus"/></svg>إضافة مستخدم</button>
+              <button class="btn btn-primary btn-sm" id="btnAddUser"><span class="t3d xs tone-ok"><svg class="ic"><use href="#i-plus"/></svg></span><span class="btn-txt">إضافة مستخدم</span></button>
             </div>
             <div class="card-body tight">
               <div class="tbl-wrap">
@@ -681,7 +681,7 @@
               <div class="card-body">
                 <dl class="info" id="backupInfo"></dl>
                 <div class="row-btns" style="margin-top:14px">
-                  <button class="btn btn-gold" id="btnBackupNow"><svg class="ic"><use href="#i-db"/></svg>حفظ نسخة الآن</button>
+                  <button class="btn btn-gold" id="btnBackupNow"><span class="t3d xs tone-info"><svg class="ic"><use href="#i-db"/></svg></span><span class="btn-txt">حفظ نسخة الآن</span></button>
                   <button class="btn btn-ghost" id="btnBackupSaveAs">حفظ نسخة في مكان آخر…</button>
                   <button class="btn btn-ghost" id="btnBackupFolder">فتح مجلد النسخ</button>
                 </div>
@@ -698,7 +698,7 @@
               <div class="card-body">
                 <p class="tip">اكتب بريدك الإلكتروني فقط ويتكفّل البرنامج بالباقي: يكتشف Google Drive أو OneDrive أو Dropbox على جهازك ويكتب نسخة في مجلد السحابة. لا اختيار ملف ولا مفاتيح.</p>
                 <div class="row-btns">
-                  <button class="btn btn-primary" id="btnGoCloud"><svg class="ic"><use href="#i-cloud"/></svg>فتح «مجلد البيانات والسحابة»</button>
+                  <button class="btn btn-primary" id="btnGoCloud"><span class="t3d xs tone-info"><svg class="ic"><use href="#i-cloud"/></svg></span><span class="btn-txt">فتح «مجلد البيانات والسحابة»</span></button>
                 </div>
               </div>
             </div>
@@ -712,10 +712,10 @@
               <div class="card-body">
                 <dl class="info" id="ddInfo"></dl>
                 <div class="row-btns" style="margin-top:14px">
-                  <button class="btn btn-primary" id="btnPickDataDir"><svg class="ic"><use href="#i-folder"/></svg>اختيار مجلد البيانات</button>
-                  <button class="btn btn-ghost" id="btnOpenDataDir"><svg class="ic"><use href="#i-out"/></svg>فتح المجلد</button>
-                  <button class="btn btn-ghost" id="btnResetDataDir"><svg class="ic"><use href="#i-refresh"/></svg>العودة للمجلد الافتراضي</button>
-                  <button class="btn btn-ghost" id="btnExportDataDir"><svg class="ic"><use href="#i-archive"/></svg>حفظ نسخة في مكان آخر</button>
+                  <button class="btn btn-primary" id="btnPickDataDir"><span class="t3d xs tone-warn"><svg class="ic"><use href="#i-folder"/></svg></span><span class="btn-txt">اختيار مجلد البيانات</span></button>
+                  <button class="btn btn-ghost" id="btnOpenDataDir"><span class="t3d xs tone-gout"><svg class="ic"><use href="#i-out"/></svg></span><span class="btn-txt">فتح المجلد</span></button>
+                  <button class="btn btn-ghost" id="btnResetDataDir"><span class="t3d xs tone-info"><svg class="ic"><use href="#i-refresh"/></svg></span><span class="btn-txt">العودة للمجلد الافتراضي</span></button>
+                  <button class="btn btn-ghost" id="btnExportDataDir"><span class="t3d xs tone-plain"><svg class="ic"><use href="#i-archive"/></svg></span><span class="btn-txt">حفظ نسخة في مكان آخر</span></button>
                 </div>
                 <p class="foot-note">تُنسخ قاعدة البيانات إلى المجلد الجديد فوراً، وتبقى النسخة القديمة سليمة كنسخة احتياطية. التغيير يُطبَّق بالكامل عند إعادة تشغيل البرنامج — بياناتك لا تُفقد أبداً.</p>
               </div>
@@ -724,11 +724,12 @@
               <div class="card-head"><h3>المزامنة السحابية</h3><span class="badge accent">بريدك فقط</span></div>
               <div class="card-body">
                 <div class="field" style="margin-bottom:12px">
-                  <span class="field-label"><span class="field-ic"><svg class="ic"><use href="#i-mail"/></svg></span><span class="field-txt">بريدك على السحابة</span></span>
+                  <span class="field-label"><span class="field-ic t3d xs tone-info"><svg class="ic"><use href="#i-mail"/></svg></span><span class="field-txt">بريدك على السحابة</span></span>
                   <div class="sync-row">
                     <input class="input" id="cloudEmail" type="email" placeholder="name@gmail.com" />
-                    <button class="btn btn-primary" id="btnCloudSync"><svg class="ic"><use href="#i-cloud"/></svg>مزامنة الآن</button>
+                    <button class="btn btn-primary" id="btnCloudSync"><span class="t3d xs tone-info"><svg class="ic"><use href="#i-cloud"/></svg></span><span class="btn-txt">مزامنة الآن</span></button>
                   </div>
+                  <div id="cloudNote" class="cloud-note"></div>
                 </div>
                 <dl class="info" id="cloudInfo"></dl>
                 <div id="cloudClients" style="margin-top:12px"></div>
@@ -756,9 +757,9 @@
                   </div>
                 </div>
                 <div class="row-btns" style="margin-top:16px">
-                  <button class="btn btn-primary" id="btnCheckUpdate"><svg class="ic"><use href="#i-swap"/></svg>فحص التحديثات</button>
-                  <button class="btn btn-gold hidden" id="btnDownloadUpdate"><svg class="ic"><use href="#i-print"/></svg>تحميل التحديث</button>
-                  <button class="btn btn-gold hidden" id="btnInstallUpdate"><svg class="ic"><use href="#i-check"/></svg>تثبيت وإعادة التشغيل</button>
+                  <button class="btn btn-primary" id="btnCheckUpdate"><span class="t3d xs tone-gout"><svg class="ic"><use href="#i-swap"/></svg></span><span class="btn-txt">فحص التحديثات</span></button>
+                  <button class="btn btn-gold hidden" id="btnDownloadUpdate"><span class="t3d xs tone-plain"><svg class="ic"><use href="#i-print"/></svg></span><span class="btn-txt">تحميل التحديث</span></button>
+                  <button class="btn btn-gold hidden" id="btnInstallUpdate"><span class="t3d xs tone-ok"><svg class="ic"><use href="#i-check"/></svg></span><span class="btn-txt">تثبيت وإعادة التشغيل</span></button>
                   <button class="btn btn-ghost" id="btnSimulateUpdate">معاينة شريط التقدم</button>
                 </div>
               </div>
@@ -781,7 +782,7 @@
   <!-- ===================== status bar ===================== -->
   <footer class="statusbar">
     <span class="sb-item"><b>SAM</b> 775158678</span>
-    <span class="sb-item dim" id="sbPhase">V4 — مجلد بيانات خاص · مزامنة سحابية · دليل مدمج · تقارير في نافذة</span>
+    <span class="sb-item dim" id="sbPhase">V5 — تصميم مضغوط · أيقونات 3D · معاينة طباعة · مزامنة Google Drive</span>
     <span class="sb-spacer"></span>
     <span class="sb-item dim" id="sbDb">—</span>
     <span class="sb-item dim" id="sbVer">Electron —</span>

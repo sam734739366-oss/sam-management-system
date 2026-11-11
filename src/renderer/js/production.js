@@ -17,6 +17,13 @@
   const state = { items: [], warehouses: [], parties: [], issues: [], receipts: [], tolling: [], scrap: [], archive: [], routing: {}, prodDocs: [], gap: null, tab: 'issues' };
   let rt = null;
 
+  /* An edit carries today's date, never the date the record was first made.
+     The original date stays visible so nothing is lost. */
+  function dateHint(original) {
+    if (!original || original === SamUI.today()) return '';
+    return `تاريخ الإنشاء الأصلي: ${original} — التعديل يُسجَّل بتاريخ اليوم`;
+  }
+
   const itemById = (id) => state.items.find((i) => i.id === Number(id)) || null;
   const whName = (id) => (state.warehouses.find((w) => w.id === Number(id)) || {}).name || 'غير محدد';
   const whOptions = () => state.warehouses.filter((w) => w.is_active)
@@ -94,7 +101,7 @@
     const grid = el('div', 'form-grid');
 
     const docNo = input({ value: editing ? row.doc_no : '', placeholder: 'يُولَّد تلقائياً' });
-    const docDate = input({ type: 'date', value: editing ? row.doc_date : new Date().toISOString().slice(0, 10) });
+    const docDate = input({ type: 'date', value: SamUI.today() });
     const cartons = numInput({ value: editing ? row.cartons : 0, placeholder: '0' });
     const pieces = numInput({ value: editing ? row.pieces : 0, placeholder: '0' });
     const note = input({ value: editing ? row.note || '' : '', placeholder: 'ملاحظة' });
@@ -124,7 +131,7 @@
     noteField.classList.add('full');
     grid.append(
       field('رقم الصرف', docNo, '', 'i-hash'),
-      field('التاريخ', docDate, '', 'i-calendar'),
+      field('التاريخ', docDate, editing ? dateHint(row.doc_date) : '', 'i-calendar'),
       field('المادة الخام', itemHost, '', 'i-box'),
       field('مخزن المصدر', whHost, '', 'i-warehouse'),
       field('عدد الكراتين', cartons, 'معلوماتي', 'i-archive-box'),
@@ -253,7 +260,7 @@
     ov.appendChild(box);
 
     const docNo = input({ value: doc ? doc.doc_no : '', placeholder: 'يُولَّد تلقائياً' });
-    const docDate = input({ type: 'date', value: doc ? doc.doc_date : new Date().toISOString().slice(0, 10) });
+    const docDate = input({ type: 'date', value: SamUI.today() });
     const cartonNo = input({ value: doc ? doc.carton_no : '', placeholder: 'مثال: C-2026-10-301' });
     const cartonPieces = numInput({ value: doc ? doc.carton_pieces : 0, placeholder: '0' });
     const note = input({ value: doc ? doc.note || '' : '', placeholder: 'ملاحظات' });
@@ -288,7 +295,7 @@
     const grid = el('div', 'ed-grid');
     grid.append(
       cell('رقم التقرير', docNo),
-      cell('التاريخ', docDate),
+      (() => { const c = cell('التاريخ', docDate); const h = dateHint(doc && doc.doc_date); if (h) c.appendChild(el('em', 'hint-txt', h)); return c; })(),
       cell('رقم الكرتونة', cartonNo),
       cell('المادة الخام', rawHost),
       cell('حبات الكرتونة (المتوقع)', cartonPieces),
@@ -297,7 +304,7 @@
     );
     body.appendChild(grid);
 
-    body.appendChild(el('div', 'ed-sec', `${icon('i-factory')}<span>المنتجات التامة — الكيس × وحداته − الكسر = الجيد</span>`));
+    body.appendChild(el('div', 'ed-sec', `${SamUI.iconTile('i-factory', 'tone-produce', 'sm')}<span>المنتجات التامة — الكيس × وحداته − الكسر = الجيد</span>`));
     const linesTbl = el('table', 'tbl lines-tbl');
     linesTbl.innerHTML = `<thead><tr>
         <th style="width:26%">المنتج التام</th>
@@ -315,7 +322,7 @@
     const totals = el('div', 'totals-bar');
     body.appendChild(totals);
 
-    const addRow = el('button', 'btn btn-sm btn-ghost', `${icon('i-plus')}<span>إضافة منتج</span>`);
+    const addRow = el('button', 'btn btn-sm btn-ghost', `${SamUI.iconTile('i-plus', 'tone-ok', 'xs')}<span class="btn-txt">إضافة منتج</span>`);
     addRow.type = 'button';
     addRow.addEventListener('click', () => addLine());
     body.appendChild(el('div', 'row-add').appendChild(addRow).parentNode);
@@ -411,7 +418,7 @@
     cartonPieces.addEventListener('input', recompute);
 
     const mkBtn = (act, label, cls, ic, kbd) => {
-      const b = el('button', `btn ${cls}`, `${ic ? icon(ic) : ''}<span>${esc(label)}</span>${kbd ? `<span class="kbd">${kbd}</span>` : ''}`);
+      const b = el('button', `btn ${cls}`, `${ic ? SamUI.iconTile(ic, null, 'xs') : ''}<span class="btn-txt">${esc(label)}</span>${kbd ? `<span class="kbd">${kbd}</span>` : ''}`);
       b.type = 'button';
       b.dataset.act = act;
       b.addEventListener('click', () => (act === 'cancel' ? close(null) : submit(act)));
@@ -445,7 +452,7 @@
         }))
       };
       if (!payload.lines.length) {
-        errBar.innerHTML = `${icon('i-warn')}<span>أضف منتجاً تاماً واحداً على الأقل</span>`;
+        errBar.innerHTML = `${SamUI.iconTile('i-warn', 'tone-adjust', 'xs')}<span>أضف منتجاً تاماً واحداً على الأقل</span>`;
         return;
       }
       // consuming more raw than we have is allowed, but never silently
@@ -470,7 +477,7 @@
         close(saved);
         if (action === 'print') printReceipt(saved.id);
       } catch (e) {
-        errBar.innerHTML = `${icon('i-warn')}<span>${esc(e.message)}</span>`;
+        errBar.innerHTML = `${SamUI.iconTile('i-warn', 'tone-adjust', 'xs')}<span>${esc(e.message)}</span>`;
       } finally {
         foot.querySelectorAll('.btn').forEach((b) => (b.disabled = false));
       }
@@ -639,7 +646,7 @@
     const grid = el('div', 'form-grid');
 
     const docNo = input({ value: doc ? doc.doc_no : '', placeholder: 'يُولَّد تلقائياً' });
-    const docDate = input({ type: 'date', value: doc ? doc.doc_date : new Date().toISOString().slice(0, 10) });
+    const docDate = input({ type: 'date', value: SamUI.today() });
     const piecesIn = numInput({ value: doc ? doc.pieces_in : 0, placeholder: '0' });
     const bagsIn = numInput({ value: doc ? doc.bags_in : 0, placeholder: '0' });
     const note = input({ value: doc ? doc.note || '' : '', placeholder: 'ملاحظات' });
@@ -670,7 +677,7 @@
 
     grid.append(
       field('رقم المستند', docNo, '', 'i-hash'),
-      field('التاريخ', docDate, '', 'i-calendar'),
+      field('التاريخ', docDate, doc ? dateHint(doc.doc_date) : '', 'i-calendar'),
       field('العميل (صاحب المادة)', partyHost, '', 'i-user'),
       field('المادة الخام', rawHost, '', 'i-box'),
       field('مخزن الاستلام', whHost, '', 'i-warehouse'),
@@ -680,7 +687,7 @@
     );
     body.appendChild(grid);
 
-    body.appendChild(el('div', 'form-sec', `${icon('i-tolling')}<span>ما سُلِّم للعميل وما هدر</span>`));
+    body.appendChild(el('div', 'form-sec', `${SamUI.iconTile('i-tolling', 'tone-produce', 'xs')}<span>ما سُلِّم للعميل وما هدر</span>`));
     const tbl = el('table', 'tbl lines-tbl');
     tbl.innerHTML = `<thead><tr>
       <th style="width:36%">المنتج المنفوخ</th><th style="width:80px">الوحدة</th>
@@ -691,7 +698,7 @@
 
     const out = el('div', 'totals-bar');
     body.appendChild(out);
-    const addBtn = el('button', 'btn btn-sm btn-ghost', `${icon('i-plus')}<span>إضافة سطر</span>`);
+    const addBtn = el('button', 'btn btn-sm btn-ghost', `${SamUI.iconTile('i-plus', 'tone-ok', 'xs')}<span class="btn-txt">إضافة سطر</span>`);
     addBtn.type = 'button';
     addBtn.addEventListener('click', () => addLine());
     body.appendChild(el('div', 'row-add').appendChild(addBtn).parentNode);
@@ -974,7 +981,7 @@
     const grid = el('div', 'form-grid');
 
     const docNo = input({ value: editing ? row.doc_no : '', placeholder: 'يُولَّد تلقائياً' });
-    const docDate = input({ type: 'date', value: editing ? row.doc_date : new Date().toISOString().slice(0, 10) });
+    const docDate = input({ type: 'date', value: SamUI.today() });
     const shift = input({ value: editing ? row.shift || '' : '', placeholder: 'مثال: نهارية' });
     const machine = input({ value: editing ? row.machine || '' : '', placeholder: 'مثال: خط 2' });
     const cartons = numInput({ value: editing ? row.cartons : 0, placeholder: '0' });
@@ -992,7 +999,7 @@
 
     grid.append(
       field('رقم السجل', docNo, '', 'i-hash'),
-      field('التاريخ', docDate, '', 'i-calendar'),
+      field('التاريخ', docDate, editing ? dateHint(row.doc_date) : '', 'i-calendar'),
       field('الوردية', shift, '', 'i-day'),
       field('الماكينة', machine, '', 'i-gear'),
       field('المادة الخام', rawHost, '', 'i-box'),

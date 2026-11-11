@@ -33,10 +33,10 @@
     const box = el('div', 'updwin-window');
 
     const head = el('div', 'updwin-head');
-    head.innerHTML = `<span class="uw-badge">${icon('i-update')}</span>
+    head.innerHTML = `${SamUI.plate('uw-badge', 'i-update', 'tone-ok', 'xl')}
       <div class="uw-txt"><h3>تحديث البرنامج</h3>
       <span>نسخة احتياطية تلقائية قبل التثبيت — بياناتك لا تُمس</span></div>`;
-    const x = el('button', 'updwin-x', icon('i-x'));
+    const x = el('button', 'updwin-x t3d tone-adjust xs', icon('i-x'));
     x.type = 'button';
     x.title = 'إغلاق';
     head.appendChild(x);
@@ -71,7 +71,7 @@
       .forEach(([key, label, ic]) => {
         const b = el('button', 'btn btn-ghost');
         b.type = 'button';
-        b.innerHTML = `${icon(ic)}<span>${esc(label)}</span>`;
+        b.innerHTML = `${SamUI.iconTile(ic, null, 'xs')}<span class="btn-txt">${esc(label)}</span>`;
         b.addEventListener('click', () => run(key));
         btns[key] = b;
         foot.appendChild(b);

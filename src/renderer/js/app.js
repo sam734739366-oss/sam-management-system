@@ -6,20 +6,17 @@
 
 const { el, icon, esc, toast, bindRow, modal, confirmHardDelete } = SamUI;
 
-/** what V4 changed — shown on the dashboard so the update is self-documenting */
-const V4_CHANGES = [
-  { t: 'مجلد البيانات: تختاره بنفسك — والنسخة القديمة تبقى سليمة كنسخة احتياطية', view: 'settings' },
-  { t: 'المزامنة السحابية: بريدك الإلكتروني فقط — البرنامج يكتشف Google Drive ويكتب النسخة', view: 'settings' },
-  { t: 'دليل الاستخدام داخل البرنامج: زر «؟» في شريط العنوان يشرح كل شيء', view: null },
-  { t: 'نافذة التحديث: الحالة والنسبة والسرعة والحجم وأزرار فحص/تحميل/تثبيت', view: null },
-  { t: 'التقارير تفتح في نافذة مستقلة: معاينة ثم تصدير أو طباعة — لا داخل الشاشة', view: 'reports' },
-  { t: 'سند استلام الإنتاج يزيد رصيد المنتج التام في المخزن الذي تختاره، ويطبع تصريح خروج', view: 'production' },
-  { t: 'قسم العجز والتالف: مستقل تماماً بلا أي أثر على المخزون، وله تقريره الخاص', view: 'production' },
-  { t: 'الإدخال الذكي: القائمة تظهر بالضغط على العلامة، وتبقى مفتوحة بعد اختيار الصنف', view: 'transactions' },
-  { t: 'هوية بصرية لكل نوع مستند: لون وأيقونة وترويسة مختلفة — لا لبس في الترويسة', view: 'transactions' },
-  { t: 'أيقونة ثابتة أمام كل خانة إدخال — تعرف معناها قبل أن تقرأها', view: 'items' },
-  { t: 'الطباعة على ورق A4 بهوامش صغيرة، عمودي أو أفقي حسب عرض التقرير', view: 'reports' },
-  { t: 'تصدير Excel حقيقي بخط واضح واتجاه صحيح — لا صورة ولا نص مبتور', view: 'reports' }
+/** what V5 changed — shown on the dashboard so the update is self-documenting */
+const V5_CHANGES = [
+  { t: 'التصميم انضغط: خطوط ومربعات أصغر في كل الشاشات — النصوص واضحة والمساحات مستعملة', view: null },
+  { t: 'كل أيقونة صارت ثلاثية الأبعاد وملوّنة بلونها — والمربعات صغيرة ومنظمة', view: null },
+  { t: 'الصفحات مرنة: تتكيّف مع عرض الشاشة بلا تمرير أفقي ولا عناصر مقصوصة', view: null },
+  { t: 'معاينة الطباعة قبل الطباعة: ترى الورقة كما ستخرج تماماً، مع تكبير وتصغير', view: 'reports' },
+  { t: 'الطباعة على A4 واضحة وداكنة، والتقرير يملأ صفحة واحدة مرتّبة', view: 'reports' },
+  { t: 'التصريح الواحد بنصف ورقة A5 بالعرض — تصريحتان في ورقة واحدة', view: 'transactions' },
+  { t: 'صفحة إدخال الصنف: كل المربعات متساوية في العرض والارتفاع ومنظمة', view: 'items' },
+  { t: 'تعديل أي مستند يسجّل بتاريخ اليوم — وتاريخ الإنشاء الأصلي يبقى محفوظاً', view: 'transactions' },
+  { t: 'مزامنة Google Drive: تكتب بريدك فقط فيكتشف البرنامج حسابك ويكتب النسخة فيه', view: 'settings' }
 ];
 
 const VIEW_TITLE = {
@@ -146,7 +143,7 @@ function fillUserChip() {
 function renderChanges() {
   const host = document.getElementById('roadmap');
   host.innerHTML = '';
-  V4_CHANGES.forEach((c, i) => {
+  V5_CHANGES.forEach((c, i) => {
     const li = el('li', 'done');
     li.innerHTML = `<span class="n">${i + 1}</span><span>${esc(c.t)}</span><span class="st">${c.view ? 'افتح الشاشة' : 'جاهز'}</span>`;
     if (c.view) {

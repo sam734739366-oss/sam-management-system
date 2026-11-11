@@ -5,3 +5,9 @@ dist-pub/
 *.log
 .DS_Store
 Thumbs.db
+
+/* بيانات العميل — قاعدة بيانات حقيقية لا تُرفع إلى GitHub أبداً */
+نسخة بيانات/
+*.db
+*.db-shm
+*.db-wal

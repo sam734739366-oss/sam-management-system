@@ -327,6 +327,41 @@
   }
 
   /* ---------------- the cloud sync ---------------- */
+
+  /**
+   * The live note under the e-mail field: where the copy will land and
+   * whether the typed address matches the account that is signed in.
+   */
+  function refreshCloudNote() {
+    const c = state.cloud || {};
+    const host = document.getElementById('cloudNote');
+    if (!host) return;
+    const field = document.getElementById('cloudEmail');
+    const typed = ((field && field.value) || c.email || '').trim().toLowerCase();
+    const clients = (c.clients || []).filter((cl) => cl.installed !== false);
+    const suggested = c.suggestedClient || null;
+    const target = clients.find((cl) => suggested && cl.id === suggested.id) || clients[0] || null;
+
+    if (!target) {
+      host.className = 'cloud-note';
+      host.textContent = '';
+      return;
+    }
+    if (!target.root) {
+      host.className = 'cloud-note warn';
+      host.textContent = `${target.label} مثبّت على الجهاز لكنه لم ينشئ مجلد التزامن بعد — افتحه مرة واحدة وسجّل الدخول بحسابك ثم عد هنا.`;
+      return;
+    }
+    const acct = (target.account || '').toLowerCase();
+    if (typed && acct && typed !== acct) {
+      host.className = 'cloud-note warn';
+      host.textContent = `الحساب المسجّل في ${target.label} هو «${target.account}» — سيُرفع الملف إلى هذا الحساب.`;
+      return;
+    }
+    host.className = 'cloud-note ok';
+    host.innerHTML = `ستُنسخ البيانات إلى <code>${esc(target.root)}\\SAM-Backups</code> — ويرفعها ${esc(target.label)} إلى حسابك.`;
+  }
+
   async function loadCloud() {
     try {
       const res = await sam.cloud.status();
@@ -334,48 +369,110 @@
       const c = res.data || {};
       state.cloud = c;
       const email = document.getElementById('cloudEmail');
-      if (email && !email.value && c.email) email.value = c.email;
+      const clients = c.clients || [];
+      const gdrive = clients.find((cl) => cl.id === 'gdrive');
+
+      /* the signed-in account — the user does not even have to type it */
+      if (email && !email.value) {
+        email.value = c.email || (gdrive && gdrive.account) || '';
+        if (email.value && !email.dataset.touched) email.classList.add('is-auto');
+      }
+      if (email && !email.dataset.cloudBound) {
+        email.dataset.cloudBound = '1';
+        email.addEventListener('input', () => {
+          email.dataset.touched = '1';
+          email.classList.remove('is-auto');
+          refreshCloudNote();
+        });
+      }
+
+      /* the client the typed e-mail would use — no picking needed */
+      const suggested = c.suggestedClient || null;
+      const target = clients.find((cl) => suggested && cl.id === suggested.id)
+        || clients.find((cl) => cl.id === 'gdrive')
+        || null;
 
       document.getElementById('cloudInfo').innerHTML = rows([
         ['البريد المحفوظ', c.email || '—'],
-        ['برنامج السحابة', c.activeClient ? c.activeClient.label : (c.clients && c.clients.length ? c.clients[0].label : 'لا يوجد على هذا الجهاز')],
-        ['الحساب المسجّل', c.account || '—'],
-        ['آخر مزامنة', fmtStamp(c.last)]
-      ]);
+        ['سيُستخدم مع بريدك', suggested ? suggested.label : (c.activeClient ? c.activeClient.label : '—')],
+        ['الحساب المسجّل', (target && target.account) || c.account || '—'],
+        ['مجلد النسخ', target && target.root ? target.root + '\\SAM-Backups' : '—'],
+        ['آخر مزامنة', fmtStamp(c.last)],
+        c.lastError ? ['آخر خطأ', c.lastError] : null
+      ].filter(Boolean));
 
       const host = document.getElementById('cloudClients');
       host.innerHTML = '';
-      if (!c.clients || !c.clients.length) {
-        const note = el('p', 'foot-note', 'لم يُعثر على Google Drive أو OneDrive أو Dropbox على هذا الجهاز. ثبّت واحداً منها وسجّل الدخول بحسابك ثم أعد المحاولة.');
+      const installed = clients.filter((cl) => cl.installed !== false);
+      if (!installed.length) {
+        const note = el('p', 'foot-note', 'لم يُعثر على Google Drive أو OneDrive أو Dropbox على هذا الجهاز. ثبّت واحداً منها وسجّل الدخول بحسابك ثم اضغط «مزامنة الآن».');
         const b = el('button', 'btn btn-primary');
         b.type = 'button';
-        b.innerHTML = `${icon('i-cloud')}<span>تحميل Google Drive للكمبيوتر</span>`;
+        b.innerHTML = `${SamUI.iconTile('i-cloud', 'tone-info', 'xs')}<span class="btn-txt">تحميل Google Drive للكمبيوتر</span>`;
         b.addEventListener('click', async () => {
           const r = await sam.cloud.installPage('gdrive');
           if (r && r.ok) toast('فُتحت صفحة التحميل في المتصفح', 'ok');
         });
         host.append(note, b);
+        refreshCloudNote();
         return;
       }
+
+      /* one row per installed client — a shortcut, not a requirement */
       const list = el('div', 'row-btns');
-      c.clients.forEach((cl) => {
+      installed.forEach((cl) => {
         const b = el('button', 'col-check');
         b.type = 'button';
-        b.innerHTML = `${icon('i-cloud')}<span>${esc(cl.label)} — ${esc(cl.account || cl.root)}</span>`;
+        b.innerHTML = `${SamUI.iconTile('i-cloud', cl.id === 'gdrive' ? 'tone-info' : 'tone-plain', 'xs')}<span class="btn-txt">${esc(cl.label)}${cl.account ? ` — ${esc(cl.account)}` : ''}</span>`;
         b.addEventListener('click', () => doCloudSync(cl.id));
         list.appendChild(b);
       });
       host.appendChild(list);
+
+      /* open the folder the copies land in */
+      if (target && target.root) {
+        const openBtn = el('button', 'btn btn-ghost btn-sm');
+        openBtn.type = 'button';
+        openBtn.innerHTML = `${SamUI.iconTile('i-out', 'tone-gout', 'xs')}<span class="btn-txt">فتح مجلد النسخ</span>`;
+        openBtn.addEventListener('click', () => sam.app.openPath(target.root));
+        host.appendChild(openBtn);
+      }
+
+      /* the automatic backup on every start */
+      const autoRow = el('label', 'check-row');
+      autoRow.style.marginTop = '12px';
+      const autoBox = document.createElement('input');
+      autoBox.type = 'checkbox';
+      autoBox.checked = c.auto !== false;
+      autoBox.id = 'cloudAuto';
+      autoBox.addEventListener('change', async () => {
+        const r = await sam.cloud.auto(autoBox.checked);
+        if (r && r.ok) toast(autoBox.checked ? 'ستتم المزامنة تلقائياً عند كل تشغيل' : 'أُوقفت المزامنة التلقائية', 'ok');
+      });
+      autoRow.append(autoBox, document.createTextNode('نسخة تلقائية إلى سحابتي عند كل تشغيل للبرنامج'));
+      host.appendChild(autoRow);
+
+      refreshCloudNote();
     } catch (e) { toast(e.message, 'bad'); }
   }
 
   async function doCloudSync(clientId) {
-    const email = (document.getElementById('cloudEmail').value || '').trim();
+    const field = document.getElementById('cloudEmail');
+    const email = (field.value || '').trim();
     if (!email) return toast('اكتب بريدك الإلكتروني أولاً', 'warn');
+    const c = state.cloud || {};
+    const clients = (c.clients || []).filter((cl) => cl.installed !== false);
+    const picked = clients.find((cl) => cl.id === clientId)
+      || clients.find((cl) => (cl.accounts || []).some((a) => a.toLowerCase() === email.toLowerCase()))
+      || clients.find((cl) => c.suggestedClient && cl.id === c.suggestedClient.id)
+      || clients[0];
+    const folder = picked && picked.root ? picked.root + '\\SAM-Backups' : '';
     const ok = await modal({
       title: 'مزامنة البيانات إلى السحابة',
       body: `<p>ستُنسخ قاعدة البيانات إلى مجلد السحابة على جهازك، ويرفعها برنامج السحابة إلى حسابك.</p>
         <p style="margin-top:8px">البريد: <b>${esc(email)}</b></p>
+        ${picked ? `<p style="margin-top:6px">البرنامج: <b>${esc(picked.label)}</b>${picked.account ? ` — الحساب المسجّل: <b>${esc(picked.account)}</b>` : ''}</p>` : ''}
+        ${folder ? `<p style="margin-top:6px;direction:ltr;text-align:start">المجلد: <b>${esc(folder)}</b></p>` : ''}
         <p style="margin-top:8px;color:var(--muted-fg)">النسخة عملية及市场كة — بياناتك الأصلية لا تُمس.</p>`,
       actions: [
         { label: 'ابدأ المزامنة', value: 'yes', kind: 'btn-primary', icon: 'i-cloud' },
