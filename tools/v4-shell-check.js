@@ -178,7 +178,11 @@ app.whenReady().then(async () => {
   })()`);
   check('the guide window opens', guide !== null, guide && guide.title);
   check('the guide is titled «دليل الاستخدام»', guide && guide.title === 'دليل الاستخدام', guide && guide.title);
-  check('the guide lists its seven topics', guide && guide.topics.length === 7, guide && guide.topics);
+  /* eight topics now: the quick start, the documents, the edit, the production,
+     the tolling of others, the reports, the data and the update */
+  check('the guide lists its eight topics', guide && guide.topics.length === 8, guide && guide.topics);
+  check('the guide tells the customer about the tolling of others',
+    guide && guide.topics.indexOf('النفخ للغير') >= 0, guide && guide.topics);
   check('every topic carries an icon', guide && guide.icons.every((i) => !!i && i.charAt(0) === '#'), guide && guide.icons);
   check('exactly one topic is active', guide && guide.active === 1, guide && guide.active);
   check('the first page shows the quick start', guide && guide.head === 'البداية السريعة', guide && guide.head);

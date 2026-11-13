@@ -327,7 +327,8 @@ app.whenReady().then(async () => {
   await sleep(1300);
   const editDates = await js(`(() => {
     const inp = document.querySelector('.modal.editor input[type=date]');
-    const hint = document.querySelector('.modal.editor .hint-txt');
+    /* the hint of the DATE cell — the editor carries other hints too */
+    const hint = document.querySelector('.modal.editor .date-cell .hint-txt');
     return { value: inp ? inp.value : null, today: SamUI.today(), hint: hint ? hint.textContent : null };
   })()`);
   check('editing an old document shows today, not the old date', editDates.value === editDates.today, editDates);

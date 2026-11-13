@@ -218,7 +218,7 @@ async function rendererTests() {
     visible: !document.getElementById('set-update').classList.contains('hidden')
   }))()`);
   check('the update screen opens', screen.visible === true, screen);
-  check('the screen shows the published version', /0\.5\.0/.test(screen.info || ''), screen.info);
+  check('the screen shows the published version', !!PUBLISHED && screen.info.indexOf(PUBLISHED) >= 0, { want: PUBLISHED, info: screen.info });
   const APP_VERSION = require(path.join(ROOT, 'package.json')).version;
   check('the screen shows the running version', new RegExp('v' + APP_VERSION.replace(/\./g, '\\.')).test(screen.info || ''), screen.info);
   check('the bar is at zero before any check', screen.percent === '0.0%', screen.percent);

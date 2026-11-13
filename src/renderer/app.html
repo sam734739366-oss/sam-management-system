@@ -313,7 +313,7 @@
         <div class="view-head">
           <div>
             <h2>العمليات</h2>
-            <p class="sub">مشتريات · مبيعات · مرتجع مبيعات · مرتجع مشتريات · نقل بين المخازن · استلام وتوريد الإنتاج · إذن دخول وإذن خروج · تسوية جرد</p>
+            <p class="sub">مشتريات · مبيعات · مرتجع مبيعات · مرتجع مشتريات · نقل بين المخازن · استلام المنتج التام وصرف الخام إليها · إذن دخول وإذن خروج · تسوية جرد</p>
           </div>
           <div class="view-actions">
             <label class="search"><svg class="ic"><use href="#i-search"/></svg><input id="docSearch" class="input" placeholder="بحث برقم المستند أو الطرف…" /></label>
@@ -342,8 +342,8 @@
           <button class="tab" data-kind="sale_return"><span class="t3d xs tone-sreturn"><svg class="ic"><use href="#i-return"/></svg></span><span class="btn-txt">مرتجع مبيعات</span></button>
           <button class="tab" data-kind="purchase_return"><span class="t3d xs tone-pretn"><svg class="ic"><use href="#i-return"/></svg></span><span class="btn-txt">مرتجع مشتريات</span></button>
           <button class="tab" data-kind="transfer"><span class="t3d xs tone-move"><svg class="ic"><use href="#i-truck"/></svg></span><span class="btn-txt">نقل بين المخازن</span></button>
-          <button class="tab" data-kind="prod_receipt"><span class="t3d xs tone-produce"><svg class="ic"><use href="#i-factory"/></svg></span><span class="btn-txt">سند استلام الإنتاج</span></button>
-          <button class="tab" data-kind="prod_issue"><span class="t3d xs tone-issue"><svg class="ic"><use href="#i-issue"/></svg></span><span class="btn-txt">سند توريد الإنتاج</span></button>
+          <button class="tab" data-kind="prod_receipt"><span class="t3d xs tone-produce"><svg class="ic"><use href="#i-factory"/></svg></span><span class="btn-txt">استلام المنتج التام</span></button>
+          <button class="tab" data-kind="prod_issue"><span class="t3d xs tone-issue"><svg class="ic"><use href="#i-issue"/></svg></span><span class="btn-txt">صرف خام إلى الإنتاج</span></button>
           <button class="tab" data-kind="gate_in"><span class="t3d xs tone-gin"><svg class="ic"><use href="#i-gate-in"/></svg></span><span class="btn-txt">إذن إدخال</span></button>
           <button class="tab" data-kind="gate_out"><span class="t3d xs tone-gout"><svg class="ic"><use href="#i-gate-out"/></svg></span><span class="btn-txt">إذن خروج</span></button>
           <button class="tab" data-kind="adjustment"><span class="t3d xs tone-adjust"><svg class="ic"><use href="#i-scale"/></svg></span><span class="btn-txt">تسوية جرد</span></button>
@@ -371,13 +371,13 @@
         <div class="view-head">
           <div>
             <h2>الإنتاج</h2>
-            <p class="sub">سند استلام الإنتاج يزيد الرصيد · سند توريد الإنتاج يخفضه (البضاعة تخرج من المخزن) · التقرير اليومي توثيقي بلا أثر · العجز والتالف قسم مستقل</p>
+            <p class="sub">«استلام المنتج التام» يزيد الرصيد · «صرف خام إلى الإنتاج» يخفضه (البضاعة تخرج من المخزن) · التقرير اليومي توثيقي بلا أثر · العجز والتالف قسم مستقل</p>
           </div>
           <div class="view-actions">
-            <button class="btn btn-primary" id="btnNewProdReceipt"><span class="t3d xs tone-produce"><svg class="ic"><use href="#i-factory"/></svg></span><span class="btn-txt">سند استلام الإنتاج</span></button>
-            <button class="btn btn-primary" id="btnNewProdIssue"><span class="t3d xs tone-issue"><svg class="ic"><use href="#i-issue"/></svg></span><span class="btn-txt">سند توريد الإنتاج</span></button>
-            <button class="btn btn-ghost" id="btnNewIssue"><span class="t3d xs tone-gout"><svg class="ic"><use href="#i-swap"/></svg></span><span class="btn-txt">صرف خام جديد</span></button>
-            <button class="btn btn-ghost" id="btnNewTolling"><span class="t3d xs tone-produce"><svg class="ic"><use href="#i-tolling"/></svg></span><span class="btn-txt">نفخ للغير</span></button>
+            <button class="btn btn-primary" id="btnNewProdReceipt"><span class="t3d xs tone-produce"><svg class="ic"><use href="#i-factory"/></svg></span><span class="btn-txt">استلام المنتج التام</span></button>
+            <button class="btn btn-primary" id="btnNewProdIssue"><span class="t3d xs tone-issue"><svg class="ic"><use href="#i-issue"/></svg></span><span class="btn-txt">صرف خام إلى الإنتاج</span></button>
+            <button class="btn btn-ghost hidden" id="btnNewIssue"><span class="t3d xs tone-gout"><svg class="ic"><use href="#i-swap"/></svg></span><span class="btn-txt">صرف خام جديد</span></button>
+            <button class="btn btn-ghost" id="btnNewTolling"><span class="t3d xs tone-produce"><svg class="ic"><use href="#i-tolling"/></svg></span><span class="btn-txt">استلام خام عميل</span></button>
             <button class="btn btn-ghost" id="btnNewReceipt"><span class="t3d xs tone-produce"><svg class="ic"><use href="#i-factory"/></svg></span><span class="btn-txt">تقرير إنتاج يومي</span></button>
             <button class="btn btn-ghost" id="btnNewArchive"><span class="t3d xs tone-plain"><svg class="ic"><use href="#i-archive"/></svg></span><span class="btn-txt">سجل أرشيف</span></button>
           </div>
@@ -389,7 +389,7 @@
             <button class="btn btn-sm btn-ghost" id="btnSaveRouting"><span class="t3d xs tone-ok"><svg class="ic"><use href="#i-check"/></svg></span><span class="btn-txt">حفظ التوجيه</span></button>
           </div>
           <div class="card-body">
-            <p class="foot-note" style="margin:0 0 12px">التوجيه يُستخدم في زر «تعبئة المخازن من التوجيه» داخل «سند استلام الإنتاج»: السليم ← مخزن السليم، والتالف ← مخزن التالف (أو مخزن الخام التالف لصنف خام). لا يُملأ أي حقل تلقائياً — التعبئة بضغط الزر فقط.</p>
+            <p class="foot-note" style="margin:0 0 12px">التوجيه يُستخدم في زر «تعبئة المخازن من التوجيه» داخل «استلام المنتج التام»: السليم ← مخزن السليم، والتالف ← مخزن التالف (أو مخزن الخام التالف لصنف خام). لا يُملأ أي حقل تلقائياً — التعبئة بضغط الزر فقط.</p>
             <div class="routing-grid">
               <div class="rt">
                 <span class="rt-k">السليم</span>
@@ -418,11 +418,11 @@
 
         <div class="tabs" id="prodTabs">
           <button class="tab active" data-tab="issues">صرف المواد الخام</button>
-          <button class="tab" data-tab="prodreceipts"><span class="t3d xs tone-produce"><svg class="ic"><use href="#i-factory"/></svg></span><span class="btn-txt">سند استلام الإنتاج</span></button>
-          <button class="tab" data-tab="prodissues"><span class="t3d xs tone-issue"><svg class="ic"><use href="#i-issue"/></svg></span><span class="btn-txt">سند توريد الإنتاج</span></button>
+          <button class="tab" data-tab="prodreceipts"><span class="t3d xs tone-produce"><svg class="ic"><use href="#i-factory"/></svg></span><span class="btn-txt">استلام المنتج التام</span></button>
+          <button class="tab" data-tab="prodissues"><span class="t3d xs tone-issue"><svg class="ic"><use href="#i-issue"/></svg></span><span class="btn-txt">صرف خام إلى الإنتاج</span></button>
           <button class="tab" data-tab="receipts">تقارير الإنتاج</button>
           <button class="tab" data-tab="gap"><span class="t3d xs tone-sell"><svg class="ic"><use href="#i-scale"/></svg></span><span class="btn-txt">العجز والتالف</span></button>
-          <button class="tab" data-tab="tolling">النفخ للغير</button>
+          <button class="tab" data-tab="tolling">دفعات العميل</button>
           <button class="tab" data-tab="scrap">سجل الهدر</button>
           <button class="tab" data-tab="archive">أرشيف الإنتاج</button>
         </div>
@@ -447,8 +447,8 @@
 
         <div class="card hidden" id="prodissuesPanel">
           <div class="card-head">
-            <h3>سندات توريد الإنتاج — ما خرج من المخزون فعلياً</h3>
-            <button class="btn btn-sm btn-primary" id="btnNewProdIssue2"><span class="t3d xs tone-issue"><svg class="ic"><use href="#i-issue"/></svg></span><span class="btn-txt">سند توريد جديد</span></button>
+            <h3>سندات صرف الخام إلى الإنتاج — ما خرج من المخزون فعلياً</h3>
+            <button class="btn btn-sm btn-primary" id="btnNewProdIssue2"><span class="t3d xs tone-issue"><svg class="ic"><use href="#i-issue"/></svg></span><span class="btn-txt">صرف خام جديد</span></button>
           </div>
           <div class="card-body tight">
             <div class="tbl-wrap tall">

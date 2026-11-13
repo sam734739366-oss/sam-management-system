@@ -179,7 +179,9 @@ app.whenReady().then(async () => {
     return { rows, heads, foot, sumRows, kpi: document.querySelector('#dailyKpis .k-val').textContent.trim() };
   })()`);
   check('daily table has rows', daily && daily.rows > 0, daily);
-  check('daily header groups by warehouse', daily && daily.heads.length === 4, daily && daily.heads);
+  /* one group per warehouse, plus the group that gathers all of them */
+  check('daily header groups by warehouse and adds the total of all of them',
+    daily && daily.heads.length === 5 && /إجمالي كل المخازن/.test(daily.heads[4] || ''), daily && daily.heads);
   check('daily summary has every warehouse + a grand total row', daily && daily.sumRows === 5, daily && daily.sumRows);
 
   const expected = dbMod.dailyReport({ date: today, buckets: ['good'] });
@@ -193,7 +195,13 @@ app.whenReady().then(async () => {
     { inToday: expected.warehouseTotals[whA.id].inQty });
 
   /* the date filter really filters */
-  await js(`(() => { const d = document.getElementById('dDate'); d.value = '${yesterday}'; d.dispatchEvent(new Event('change', { bubbles: true })); return 1; })()`);
+  /* the report takes a PERIOD now — the day is set on both ends */
+  await js(`(() => {
+    const f = document.getElementById('dFrom'), t = document.getElementById('dTo');
+    f.value = '${yesterday}'; f.dispatchEvent(new Event('change', { bubbles: true }));
+    t.value = '${yesterday}'; t.dispatchEvent(new Event('change', { bubbles: true }));
+    return 1;
+  })()`);
   await sleep(1000);
   await shot('03-daily-yesterday');
   const yFoot = await js(`document.getElementById('dailyFoot').textContent.replace(/\s+/g,' ').trim()`);

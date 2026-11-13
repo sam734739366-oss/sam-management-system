@@ -222,13 +222,14 @@ async function run() {
 
   check('the screen shows a column for every warehouse',
     !!ui && ['مخزن أ', 'مخزن ب'].every((n) => ui.head1.some((h) => h.indexOf(n) === 0)), ui && ui.head1);
-  check('the screen shows the grand remaining column',
-    !!ui && ui.head1.indexOf('إجمالي المتبقي') >= 0, ui && ui.head1);
+  /* the last group gathers every warehouse of the item */
+  check('the screen shows the group that gathers every warehouse',
+    !!ui && ui.head1.indexOf('إجمالي كل المخازن') >= 0, ui && ui.head1);
   check('every warehouse has its own three columns',
-    !!ui && ui.head2.length === ui.warehouses * 3 &&
-      ui.head2.filter((h) => h === 'وارد اليوم').length === ui.warehouses &&
-      ui.head2.filter((h) => h === 'صادر اليوم').length === ui.warehouses &&
-      ui.head2.filter((h) => h === 'المتبقي').length === ui.warehouses,
+    !!ui && ui.head2.length === ui.warehouses * 3 + 3 &&
+      ui.head2.filter((h) => h === 'وارد الفترة').length === ui.warehouses &&
+      ui.head2.filter((h) => h === 'صادر الفترة').length === ui.warehouses &&
+      ui.head2.filter((h) => h === 'المتبقي').length === ui.warehouses + 1,
     ui && { head1: ui.head1, head2: ui.head2, warehouses: ui.warehouses });
 
   /* the position of a warehouse group inside the row — read it from the
@@ -267,7 +268,7 @@ async function run() {
     num(u2[u2.length - 1]) === 370, u2);
 
   check('the summary table names every warehouse',
-    !!ui && ui.sumHead.join('|') === 'المخزن|وارد اليوم|صادر اليوم|المتبقي', ui && ui.sumHead);
+    !!ui && ui.sumHead.join('|') === 'المخزن|وارد الفترة|صادر الفترة|المتبقي', ui && ui.sumHead);
   const sumA = (ui && ui.sumRows.find((r) => r[0].indexOf('مخزن أ') === 0)) || [];
   const sumB = (ui && ui.sumRows.find((r) => r[0].indexOf('مخزن ب') === 0)) || [];
   const sumG = (ui && ui.sumRows.find((r) => r[0].indexOf('إجمالي كل المخازن') === 0)) || [];
@@ -281,10 +282,10 @@ async function run() {
   const kpiOf = (label) => (ui && ui.kpis.find((k) => k.top.indexOf(label) === 0)) || null;
   check('a tile shows the grand remaining stock',
     kpiOf('إجمالي المتبقي') && num(kpiOf('إجمالي المتبقي').val) === 1030, kpiOf('إجمالي المتبقي'));
-  check('a tile shows what came in today',
-    kpiOf('وارد اليوم') && num(kpiOf('وارد اليوم').val) === 160, kpiOf('وارد اليوم'));
-  check('a tile shows what went out today',
-    kpiOf('صادر اليوم') && num(kpiOf('صادر اليوم').val) === 30, kpiOf('صادر اليوم'));
+  check('a tile shows what came in the period',
+    kpiOf('وارد الفترة') && num(kpiOf('وارد الفترة').val) === 160, kpiOf('وارد الفترة'));
+  check('a tile shows what went out in the period',
+    kpiOf('صادر الفترة') && num(kpiOf('صادر الفترة').val) === 30, kpiOf('صادر الفترة'));
   check('a tile shows how many items the report holds',
     kpiOf('الأصناف') && num(kpiOf('الأصناف').val) === 2, kpiOf('الأصناف'));
 
@@ -311,10 +312,10 @@ async function run() {
     !!sheet && sheet.title.indexOf('التقرير اليومي') >= 0, sheet && sheet.title);
   const nWh = sheet ? sheet.head1.length - 3 : 0;
   check('the printed table keeps the three columns of every warehouse',
-    !!sheet && sheet.head2.length === nWh * 3 &&
-      sheet.head2.filter((h) => h === 'وارد اليوم').length === nWh &&
-      sheet.head2.filter((h) => h === 'صادر اليوم').length === nWh &&
-      sheet.head2.filter((h) => h === 'المتبقي').length === nWh,
+    !!sheet && sheet.head2.length === nWh * 3 + 3 &&
+      sheet.head2.filter((h) => h === 'وارد الفترة').length === nWh &&
+      sheet.head2.filter((h) => h === 'صادر الفترة').length === nWh &&
+      sheet.head2.filter((h) => h === 'المتبقي').length === nWh + 1,
     sheet && { head1: sheet.head1, head2: sheet.head2 });
   const pCell = (row, whName, which) => {
     const g = (sheet.head1 || []).findIndex((h) => h.indexOf(whName) === 0);
