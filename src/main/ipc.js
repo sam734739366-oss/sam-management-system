@@ -188,10 +188,33 @@ module.exports = function registerIpc(getWindow) {
       if (!m) return { ok: false, error: 'الصورة غير صالحة' };
       const dir = path.join(require('./db').dataDir(), 'images');
       fs.mkdirSync(dir, { recursive: true });
-      const ext = m[1] === 'svg+xml' ? 'svg' : (m[1] === 'jpeg' ? 'jpg' : m[1]);
+      const raw = Buffer.from(m[2], 'base64');
+
+      /* The picture is made SMALL here, so the customer never has to think
+         about the size: a photo of any shape comes out as a thumbnail that
+         fits the frame — and it is stored that way, so the program stays
+         quick however big the original was. */
+      const maxSide = 360;
+      let ext = m[1] === 'svg+xml' ? 'svg' : (m[1] === 'jpeg' ? 'jpg' : m[1]);
+      let bytes = raw;
+      if (ext !== 'svg') {
+        try {
+          const { nativeImage } = require('electron');
+          const img = nativeImage.createFromBuffer(raw);
+          const size = img.getSize();
+          if (size.width > 0 && size.height > 0) {
+            const scale = Math.min(1, maxSide / Math.max(size.width, size.height));
+            const w = Math.max(1, Math.round(size.width * scale));
+            const h = Math.max(1, Math.round(size.height * scale));
+            const small = (w === size.width && h === size.height) ? img : img.resize({ width: w, height: h, quality: 'good' });
+            bytes = small.toPNG();
+            ext = 'png';
+          }
+        } catch (e) { /* the original is kept when the picture cannot be read */ }
+      }
       const file = path.join(dir, `${name}.${ext}`);
-      fs.writeFileSync(file, Buffer.from(m[2], 'base64'));
-      return { ok: true, name: `${name}.${ext}`, path: file };
+      fs.writeFileSync(file, bytes);
+      return { ok: true, name: `${name}.${ext}`, path: file, width: ext === 'svg' ? 0 : 0 };
     } catch (err) {
       return { ok: false, error: (err && err.message) ? err.message : String(err) };
     }

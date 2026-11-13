@@ -55,8 +55,10 @@
       ? 'border:1px solid #cfd6e0;box-shadow:none;'
       : 'border:1px solid var(--line);box-shadow:0 1px 3px rgba(15,23,42,.14);';
     return `<img class="sam-pic" src="${esc(url)}" alt="" title="${esc(item.name || '')}"`
-      + ` style="width:${px}px;height:${px}px;object-fit:cover;border-radius:8px;${frame}`
-      + 'background:#fff;flex:none;align-self:center;">';
+      /* the WHOLE picture — a photo that is taller than it is wide must not
+         lose its top or its bottom; the frame grows around it */
+      + ` style="width:${px}px;height:${px}px;object-fit:contain;border-radius:8px;${frame}`
+      + 'background:#f1f5f9;flex:none;align-self:center;">';
   }
 
   /* =====================================================================
@@ -178,7 +180,7 @@
       + 'background:var(--surface-2);display:flex;align-items:center;justify-content:center;overflow:hidden;flex:none;');
     const img = el('img', 'sam-pic-preview');
     img.id = 'fItemImagePreview';
-    img.setAttribute('style', 'width:100%;height:100%;object-fit:cover;display:none;');
+    img.setAttribute('style', 'width:100%;height:100%;object-fit:contain;display:none;background:#f1f5f9;');
     box.appendChild(img);
 
     const file = el('input', 'sam-pic-file');
@@ -561,7 +563,7 @@
             img.src = url;
             img.alt = '';
             img.title = item.name || '';
-            img.setAttribute('style', 'width:26px;height:26px;object-fit:cover;border-radius:7px;'
+            img.setAttribute('style', 'width:26px;height:26px;object-fit:contain;border-radius:7px;background:#f1f5f9;'
               + 'border:1px solid var(--line);box-shadow:0 1px 3px rgba(15,23,42,.14);background:#fff;flex:none;align-self:center;');
             labelEl.parentNode.insertBefore(img, labelEl);
           }
