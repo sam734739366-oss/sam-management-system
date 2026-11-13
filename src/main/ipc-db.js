@@ -72,6 +72,8 @@ const API = {
 
   listTolling: (limit) => d.listTolling(limit),
   getTolling: (id) => d.getTolling(id),
+  getTollingBatch: (id) => d.getTollingBatch(id),
+  tollingProgress: (id) => d.tollingProgress(id),
   saveTolling: (payload) => d.saveTolling(payload),
   tollingImpact: (id) => d.tollingImpact(id),
   deleteTolling: (id) => d.deleteTolling(id),
@@ -147,6 +149,8 @@ const PERMS = {
 
   listTolling: ['production', 'view'],
   getTolling: ['production', 'view'],
+  getTollingBatch: ['production', 'view'],
+  tollingProgress: ['production', 'view'],
   tollingImpact: ['production', 'delete'],
   saveTolling: (a) => ['production', a[0] && a[0].id ? 'edit' : 'add'],
   deleteTolling: ['production', 'delete'],

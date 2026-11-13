@@ -25,6 +25,7 @@ const restore = require(path.join(ROOT, 'src', 'main', 'restore.js'));
 const updater = require(path.join(ROOT, 'src', 'main', 'updater.js'));
 
 let pass = 0, fail = 0;
+let PUBLISHED = null;   /* the tag the live feed answered with */
 const LOG = path.join(ROOT, '.tmp', 'v7-check.log');
 fs.mkdirSync(path.dirname(LOG), { recursive: true });
 const logLine = (s) => { console.log(s); try { fs.appendFileSync(LOG, s + '\n'); } catch (e) {} };
@@ -132,6 +133,7 @@ async function updaterTests() {
   let tag = null;
   try { tag = await liveTag(); } catch (e) { logLine('  (the published tag could not be read: ' + e.message + ')'); }
   logLine('  the published tag is: ' + tag);
+  if (tag) PUBLISHED = String(tag).replace(/^v/i, '');
 
   let json = null;
   const t0 = Date.now();
@@ -232,7 +234,7 @@ async function rendererTests() {
     if (st.status && st.status !== 'checking') { final = st; break; }
   }
   check('the check from the button ends in a final state', !!final && ['available', 'up-to-date', 'error'].includes(final.status), final && final.status);
-  check('the check from the button names the published version', !!final && final.latest === '0.5.0', final && final.latest);
+  check('the check from the button names the published version', !!final && !!PUBLISHED && final.latest === PUBLISHED, { want: PUBLISHED, got: final && final.latest });
   await sleep(600);
   /* the read is guarded: a page hiccup must not throw the whole battery away */
   const READ = `(() => {

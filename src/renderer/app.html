@@ -105,7 +105,7 @@
         <strong>SAM</strong>
         <span>Management System</span>
       </div>
-      <span class="tb-ver" id="tbVer">v0.6.0</span>
+      <span class="tb-ver" id="tbVer">v0.7.0</span>
       <div class="tb-acts">
         <button class="tb-act t3d tone-info sm" id="btnPrintScreen" title="طباعة الشاشة الحالية — كل صفحة في البرنامج قابلة للطباعة"><svg class="ic"><use href="#i-print"/></svg></button>
         <button class="tb-act t3d tone-info sm" id="btnRestoreData" title="استعادة البيانات — اختر ملف بياناتك، أو اسحبه على نافذة البرنامج"><svg class="ic"><use href="#i-restore"/></svg></button>
@@ -159,8 +159,8 @@
       <div class="side-foot">
         <div class="phase-card">
           <span class="pc-label">إصدار النظام</span>
-          <span class="pc-num">V6</span>
-          <span class="pc-txt">استعادة البيانات · فحص تحديث لا يعلّق · شريط يتوقّف دائماً · طباعة A4 كاملة</span>
+          <span class="pc-num">V7</span>
+          <span class="pc-txt">النفخ للغير بأربع خطوات · دفعة العميل · فترة في التقارير · توقيع مناسب لكل مستند</span>
         </div>
         <div class="shortcut-hint"><b>Ctrl+S</b> حفظ · <b>Ctrl+N</b> جديد · <b>Esc</b> إغلاق</div>
         <div class="wm-tag">SAM 775158678</div>
@@ -222,7 +222,7 @@
         </div>
 
         <div class="card" style="margin-top:16px">
-          <div class="card-head"><h3>ما الذي تغيّر في V6</h3><span class="badge">تحديث شامل</span></div>
+          <div class="card-head"><h3>ما الذي تغيّر في V7</h3><span class="badge">تحديث شامل</span></div>
           <div class="card-body"><ol class="roadmap" id="roadmap"></ol></div>
         </div>
       </section>
@@ -614,7 +614,8 @@
           </div>
           <div class="card-body">
             <div class="filters-grid">
-              <label class="field"><span>التاريخ</span><input type="date" id="dDate" class="input" /></label>
+              <label class="field"><span>من تاريخ</span><input type="date" id="dFrom" class="input" /></label>
+              <label class="field"><span>إلى تاريخ</span><input type="date" id="dTo" class="input" /></label>
               <div class="field"><span>المخزن</span><div id="dWh"></div></div>
             </div>
 
@@ -623,7 +624,7 @@
 
             <div class="check-row" style="margin-top:14px">
               <input type="checkbox" id="dAllItems" />
-              <span>إظهار كل الأصناف (حتى بلا حركة اليوم)</span>
+              <span>إظهار كل الأصناف (حتى بلا حركة في الفترة)</span>
             </div>
             <div class="check-row" style="margin-top:6px">
               <input type="checkbox" id="dIncludeCustomer" />
@@ -830,7 +831,7 @@
   <!-- ===================== status bar ===================== -->
   <footer class="statusbar">
     <span class="sb-item"><b>SAM</b> 775158678</span>
-    <span class="sb-item dim" id="sbPhase">V6 — استعادة البيانات · فحص تحديث لا يعلّق · شريط يتوقّف دائماً · طباعة A4 كاملة</span>
+    <span class="sb-item dim" id="sbPhase">V7 — النفخ للغير بأربع خطوات · دفعة العميل · فترة في التقارير · توقيع مناسب لكل مستند</span>
     <span class="sb-spacer"></span>
     <span class="sb-item dim" id="sbDb">—</span>
     <span class="sb-item dim" id="sbVer">Electron —</span>
@@ -852,6 +853,7 @@
   <div id="printHost" class="print-host"></div>
 
   <script src="js/db.js"></script>
+  <script src="js/signatures.js"></script>
   <script src="js/ui.js"></script>
   <script src="js/restore.js"></script>
   <script src="js/combobox.js"></script>

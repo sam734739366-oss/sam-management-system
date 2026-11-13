@@ -710,7 +710,8 @@
       dense: true,
       landscape: isLandscape(res),
       footer: `SAM Management System — ${res.title} (الكميات بالوحدة الأساسية)`,
-      signatures: ['المعد', 'المراجع', 'المدير']
+      /* a report is not a document — nobody signs a report */
+      kind: 'report'
     };
   }
 

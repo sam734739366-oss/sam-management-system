@@ -245,7 +245,7 @@
       ],
       bodyHtml: html,
       footer: 'SAM Management System — الأرصدة بالوحدة الأساسية',
-      signatures: ['أمين المخزن', 'المراجع', 'المدير']
+      kind: 'item_card'
     });
   }
 

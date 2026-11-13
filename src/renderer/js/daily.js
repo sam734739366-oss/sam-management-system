@@ -21,7 +21,8 @@
     whFilter: null,      // null = every warehouse
     showAll: false,      // show items with no movement and no balance
     includeCustomer: false,
-    date: SamUI.today(),
+    from: SamUI.today(),
+    to: SamUI.today(),
     win: null
   };
 
@@ -66,8 +67,23 @@
       whCombo.setValue(null, false);
     }
     paintBuckets(document.getElementById('dBuckets'));
-    const dateEl = document.getElementById('dDate');
-    if (dateEl && !dateEl.value) dateEl.value = state.date;
+    /* the period: two dates, and either one runs the report again */
+    const fromEl = document.getElementById('dFrom');
+    const toEl = document.getElementById('dTo');
+    if (fromEl) {
+      if (!fromEl.value) fromEl.value = state.from;
+      fromEl.addEventListener('change', () => {
+        state.from = fromEl.value || state.from;
+        run();
+      });
+    }
+    if (toEl) {
+      if (!toEl.value) toEl.value = state.to;
+      toEl.addEventListener('change', () => {
+        state.to = toEl.value || state.to;
+        run();
+      });
+    }
     const allEl = document.getElementById('dAllItems');
     if (allEl) allEl.checked = state.showAll;
     const custEl = document.getElementById('dIncludeCustomer');
@@ -81,7 +97,8 @@
     let res;
     try {
       res = await SamDB.call('dailyReport', {
-        date: state.date,
+        dateFrom: state.from,
+        dateTo: state.to,
         buckets,
         includeCustomer: state.includeCustomer
       });
@@ -102,7 +119,15 @@
     }
 
     paint();
-    toast(`تقرير ${res.date}: ${SamDB.fmt(visibleRows().length)} صنف · المتبقي في كل المخازن ${SamDB.fmt(res.grand.balance)}`, 'ok');
+    toast(`تقرير ${periodLabel(res)}: ${SamDB.fmt(visibleRows().length)} صنف · المتبقي في كل المخازن ${SamDB.fmt(res.grand.balance)}`, 'ok');
+  }
+
+  /** the period in one line: «2026-11-01 → 2026-11-13» or just the day */
+  function periodLabel(res) {
+    if (!res) return '';
+    const from = res.from || res.date;
+    const to = res.to || res.date;
+    return from === to ? from : `${from} → ${to}`;
   }
 
   /** the warehouses this report shows (all of them, or the one picked) */
@@ -153,13 +178,14 @@
     const rows = visibleRows();
 
     /* --- the header row: one group of THREE columns per warehouse —
-       وارد (دخل اليوم) · صادر (خروج اليوم) · المتبقي — then the grand
-       total of the remaining balance across all the shown warehouses. */
+       وارد (دخل الفترة) · صادر (خروج الفترة) · المتبقي — then a group
+       that gathers EVERY warehouse for the item: إجمالي كل المخازن. */
     const head1 = `<th rowspan="2" style="min-width:170px">الصنف</th>
       <th rowspan="2" style="width:74px">الوحدة</th>
       ${whs.map((w) => `<th colspan="3" class="grp">${esc(w.name)}${w.location ? ` — ${esc(w.location)}` : ''}</th>`).join('')}
-      <th rowspan="2" style="width:120px">إجمالي المتبقي</th>`;
-    const head2 = whs.map(() => '<th style="width:96px">وارد اليوم</th><th style="width:96px">صادر اليوم</th><th style="width:96px">المتبقي</th>').join('');
+      <th colspan="3" class="grp">إجمالي كل المخازن</th>`;
+    const head2 = whs.map(() => '<th style="width:96px">وارد الفترة</th><th style="width:96px">صادر الفترة</th><th style="width:96px">المتبقي</th>').join('')
+      + '<th style="width:104px">وارد</th><th style="width:104px">صادر</th><th style="width:104px">المتبقي</th>';
 
     const body = rows.map((r) => {
       const cells = whs.map((w) => {
@@ -171,11 +197,17 @@
           <td class="num ${outQ ? 'qty minus' : 'dim'}">${outQ ? SamDB.fmt(outQ) : '—'}</td>
           <td class="num qty ${bal < 0 ? 'minus' : ''}">${SamDB.fmt(bal)}</td>`;
       }).join('');
-      const total = whs.reduce((a, w) => a + SamDB.n((r.cells[w.id] || {}).balance), 0);
+      /* the totals of every warehouse of this item — the column the user
+         asked for: one number that gathers them all */
+      const totalIn = SamDB.n(r.totalIn);
+      const totalOut = SamDB.n(r.totalOut);
+      const total = SamDB.n(r.totalBalance);
       return `<tr>
         <td>${esc(r.itemCode)} — ${esc(r.itemName)}</td>
         <td class="center"><span class="unit-chip">${esc(r.baseUnit)}</span></td>
         ${cells}
+        <td class="num ${totalIn ? 'qty plus' : 'dim'}">${totalIn ? SamDB.fmt(totalIn) : '—'}</td>
+        <td class="num ${totalOut ? 'qty minus' : 'dim'}">${totalOut ? SamDB.fmt(totalOut) : '—'}</td>
         <td class="num qty"><b>${SamDB.fmt(total)}</b></td>
       </tr>`;
     }).join('');
@@ -209,7 +241,7 @@
 
     if (t.sumTbl) {
       t.sumTbl.innerHTML =
-        `<thead><tr><th>المخزن</th><th>وارد اليوم</th><th>صادر اليوم</th><th>المتبقي</th></tr></thead>
+        `<thead><tr><th>المخزن</th><th>وارد الفترة</th><th>صادر الفترة</th><th>المتبقي</th></tr></thead>
          <tbody>${sums}${grandRow}</tbody>`;
     }
 
@@ -221,15 +253,15 @@
         <div class="kpi gold tone-produce"><span class="t3d tone-produce"><svg class="ic"><use href="#i-archive-box"/></svg></span>
           <span class="k-top">إجمالي المتبقي في كل المخازن</span>
           <span class="k-val">${SamDB.fmt(grandBal)}</span>
-          <span class="k-note">${esc(state.whFilter ? 'المخزن المختار' : `${whs.length} مخازن`)} · تاريخ ${esc(res.date)}</span></div>
+          <span class="k-note">${esc(state.whFilter ? 'المخزن المختار' : `${whs.length} مخازن`)} · ${esc(periodLabel(res))}</span></div>
         <div class="kpi tone-gin"><span class="t3d tone-gin"><svg class="ic"><use href="#i-in"/></svg></span>
-          <span class="k-top">وارد اليوم</span>
+          <span class="k-top">وارد الفترة</span>
           <span class="k-val">${SamDB.fmt(grandIn)}</span>
-          <span class="k-note">وارد في تاريخ ${esc(res.date)}</span></div>
+          <span class="k-note">وارد من ${esc(periodLabel(res))}</span></div>
         <div class="kpi tone-gout"><span class="t3d tone-gout"><svg class="ic"><use href="#i-out"/></svg></span>
-          <span class="k-top">صادر اليوم</span>
+          <span class="k-top">صادر الفترة</span>
           <span class="k-val">${SamDB.fmt(grandOut)}</span>
-          <span class="k-note">خروج في تاريخ ${esc(res.date)}</span></div>
+          <span class="k-note">خروج من ${esc(periodLabel(res))}</span></div>
         <div class="kpi tone-move"><span class="t3d tone-move"><svg class="ic"><use href="#i-box"/></svg></span>
           <span class="k-top">الأصناف</span>
           <span class="k-val">${SamDB.fmt(rows.length)}</span>
@@ -241,8 +273,8 @@
       t.foot.innerHTML = `
         <span>عدد الأصناف: <b>${SamDB.fmt(rows.length)}</b></span>
         <span>إجمالي المتبقي: <b class="big">${SamDB.fmt(grandBal)}</b></span>
-        <span>وارد اليوم: <b>${SamDB.fmt(grandIn)}</b></span>
-        <span>صادر اليوم: <b>${SamDB.fmt(grandOut)}</b></span>
+        <span>وارد الفترة: <b>${SamDB.fmt(grandIn)}</b></span>
+        <span>صادر الفترة: <b>${SamDB.fmt(grandOut)}</b></span>
         <span class="dim">الوحدة: ${esc([...new Set(rows.map((r) => r.baseUnit))].join(' / ') || '—')}</span>`;
     }
 
@@ -250,7 +282,7 @@
     emptyState(t.empty, {
       icon: 'i-chart',
       title: hasRows ? '' : 'لا توجد أصناف في هذا التقرير',
-      hint: hasRows ? '' : 'غيّر التاريخ أو أظهر كل الأصناف. «المتبقي» يحسب من كل الحركات السابقة، و«وارد/صادر اليوم» من حركات اليوم فقط.'
+      hint: hasRows ? '' : 'غيّر الفترة أو أظهر كل الأصناف. «المتبقي» يحسب من كل الحركات السابقة، و«وارد/صادر الفترة» من حركات الفترة فقط.'
     });
     toggleEmpty(t.empty, hasRows);
   }
@@ -263,15 +295,17 @@
 
     const head1 = `<th rowspan="2">الصنف</th><th rowspan="2">الوحدة</th>`
       + whs.map((w) => `<th colspan="3">${esc(w.name)}</th>`).join('')
-      + '<th rowspan="2">إجمالي المتبقي</th>';
-    const head2 = whs.map(() => '<th>وارد اليوم</th><th>صادر اليوم</th><th>المتبقي</th>').join('');
+      + '<th colspan="3">إجمالي كل المخازن</th>';
+    const head2 = whs.map(() => '<th>وارد الفترة</th><th>صادر الفترة</th><th>المتبقي</th>').join('')
+      + '<th>وارد</th><th>صادر</th><th>المتبقي</th>';
     const body = rows.map((r) => {
       const cells = whs.map((w) => {
         const c = r.cells[w.id] || {};
         return `<td>${SamDB.fmt(SamDB.n(c.inQty))}</td><td>${SamDB.fmt(SamDB.n(c.outQty))}</td><td>${SamDB.fmt(SamDB.n(c.balance))}</td>`;
       }).join('');
-      const total = whs.reduce((a, w) => a + SamDB.n((r.cells[w.id] || {}).balance), 0);
-      return `<tr><td>${esc(r.itemCode)} — ${esc(r.itemName)}</td><td>${esc(r.baseUnit)}</td>${cells}<td>${SamDB.fmt(total)}</td></tr>`;
+      const total = SamDB.n(r.totalBalance);
+      return `<tr><td>${esc(r.itemCode)} — ${esc(r.itemName)}</td><td>${esc(r.baseUnit)}</td>${cells}
+        <td>${SamDB.fmt(SamDB.n(r.totalIn))}</td><td>${SamDB.fmt(SamDB.n(r.totalOut))}</td><td>${SamDB.fmt(total)}</td></tr>`;
     }).join('');
 
     const grandIn = whs.reduce((a, w) => a + SamDB.n((res.warehouseTotals[w.id] || {}).inQty), 0);
@@ -286,11 +320,11 @@
 
     return {
       title: 'التقرير اليومي',
-      subtitle: `وارد وصادر ومتبقي كل مخزن — ${res.date}`,
-      docRef: `DR-${res.date}`,
+      subtitle: `وارد وصادر ومتبقي كل مخزن — ${periodLabel(res)}`,
+      docRef: `DR-${res.from || res.date}`,
       docRefLabel: 'رقم التقرير',
       head: [
-        { k: 'التاريخ', v: res.date },
+        { k: 'الفترة', v: periodLabel(res) },
         { k: 'الحالات', v: (res.bucketLabels || []).join(' + ') },
         { k: 'عدد الأصناف', v: SamDB.fmt(rows.length) },
         { k: 'إجمالي المتبقي', v: SamDB.fmt(grandBal) }
@@ -302,14 +336,15 @@
         </table>
         <div style="margin-top:5mm"><b>ملخص المخازن</b>
           <table class="tbl" style="font-size:9pt">
-            <thead><tr><th>المخزن</th><th>وارد اليوم</th><th>صادر اليوم</th><th>المتبقي</th></tr></thead>
+            <thead><tr><th>المخزن</th><th>وارد الفترة</th><th>صادر الفترة</th><th>المتبقي</th></tr></thead>
             <tbody>${sumBody}</tbody>
           </table>
         </div>`,
       dense: true,
       landscape: true,
       footer: 'SAM Management System — التقرير اليومي (الكميات بالوحدة الأساسية لكل صنف)',
-      signatures: ['أمين المخازن', 'المعد', 'المدير']
+      /* a report is not a document — nobody signs a report */
+      kind: 'report'
     };
   }
 
@@ -323,7 +358,7 @@
     const node = SamUI.sheet(sheetOpts());
     const r = await SamUI.exportPdf(node, {
       landscape: true,
-      fileName: `SAM-Daily-${state.res.date}.pdf`
+      fileName: `SAM-Daily-${state.res.from || state.res.date}.pdf`
     });
     if (r && r.ok) toast(`تم حفظ الملف: ${r.path}`, 'ok', 5200);
     else if (r && !r.canceled) toast(r.error || 'تعذّر حفظ الملف', 'bad');
@@ -342,23 +377,26 @@
       { header: 'الوحدة', key: 'unit' }
     ];
     whs.forEach((w) => {
-      columns.push({ header: `${w.name} — وارد اليوم`, key: `w${w.id}in`, num: true, fmt: '#,##0' });
-      columns.push({ header: `${w.name} — صادر اليوم`, key: `w${w.id}out`, num: true, fmt: '#,##0' });
+      columns.push({ header: `${w.name} — وارد الفترة`, key: `w${w.id}in`, num: true, fmt: '#,##0' });
+      columns.push({ header: `${w.name} — صادر الفترة`, key: `w${w.id}out`, num: true, fmt: '#,##0' });
       columns.push({ header: `${w.name} — المتبقي`, key: `w${w.id}bal`, num: true, fmt: '#,##0' });
     });
-    columns.push({ header: 'إجمالي المتبقي', key: 'total', num: true, fmt: '#,##0' });
+    /* the column that gathers every warehouse for the item */
+    columns.push({ header: 'كل المخازن — وارد', key: 'allIn', num: true, fmt: '#,##0' });
+    columns.push({ header: 'كل المخازن — صادر', key: 'allOut', num: true, fmt: '#,##0' });
+    columns.push({ header: 'كل المخازن — المتبقي', key: 'total', num: true, fmt: '#,##0' });
 
     const data = rows.map((r) => {
       const o = { code: r.itemCode, name: r.itemName, unit: r.baseUnit };
-      let total = 0;
       whs.forEach((w) => {
         const c = r.cells[w.id] || {};
         o[`w${w.id}in`] = SamDB.n(c.inQty);
         o[`w${w.id}out`] = SamDB.n(c.outQty);
         o[`w${w.id}bal`] = SamDB.n(c.balance);
-        total += SamDB.n(c.balance);
       });
-      o.total = total;
+      o.allIn = SamDB.n(r.totalIn);
+      o.allOut = SamDB.n(r.totalOut);
+      o.total = SamDB.n(r.totalBalance);
       return o;
     });
 
@@ -368,18 +406,22 @@
       totals.push({ key: `w${w.id}out`, value: whs.reduce((a, x) => a + SamDB.n((res.warehouseTotals[x.id] || {}).outQty), 0) });
       totals.push({ key: `w${w.id}bal`, value: whs.reduce((a, x) => a + SamDB.n((res.warehouseTotals[x.id] || {}).balance), 0) });
     });
-    totals.push({
-      key: 'total',
-      value: whs.reduce((a, w) => a + SamDB.n((res.warehouseTotals[w.id] || {}).balance), 0)
-    });
+    /* the totals of every warehouse — the same three numbers the columns
+       carry, summed over the whole report */
+    const grandIn = whs.reduce((a, w) => a + SamDB.n((res.warehouseTotals[w.id] || {}).inQty), 0);
+    const grandOut = whs.reduce((a, w) => a + SamDB.n((res.warehouseTotals[w.id] || {}).outQty), 0);
+    const grandBal = whs.reduce((a, w) => a + SamDB.n((res.warehouseTotals[w.id] || {}).balance), 0);
+    totals.push({ key: 'allIn', value: grandIn });
+    totals.push({ key: 'allOut', value: grandOut });
+    totals.push({ key: 'total', value: grandBal });
 
     const out = await sam.app.saveXlsx({
-      fileName: `SAM-Daily-${res.date}.xlsx`,
+      fileName: `SAM-Daily-${res.from || res.date}.xlsx`,
       sheetName: 'التقرير اليومي',
       title: 'التقرير اليومي',
       subtitle: `SAM Management System — ${SamUI.WATERMARK}`,
       meta: [
-        ['التاريخ', res.date],
+        ['الفترة', periodLabel(res)],
         ['الحالات', (res.bucketLabels || []).join(' + ')],
         ['المخازن', whs.map((w) => w.name).join(' · ')],
         ['عدد الأصناف', SamDB.fmt(rows.length)],
@@ -406,7 +448,8 @@
     const r1 = el('div', 'rw-frow rw-f-period');
     r1.innerHTML = `<div class="rw-flabel">${SamUI.plate('rw-fic', 'i-calendar', null, 'xs')}<span>التاريخ</span></div>`;
     const b1 = el('div', 'rw-fbody rw-dates');
-    b1.innerHTML = `<label class="field"><span>تاريخ التقرير</span><input type="date" id="dwDate" class="input" /></label>
+    b1.innerHTML = `<label class="field"><span>من تاريخ</span><input type="date" id="dwFrom" class="input" /></label>
+      <label class="field"><span>إلى تاريخ</span><input type="date" id="dwTo" class="input" /></label>
       <div class="field"><span>المخزن</span><div id="dwWh"></div></div>`;
     r1.appendChild(b1);
 
@@ -474,12 +517,22 @@
     });
 
     /* wire the window controls */
-    const dateEl = nodes.node.querySelector('#dwDate');
-    dateEl.value = state.date;
-    dateEl.addEventListener('change', () => {
-      state.date = dateEl.value || SamUI.today();
-      run();
-    });
+    const fromEl = nodes.node.querySelector('#dwFrom');
+    const toEl = nodes.node.querySelector('#dwTo');
+    if (fromEl) {
+      fromEl.value = state.from;
+      fromEl.addEventListener('change', () => {
+        state.from = fromEl.value || SamUI.today();
+        run();
+      });
+    }
+    if (toEl) {
+      toEl.value = state.to;
+      toEl.addEventListener('change', () => {
+        state.to = toEl.value || SamUI.today();
+        run();
+      });
+    }
     winCombo = combo(nodes.node.querySelector('#dwWh'), {
       placeholder: 'كل المخازن…',
       emptyText: 'لا توجد مخازن',
@@ -504,7 +557,8 @@
   /* ---------------- wiring ---------------- */
   async function load() {
     initUi();
-    if (!state.date) state.date = SamUI.today();
+    if (!state.from) state.from = SamUI.today();
+    if (!state.to) state.to = SamUI.today();
     await run();
   }
 
@@ -512,9 +566,12 @@
   document.getElementById('btnPrintDaily').addEventListener('click', printDaily);
   document.getElementById('btnExcelDaily').addEventListener('click', exportExcel);
   document.getElementById('btnTodayDaily').addEventListener('click', async () => {
-    state.date = SamUI.today();
-    const dateEl = document.getElementById('dDate');
-    if (dateEl) dateEl.value = state.date;
+    state.from = SamUI.today();
+    state.to = SamUI.today();
+    const fromEl = document.getElementById('dFrom');
+    const toEl = document.getElementById('dTo');
+    if (fromEl) fromEl.value = state.from;
+    if (toEl) toEl.value = state.to;
     await run();
   });
   document.getElementById('dAllItems').addEventListener('change', (e) => {
@@ -523,10 +580,6 @@
   });
   document.getElementById('dIncludeCustomer').addEventListener('change', async (e) => {
     state.includeCustomer = e.target.checked;
-    await run();
-  });
-  document.getElementById('dDate').addEventListener('change', async (e) => {
-    state.date = e.target.value || SamUI.today();
     await run();
   });
 

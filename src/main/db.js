@@ -105,6 +105,8 @@ CREATE TABLE IF NOT EXISTS documents (
   warehouse_id INTEGER REFERENCES warehouses(id) ON DELETE RESTRICT,
   dest_warehouse_id INTEGER REFERENCES warehouses(id) ON DELETE RESTRICT,
   invoice_value TEXT,
+  blowing_fee TEXT,
+  batch_id INTEGER REFERENCES tolling_orders(id) ON DELETE SET NULL,
   notes TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
 );
@@ -311,6 +313,30 @@ function migrate() {
   mergeHeldBucket();
   // V6 — two numbers per document (ours + the user's) and the new kind
   widenDocumentsV6();
+  // V7 — the tolling batch and the blowing fee
+  widenDocumentsV7();
+}
+
+/**
+ * V7 — two columns on the documents table:
+ *   · batch_id    — the tolling batch this document belongs to (the
+ *                   customer's raw material that went through the plant).
+ *                   NULL for every other document.
+ *   · blowing_fee — what the customer owes for the blowing, written by the
+ *                   user in the invoice header. Free text, because the
+ *                   amount is always in YER and never in pieces.
+ *
+ * Both are added with ALTER TABLE, so an old database keeps its rows and
+ * its ids — `doc_lines` and `stock_moves` keep pointing at the right row.
+ */
+function widenDocumentsV7() {
+  const cols = db.prepare('PRAGMA table_info(documents)').all().map((c) => c.name);
+  if (!cols.includes('blowing_fee')) {
+    db.exec('ALTER TABLE documents ADD COLUMN blowing_fee TEXT');
+  }
+  if (!cols.includes('batch_id')) {
+    db.exec('ALTER TABLE documents ADD COLUMN batch_id INTEGER REFERENCES tolling_orders(id) ON DELETE SET NULL');
+  }
 }
 
 /**
@@ -962,8 +988,8 @@ const DOC_KINDS = {
   sale_return: { ar: 'مرتجع مبيعات', sign: 1, prefix: 'SRT', group: 'تجاري' },
   purchase_return: { ar: 'مرتجع مشتريات', sign: -1, prefix: 'PRT', group: 'تجاري' },
   transfer: { ar: 'نقل بين المخازن', sign: 0, prefix: 'TRF', group: 'مستودع' },
-  prod_receipt: { ar: 'سند استلام الإنتاج', sign: 1, prefix: 'PRC', group: 'مستودع' },
-  prod_issue: { ar: 'سند توريد الإنتاج', sign: -1, prefix: 'PRI', group: 'مستودع' },
+  prod_receipt: { ar: 'استلام المنتج التام', sign: 1, prefix: 'PRC', group: 'مستودع' },
+  prod_issue: { ar: 'صرف خام إلى الإنتاج', sign: -1, prefix: 'PRI', group: 'مستودع' },
   gate_in: { ar: 'إذن إدخال', sign: 1, prefix: 'GIN', group: 'بوابة' },
   gate_out: { ar: 'إذن خروج', sign: -1, prefix: 'GOT', group: 'بوابة' },
   adjustment: { ar: 'تسوية جرد', sign: 0, prefix: 'ADJ', group: 'مستودع' }
@@ -1135,6 +1161,14 @@ function saveDocument(payload) {
   const id = int(payload.id) || null;
   const savedWarnings = {};
 
+  /* V7 — the tolling batch this document belongs to. A document that
+     carries a batch is about the customer's material, so its movements
+     belong to that customer (is_customer = 1) and the stock stays
+     flagged as the customer's until it is delivered. */
+  const batchId = int(payload.batch_id) || null;
+  const batch = batchId ? getTollingBatch(batchId) : null;
+  if (batchId && !batch) throw new Error('دفعة العميل غير موجودة');
+
   const tx = db.transaction(() => {
     if (id) {
       // drop the old ledger rows first so availability checks see the pre-edit state
@@ -1151,21 +1185,25 @@ function saveDocument(payload) {
     if (docId) {
       db.prepare(
         `UPDATE documents SET kind=?, doc_no=?, external_no=?, doc_date=?, party_id=?, warehouse_id=?, dest_warehouse_id=?,
-         invoice_value=?, notes=?, updated_at=datetime('now','localtime') WHERE id=?`
+         invoice_value=?, blowing_fee=?, batch_id=?, notes=?, updated_at=datetime('now','localtime') WHERE id=?`
       ).run(
         payload.kind, numbers.docNo, numbers.externalNo, payload.doc_date,
         int(payload.party_id) || null, int(payload.warehouse_id) || null, int(payload.dest_warehouse_id) || null,
         (payload.invoice_value == null ? '' : String(payload.invoice_value)).trim() || null,
+        (payload.blowing_fee == null ? '' : String(payload.blowing_fee)).trim() || null,
+        batchId,
         (payload.notes || '').trim() || null, docId
       );
     } else {
       const info = db.prepare(
-        `INSERT INTO documents(kind,doc_no,external_no,doc_date,party_id,warehouse_id,dest_warehouse_id,invoice_value,notes)
-         VALUES(?,?,?,?,?,?,?,?,?)`
+        `INSERT INTO documents(kind,doc_no,external_no,doc_date,party_id,warehouse_id,dest_warehouse_id,invoice_value,blowing_fee,batch_id,notes)
+         VALUES(?,?,?,?,?,?,?,?,?,?,?)`
       ).run(
         payload.kind, numbers.docNo, numbers.externalNo, payload.doc_date,
         int(payload.party_id) || null, int(payload.warehouse_id) || null, int(payload.dest_warehouse_id) || null,
         (payload.invoice_value == null ? '' : String(payload.invoice_value)).trim() || null,
+        (payload.blowing_fee == null ? '' : String(payload.blowing_fee)).trim() || null,
+        batchId,
         (payload.notes || '').trim() || null
       );
       docId = info.lastInsertRowid;
@@ -1177,9 +1215,13 @@ function saveDocument(payload) {
     );
     const warnings = [];
     const insMove = db.prepare(
-      `INSERT INTO stock_moves(item_id,warehouse_id,bucket,piece_delta,carton_qty,bag_qty,doc_type,doc_id,doc_no,party_id,note,move_date)
-       VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`
+      `INSERT INTO stock_moves(item_id,warehouse_id,bucket,piece_delta,carton_qty,bag_qty,doc_type,doc_id,doc_no,party_id,is_customer,note,move_date)
+       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`
     );
+    /* a document of a batch carries the customer's name — the material is
+       ours to store, but it belongs to the customer */
+    const moveParty = batch ? batch.party_id : (int(payload.party_id) || null);
+    const moveCustomer = batch ? 1 : 0;
 
     for (const l of payload.lines) {
       const itemId = int(l.item_id);
@@ -1198,8 +1240,8 @@ function saveDocument(payload) {
           warnings.push(`«${item.name}» في ${whName(src)} ${here} ${item.base_unit} فقط، والمخزن سيتجاوز الحد إلى ${here - pieces}.`);
         }
         insLine.run(docId, itemId, src, dst, bucket, pieces, cartons, bags, l.note || null, -1);
-        insMove.run(itemId, src, bucket, -pieces, cartons, bags, payload.kind, docId, numbers.docNo, null, l.note || 'نقل صادر', payload.doc_date);
-        insMove.run(itemId, dst, bucket, pieces, cartons, bags, payload.kind, docId, numbers.docNo, null, l.note || 'نقل وارد', payload.doc_date);
+        insMove.run(itemId, src, bucket, -pieces, cartons, bags, payload.kind, docId, numbers.docNo, moveParty, moveCustomer, l.note || 'نقل صادر', payload.doc_date);
+        insMove.run(itemId, dst, bucket, pieces, cartons, bags, payload.kind, docId, numbers.docNo, moveParty, moveCustomer, l.note || 'نقل وارد', payload.doc_date);
       } else {
         const wh = int(l.warehouse_id || payload.warehouse_id) || null;
         if (!wh) throw new Error(`اختر المخزن للسطر ${payload.lines.indexOf(l) + 1}`);
@@ -1218,7 +1260,7 @@ function saveDocument(payload) {
         }
         insLine.run(docId, itemId, wh, null, bucket, pieces, cartons, bags, l.note || null, sign);
         insMove.run(itemId, wh, bucket, sign * pieces, cartons, bags, payload.kind, docId, numbers.docNo,
-          int(payload.party_id) || null, l.note || null, payload.doc_date);
+          moveParty, moveCustomer, l.note || null, payload.doc_date);
       }
     }
     savedWarnings[docId] = warnings;
@@ -1770,8 +1812,21 @@ function listOpenIssues() {
  * in scrap_movements (is_customer = 1).
  * ------------------------------------------------------------------ */
 
-function listTolling(limit = 200) {
-  const rows = db.prepare(
+/* ------------------------------------------------------------------ *
+ * V7 — the tolling batch (دفعة العميل)
+ *
+ * The customer's raw material comes in as ONE batch and carries a number.
+ * Every document that touches it points at that number:
+ *   · «صرف خام إلى الإنتاج» → the material leaves the warehouse
+ *   · «استلام المنتج التام»   → the boxes come back from the plant
+ *   · «فاتورة مبيعات»        → the boxes go out to the customer
+ *
+ * The progress of the batch is READ from the ledger, never stored twice —
+ * a counter that drifts away from the documents is worse than no counter.
+ * ------------------------------------------------------------------ */
+
+function tollingBatchRows() {
+  return db.prepare(
     `SELECT t.*, p.name AS partyName, p.phone AS partyPhone,
             raw.code AS rawCode, raw.name AS rawName, raw.base_unit AS rawUnit,
             w.name AS warehouseName
@@ -1779,169 +1834,173 @@ function listTolling(limit = 200) {
      JOIN parties p ON p.id = t.party_id
      JOIN items raw ON raw.id = t.raw_item_id
      LEFT JOIN warehouses w ON w.id = t.warehouse_id
-     ORDER BY t.id DESC LIMIT ?`
-  ).all(limit);
-  return rows.map((r) => ({ ...r, lines: tollingLines(r.id) }));
+     ORDER BY t.id DESC`
+  ).all();
 }
 
-function tollingLines(orderId) {
-  return db.prepare(
-    `SELECT l.*, i.code AS itemCode, i.name AS itemName, i.base_unit AS baseUnit
-     FROM tolling_lines l JOIN items i ON i.id = l.item_id
-     WHERE l.order_id=? ORDER BY l.id`
-  ).all(orderId);
-}
-
-function getTolling(id) {
+/** the head of a batch — cheap, used by every document that points at it */
+function getTollingBatch(id) {
   const r = db.prepare(
     `SELECT t.*, p.name AS partyName, p.phone AS partyPhone,
-            raw.code AS rawCode, raw.name AS rawName, raw.base_unit AS rawUnit, raw.pieces_per_bag AS rawPerBag,
+            raw.code AS rawCode, raw.name AS rawName, raw.base_unit AS rawUnit,
             w.name AS warehouseName
      FROM tolling_orders t
      JOIN parties p ON p.id = t.party_id
      JOIN items raw ON raw.id = t.raw_item_id
      LEFT JOIN warehouses w ON w.id = t.warehouse_id
      WHERE t.id=?`
-  ).get(id);
-  if (!r) return null;
-  const lines = tollingLines(id);
+  ).get(int(id) || 0);
+  return r || null;
+}
+
+/** what really happened to this batch — read from the ledger */
+function tollingProgress(batchId) {
+  const r = db.prepare(
+    `SELECT
+       COALESCE(SUM(CASE WHEN d.kind='prod_issue' THEN -m.piece_delta ELSE 0 END),0) AS issued,
+       COALESCE(SUM(CASE WHEN d.kind='prod_receipt' AND m.bucket='good' THEN m.piece_delta ELSE 0 END),0) AS produced_good,
+       COALESCE(SUM(CASE WHEN d.kind='prod_receipt' AND m.bucket='defect' THEN m.piece_delta ELSE 0 END),0) AS produced_defect,
+       COALESCE(SUM(CASE WHEN d.kind='sale' THEN -m.piece_delta ELSE 0 END),0) AS delivered
+     FROM stock_moves m JOIN documents d ON d.id=m.doc_id AND d.kind=m.doc_type
+     WHERE d.batch_id=?`
+  ).get(int(batchId) || 0);
   return {
-    ...r,
-    lines,
-    totalGood: lines.reduce((a, l) => a + int(l.good), 0),
-    totalDefect: lines.reduce((a, l) => a + int(l.defect), 0)
+    issued: int(r.issued),
+    producedGood: int(r.produced_good),
+    producedDefect: int(r.produced_defect),
+    delivered: int(r.delivered)
   };
 }
 
+/** the batches with their progress — the list the user sees */
+function listTolling(limit = 200) {
+  const rows = tollingBatchRows().slice(0, int(limit) || 200);
+  return rows.map((r) => {
+    const p = tollingProgress(r.id);
+    const remaining = int(r.pieces_in) - p.issued;
+    const toDeliver = p.producedGood - p.delivered;
+    const status = p.delivered > 0 && p.delivered >= p.producedGood
+      ? 'delivered'
+      : (p.producedGood > 0 ? 'ready' : (p.issued > 0 ? 'in-production' : 'received'));
+    return { ...r, ...p, remaining, toDeliver, status };
+  });
+}
+
+/** one batch with its progress */
+function getTolling(id) {
+  const r = getTollingBatch(id);
+  if (!r) return null;
+  const p = tollingProgress(r.id);
+  const remaining = int(r.pieces_in) - p.issued;
+  const toDeliver = p.producedGood - p.delivered;
+  const status = p.delivered > 0 && p.delivered >= p.producedGood
+    ? 'delivered'
+    : (p.producedGood > 0 ? 'ready' : (p.issued > 0 ? 'in-production' : 'received'));
+  return { ...r, ...p, remaining, toDeliver, status };
+}
+
+/**
+ * «استلام خام عميل» — the batch is created here. Only the INCOMING move is
+ * written: the material is now in the warehouse, still owned by the customer.
+ * The way out of the warehouse is the unified «صرف خام إلى الإنتاج», and the
+ * way back in is «استلام المنتج التام».
+ */
 function saveTolling(payload) {
   const partyId = int(payload.party_id);
   const rawItemId = int(payload.raw_item_id);
   const piecesIn = int(payload.pieces_in);
-  const lines = (payload.lines || [])
-    .map((l) => ({
-      item_id: int(l.item_id),
-      good: int(l.good),
-      defect: int(l.defect),
-      bags: int(l.bags),
-      note: l.note
-    }))
-    .filter((l) => l.item_id || l.good || l.defect);
-
-  if (!partyId) throw new Error('اختر العميل (صاحب المادة) من القائمة');
-  if (!rawItemId) throw new Error('اختر صنف المادة الخام المستلمة');
-  if (piecesIn <= 0) throw new Error('عدد الحبات المستلمة يجب أن يكون أكبر من صفر');
-  lines.forEach((l, i) => {
-    if (!l.item_id) throw new Error(`اختر المنتج في السطر ${i + 1}`);
-    if (l.good + l.defect <= 0) throw new Error(`أدخل كمية في السطر ${i + 1}`);
-  });
-
-  const goodOut = lines.reduce((a, l) => a + l.good, 0);
-  const defectOut = lines.reduce((a, l) => a + l.defect, 0);
   const whId = int(payload.warehouse_id) || (getMainWarehouse() || {}).id || null;
   const id = int(payload.id) || null;
-  const warnings = [];
-  const raw = db.prepare('SELECT code,name,base_unit FROM items WHERE id=?').get(rawItemId);
+
+  if (!partyId) throw new Error('اختر العميل (صاحب الخامة) من القائمة');
+  if (!rawItemId) throw new Error('اختر صنف المادة الخام المستلمة');
+  if (piecesIn <= 0) throw new Error('عدد الحبات المستلمة يجب أن يكون أكبر من صفر');
+  if (!whId) throw new Error('اختر المخزن الذي دخلت إليه خامة العميل');
+  const raw = db.prepare('SELECT code,name FROM items WHERE id=?').get(rawItemId);
   if (!raw) throw new Error('الصنف غير موجود');
 
   const tx = db.transaction(() => {
-    if (id) {
-      db.prepare("DELETE FROM stock_moves WHERE doc_id=? AND doc_type IN ('tolling_in','tolling_out','scrap')").run(id);
-      db.prepare('DELETE FROM scrap_movements WHERE doc_id=? AND doc_type=? AND source=\'tolling\'').run(id, 'tolling_order');
-      db.prepare('DELETE FROM tolling_lines WHERE order_id=?').run(id);
-    }
+    const docNo = (payload.doc_no || '').trim() || nextProdNo('tolling_orders', 'TOL');
     let orderId = id;
     if (orderId) {
       db.prepare(
-        "UPDATE tolling_orders SET doc_no=?, doc_date=?, party_id=?, raw_item_id=?, warehouse_id=?, pieces_in=?, bags_in=?, note=?, updated_at=datetime('now','localtime') WHERE id=?"
-      ).run((payload.doc_no || '').trim() || nextProdNo('tolling_orders', 'TOL'), payload.doc_date, partyId,
-        rawItemId, whId, piecesIn, int(payload.bags_in), str(payload.note), orderId);
+        `UPDATE tolling_orders SET doc_no=?, doc_date=?, party_id=?, raw_item_id=?, warehouse_id=?,
+         pieces_in=?, bags_in=?, note=?, updated_at=datetime('now','localtime') WHERE id=?`
+      ).run(docNo, payload.doc_date, partyId, rawItemId, whId, piecesIn,
+        int(payload.bags_in), str(payload.note), orderId);
+      /* the old incoming movement goes away with the old numbers — the
+         ledger must show the batch as it is now, not as it was */
+      db.prepare("DELETE FROM stock_moves WHERE doc_id=? AND doc_type='tolling_in'").run(orderId);
     } else {
       const info = db.prepare(
-        'INSERT INTO tolling_orders(doc_no,doc_date,party_id,raw_item_id,warehouse_id,pieces_in,bags_in,note) VALUES(?,?,?,?,?,?,?,?)'
-      ).run((payload.doc_no || '').trim() || nextProdNo('tolling_orders', 'TOL'), payload.doc_date, partyId,
-        rawItemId, whId, piecesIn, int(payload.bags_in), str(payload.note));
+        `INSERT INTO tolling_orders(doc_no,doc_date,party_id,raw_item_id,warehouse_id,pieces_in,bags_in,note)
+         VALUES(?,?,?,?,?,?,?,?)`
+      ).run(docNo, payload.doc_date, partyId, rawItemId, whId, piecesIn,
+        int(payload.bags_in), str(payload.note));
       orderId = info.lastInsertRowid;
     }
-    const docNo = db.prepare('SELECT doc_no FROM tolling_orders WHERE id=?').get(orderId).doc_no;
-
-    const insMove = db.prepare(
+    const realNo = db.prepare('SELECT doc_no FROM tolling_orders WHERE id=?').get(orderId).doc_no;
+    db.prepare(
       `INSERT INTO stock_moves(item_id,warehouse_id,bucket,piece_delta,carton_qty,bag_qty,doc_type,doc_id,doc_no,party_id,is_customer,note,move_date)
        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`
-    );
-    const insLine = db.prepare(
-      'INSERT INTO tolling_lines(order_id,item_id,good,defect,bags,note) VALUES(?,?,?,?,?,?)'
-    );
-    const insScrap = db.prepare(
-      `INSERT INTO scrap_movements(source,is_customer,party_id,item_id,warehouse_id,pieces,bucket,doc_type,doc_id,doc_no,note)
-       VALUES('tolling',1,?,?,?,?,?,?,?,?,?)`
-    );
-
-    // 1) the customer's raw material arrives
-    insMove.run(rawItemId, whId, 'good', piecesIn, 0, int(payload.bags_in), 'tolling_in', orderId, docNo,
-      partyId, 1, str(payload.note) || 'استلام مادة للعميل', payload.doc_date);
-
-    // 2) good output leaves to the customer, defects stay as customer-owned scrap
-    for (const l of lines) {
-      const product = db.prepare('SELECT code,name FROM items WHERE id=?').get(l.item_id);
-      insLine.run(orderId, l.item_id, l.good, l.defect, l.bags, str(l.note));
-      if (l.good) {
-        insMove.run(rawItemId, whId, 'good', -l.good, 0, l.bags, 'tolling_out', orderId, docNo,
-          partyId, 1, `نفخ للغير: ${product ? product.name : ''} × ${l.good}`, payload.doc_date);
-      }
-      if (l.defect) {
-        insMove.run(rawItemId, whId, 'defect', l.defect, 0, 0, 'scrap', orderId, docNo,
-          partyId, 1, `هدر نفخ للغير: ${product ? product.name : ''} × ${l.defect}`, payload.doc_date);
-        insScrap.run(partyId, rawItemId, whId, l.defect, 'defect', 'tolling_order', orderId, docNo,
-          product ? `${product.code} — ${product.name}` : null);
-      }
-    }
-
-    // shortage against what the customer gave us is informational only
-    const used = goodOut + defectOut;
-    if (used > piecesIn) {
-      warnings.push(`المُسلَّم والهدر (${used}) يتجاوز المستلم (${piecesIn}) — الرصيد سيصبح سالباً.`);
-    }
-    if (goodOut + defectOut < piecesIn) {
-      warnings.push(`بقي ${piecesIn - used} حبة من مادة العميل داخل المخزن بدون تسليم.`);
-    }
+    ).run(rawItemId, whId, 'good', piecesIn, 0, int(payload.bags_in), 'tolling_in', orderId, realNo,
+      partyId, 1, str(payload.note) || `استلام خامة العميل — ${raw.name}`, payload.doc_date);
     return orderId;
   });
 
   const savedId = tx();
-  const doc = getTolling(savedId);
-  if (warnings.length) doc.warnings = warnings;
-  return doc;
+  return getTolling(savedId);
 }
 
+/** every movement of this batch — the batch's own + the documents that use it */
 function tollingImpact(id) {
   const doc = getTolling(id);
   if (!doc) return null;
-  const lines = [];
   const moves = db.prepare(
-    `SELECT m.bucket, m.piece_delta AS delta, i.code AS itemCode, i.name AS itemName, w.name AS warehouseName
-     FROM stock_moves m JOIN items i ON i.id=m.item_id JOIN warehouses w ON w.id=m.warehouse_id
-     WHERE m.doc_id=? AND m.doc_type IN ('tolling_in','tolling_out','scrap') ORDER BY m.id`
-  ).all(id);
-  for (const m of moves) {
-    lines.push({
-      item: `${m.itemCode} — ${m.itemName}`,
-      wh: m.warehouseName,
-      dir: m.delta > 0 ? 'خصم (عكس الإضافة)' : 'إضافة (عكس الخصم)',
-      qty: `${Math.abs(m.delta)} ${AR_BUCKET[m.bucket]}`
-    });
-  }
-  const scrap = db.prepare("SELECT COALESCE(SUM(pieces),0) AS p FROM scrap_movements WHERE doc_id=? AND doc_type='tolling_order'").get(id).p;
-  return { doc, lines, scrap, totalGood: doc.totalGood, totalDefect: doc.totalDefect, piecesIn: doc.pieces_in };
+    `SELECT m.bucket, m.piece_delta AS delta, i.code AS itemCode, i.name AS itemName,
+            w.name AS warehouseName, m.doc_type, m.doc_no
+     FROM stock_moves m
+     JOIN items i ON i.id=m.item_id
+     LEFT JOIN warehouses w ON w.id=m.warehouse_id
+     WHERE (m.doc_type='tolling_in' AND m.doc_id=?)
+        OR m.doc_id IN (SELECT id FROM documents WHERE batch_id=?)
+     ORDER BY m.id`
+  ).all(int(id) || 0, int(id) || 0);
+  const lines = moves.map((m) => ({
+    item: `${m.itemCode} — ${m.itemName}`,
+    wh: m.warehouseName,
+    dir: m.delta > 0 ? 'إضافة' : 'خصم',
+    qty: `${Math.abs(m.delta)} ${AR_BUCKET[m.bucket]}`,
+    doc: m.doc_no
+  }));
+  const docs = db.prepare(
+    'SELECT id, kind, doc_no, doc_date FROM documents WHERE batch_id=? ORDER BY id'
+  ).all(int(id) || 0);
+  return { doc, lines, docs, totalGood: doc.producedGood, totalDefect: doc.producedDefect };
 }
 
+/**
+ * The batch is deleted — but only when nothing uses it yet.
+ *
+ * A batch whose material already left for the plant cannot just vanish:
+ * the documents that used it would keep their movements, and the ledger
+ * would show a negative balance for a material that never came in. So the
+ * batch is refused while a document points at it, and the message names
+ * the documents that must go first.
+ */
 function deleteTolling(id) {
   const impact = tollingImpact(id);
-  if (!impact) throw new Error('المستند غير موجود');
+  if (!impact) throw new Error('الدفعة غير موجودة');
+  const used = db.prepare(
+    'SELECT kind, doc_no FROM documents WHERE batch_id=? ORDER BY id'
+  ).all(int(id) || 0);
+  if (used.length) {
+    const names = used.map((d) => `${d.doc_no}`).join('، ');
+    throw new Error(`هذه الدفعة مستخدمة في ${used.length} مستند (${names}) — احذف المستندات أولاً ثم احذف الدفعة.`);
+  }
   db.transaction(() => {
-    db.prepare("DELETE FROM stock_moves WHERE doc_id=? AND doc_type IN ('tolling_in','tolling_out','scrap')").run(id);
-    db.prepare("DELETE FROM scrap_movements WHERE doc_id=? AND doc_type='tolling_order'").run(id);
-    db.prepare('DELETE FROM tolling_lines WHERE order_id=?').run(id);
-    db.prepare('DELETE FROM tolling_orders WHERE id=?').run(id);
+    db.prepare("DELETE FROM stock_moves WHERE doc_id=? AND doc_type='tolling_in'").run(int(id));
+    db.prepare('DELETE FROM tolling_orders WHERE id=?').run(int(id));
   })();
   return impact;
 }
@@ -2267,7 +2326,15 @@ function int(v) {
  * item's base unit; buckets default to good only.
  */
 function dailyReport(filters = {}) {
-  const day = (filters.date || '').trim() || db.prepare("SELECT date('now','localtime') AS d").get().d;
+  const today = db.prepare("SELECT date('now','localtime') AS d").get().d;
+  /* V7 — the report takes a PERIOD, not a single day. The old single date
+     still works: it becomes a period of one day. */
+  let from = (filters.dateFrom || '').trim();
+  let to = (filters.dateTo || '').trim();
+  const one = (filters.date || '').trim();
+  if (!from && !to) { from = one || today; to = one || today; }
+  if (!from) from = to;
+  if (!to) to = from;
   const wanted = Array.isArray(filters.buckets) && filters.buckets.length
     ? filters.buckets.filter((b) => BUCKETS.includes(b)) : ['good'];
   const buckets = wanted.length ? wanted : BUCKETS.slice();
@@ -2279,9 +2346,9 @@ function dailyReport(filters = {}) {
            SUM(CASE WHEN m.piece_delta>0 THEN m.piece_delta ELSE 0 END) AS inQty,
            SUM(CASE WHEN m.piece_delta<0 THEN -m.piece_delta ELSE 0 END) AS outQty
     FROM stock_moves m
-    WHERE m.move_date = ? AND m.bucket IN (${ph}) ${custWhere}
+    WHERE m.move_date BETWEEN ? AND ? AND m.bucket IN (${ph}) ${custWhere}
     GROUP BY m.item_id, m.warehouse_id
-  `).all(day, ...buckets);
+  `).all(from, to, ...buckets);
 
   const bal = db.prepare(`
     SELECT m.item_id AS itemId, m.warehouse_id AS warehouseId,
@@ -2315,7 +2382,7 @@ function dailyReport(filters = {}) {
     return { itemId: it.id, itemCode: it.code, itemName: it.name, baseUnit: it.base_unit, cells, totalIn, totalOut, totalBalance };
   });
 
-  return { date: day, buckets, bucketLabels: buckets.map((b) => AR_BUCKET[b]), warehouses: whs, rows, warehouseTotals, grand };
+  return { date: to, from, to, period: from === to ? 'day' : 'range', buckets, bucketLabels: buckets.map((b) => AR_BUCKET[b]), warehouses: whs, rows, warehouseTotals, grand };
 }
 
 /* ------------------------------------------------------------------ *
@@ -2374,13 +2441,31 @@ function stockStatusReport(filters = {}) {
      ORDER BY i.code, w.name`
   ).all(...params);
 
+  /* V7 — the total of EVERY warehouse for each item, so the report can show
+     one column that gathers them all (even when the report is filtered by
+     one warehouse, the item's real total stays visible). */
+  const allRows = db.prepare(
+    `SELECT i.id AS itemId,
+            COALESCE(SUM(CASE WHEN m.bucket='good' THEN m.piece_delta ELSE 0 END),0) AS allGood,
+            COALESCE(SUM(CASE WHEN m.bucket='defect' THEN m.piece_delta ELSE 0 END),0) AS allDefect,
+            COALESCE(SUM(m.piece_delta),0) AS allTotal
+     FROM stock_moves m JOIN items i ON i.id = m.item_id
+     WHERE m.is_customer = 0
+     GROUP BY i.id`
+  ).all();
+  const allMap = new Map(allRows.map((r) => [r.itemId, r]));
+
   let good = 0, defect = 0, total = 0;
   const out = rows.map((r) => {
     good += r.good; defect += r.defect; total += r.total;
     const low = r.minAlert > 0 && r.good < r.minAlert;
     const high = r.maxDefect > 0 && r.defect > r.maxDefect;
+    const a = allMap.get(r.itemId) || { allGood: 0, allDefect: 0, allTotal: 0 };
     return {
       ...r,
+      allGood: a.allGood,
+      allDefect: a.allDefect,
+      allTotal: a.allTotal,
       alert: low ? 'سليم تحت الحد' : high ? 'تالف تجاوز الحد' : '',
       alertKind: low ? 'warn' : high ? 'bad' : ''
     };
@@ -2394,7 +2479,8 @@ function stockStatusReport(filters = {}) {
       { key: 'warehouseName', label: 'المخزن' },
       { key: 'good', label: 'سليم', num: true },
       { key: 'defect', label: 'تالف', num: true },
-      { key: 'total', label: 'الإجمالي', num: true },
+      { key: 'total', label: 'إجمالي المخزن', num: true },
+      { key: 'allTotal', label: 'إجمالي كل المخازن', num: true },
       { key: 'alert', label: 'التنبيه' }
     ],
     rows: out,
@@ -2822,6 +2908,8 @@ module.exports = {
   deleteReceipt,
   listTolling,
   getTolling,
+  getTollingBatch,
+  tollingProgress,
   saveTolling,
   tollingImpact,
   deleteTolling,
