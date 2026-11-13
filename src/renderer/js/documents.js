@@ -631,10 +631,19 @@
       const found = new Map();
       lines.forEach((l) => rowUnits(l).forEach((u) => { if (!found.has(u.key)) found.set(u.key, u); }));
       const keys = [...found.keys()].sort((a, b) => PACK_ORDER.indexOf(a) - PACK_ORDER.indexOf(b));
-      const same = keys.length === tableUnits.length && keys.every((k, i) => k === tableUnits[i].key);
       tableUnits = keys.map((k) => found.get(k));
       buildHead();
-      if (same) return;
+      /* EVERY line gets its boxes back — not only the lines whose item
+         changed the units of the whole table.
+         THIS is where the row the user adds LATER used to break: the row
+         drew its (empty) cells the moment it was made — before it had an
+         item — so when the user picked the item afterwards the table
+         spoke of the very same units as before, nothing changed, and the
+         row never got its boxes again. The first row was lucky: it was
+         empty when the editor opened, so picking its item CHANGED the
+         units of the table and the boxes came back. A line is rebuilt by
+         its OWN signature, so a row added later is exactly like the
+         first one. */
       lines.forEach((l) => renderPackCells(l));
       /* the quantity still decides — every line keeps its own truth */
       lines.forEach((l) => applyQuantity(l, SamDB.n(l.piecesEl.value), 'pieces'));
@@ -696,6 +705,19 @@
         const it = itemById(l.itemCombo.getValue());
         const st = l.packs[key] || (l.packs[key] = { count: 0, part: 0 });
         if (which === 'part') st.part = SamDB.n(e.part.value); else st.count = SamDB.n(e.count.value);
+        /* the fraction holds the PIECES of an incomplete unit — never a
+           whole unit and more. What the user typed beyond one unit moves
+           into the count, so the line keeps ONE shape and the two boxes
+           never show each other's number. */
+        if (which === 'part') {
+          const per = U ? U.piecesOf(it, key) : 0;
+          if (per > 0 && st.part >= per) {
+            const extra = Math.floor(st.part / per);
+            st.part -= extra * per;
+            st.count += extra;
+            setPack(l, key, st.count, st.part);
+          }
+        }
         /* the packs write the quantity — the pieces of an incomplete pack too */
         const qty = U ? U.join(it, key, st.count, st.part) : 0;
         applyQuantity(l, qty, key);
@@ -717,15 +739,22 @@
       setNum(e.count, st.count);
       setNum(e.part, st.part);
     }
-    /** the quantity is the truth — it fills every pack of the line */
-    function applyQuantity(l, qty, skip) {
+    /** the quantity is the truth — it fills every pack of the line.
+        `typingIn` says WHERE the user is typing right now, so that box is
+        never touched by the calculation:
+          · 'pieces' — the quantity box: it keeps what the user typed and
+            every pack of the line follows it;
+          · a unit key ('bags'…) — that pack's boxes: the quantity and the
+            other packs are recomputed from it;
+          · null — nobody is typing: the whole line takes one shape. */
+    function applyQuantity(l, qty, typingIn) {
       const U = window.SamUnits;
       if (!U) return;
       const it = itemById(l.itemCombo.getValue());
       const n = Math.max(0, Math.round(SamDB.n(qty)));
-      if (skip !== 'pieces') setNum(l.piecesEl, n);
+      if (typingIn !== 'pieces') setNum(l.piecesEl, n);
       rowUnits(l).forEach((u) => {
-        if (skip === u.key) return;          /* the user is typing in it */
+        if (typingIn === u.key) return;     /* the user is typing in it */
         const sp = U.split(it, u.key, n);
         setPack(l, u.key, sp.count, sp.part);
       });
@@ -1285,6 +1314,104 @@
     return promise;
   }
 
+  /* ---------------- the picture of the item ----------------
+     «واجعل الصوره بجانبه بدل كود الصنف في التقارير والمطبوعات كامل»
+     The picture of the item sits BESIDE its name and the code of the item
+     GOES. The shared helper (js/itempic.js) knows the folder of the
+     pictures; the page may not carry it, so it is loaded here when it is
+     missing — and when even that fails, the main process answers anyway. */
+  const PIC_MARKS = new Map();     /* the mark of a cell → what it carries */
+  let picSeq = 0;
+  let picHelper = null;
+  let picHelperLoading = null;
+
+  /** the shared helper — loaded once, when the page does not carry it */
+  function ensurePicHelper() {
+    if (window.SamItemPic) { picHelper = window.SamItemPic; return Promise.resolve(picHelper); }
+    if (picHelperLoading) return picHelperLoading;
+    picHelperLoading = new Promise((resolve) => {
+      try {
+        const s = document.createElement('script');
+        s.src = 'js/itempic.js';
+        s.onload = () => resolve(window.SamItemPic || null);
+        s.onerror = () => resolve(null);
+        document.head.appendChild(s);
+      } catch (e) { resolve(null); }
+    }).then((h) => { picHelper = h; picHelperLoading = null; return h; });
+    return picHelperLoading;
+  }
+
+  /** the pictures of the lines of a document — ready before the paper is built */
+  async function preparePics(linesArr) {
+    const h = await ensurePicHelper();
+    let dir = '';
+    if (h) { try { dir = (await h.ensure()) || ''; } catch (e) { dir = ''; } }
+    if (!dir) {
+      const a = (window.sam && window.sam.app) ? window.sam.app : null;
+      if (a) { try { const r = await a.imagesDir(); dir = (r && r.ok && r.dir) ? r.dir : ''; } catch (e) { dir = ''; } }
+    }
+    const urls = new Map();
+    (linesArr || []).forEach((l) => {
+      const name = String((l && l.itemImage) || '').trim();
+      if (!name || !dir) return;
+      let u = '';
+      if (h) { try { u = h.url(l) || ''; } catch (e) { u = ''; } }
+      if (!u) {
+        const a = window.sam && window.sam.app;
+        try { u = (a && a.fileUrl) ? (a.fileUrl(dir + '/' + name) || '') : ''; } catch (e) { u = ''; }
+      }
+      if (u) urls.set(name, u);
+    });
+    return urls;
+  }
+
+  /** the tiny picture that sits beside the name — nothing without a picture */
+  function picThumb(url, size, print, title) {
+    if (!url) return '';
+    const px = Number(size) || 16;
+    const frame = print
+      ? 'border:1px solid #cfd6e0;box-shadow:none;'
+      : 'border:1px solid var(--line);box-shadow:0 1px 3px rgba(15,23,42,.14);';
+    return `<img class="sam-pic" src="${esc(url)}" alt="" title="${esc(title || '')}"`
+      + ` style="width:${px}px;height:${px}px;object-fit:contain;border-radius:6px;${frame}`
+      + 'background:#f1f5f9;flex:none;align-self:center;vertical-align:middle;">';
+  }
+
+  /**
+   * The cell of an item in a paper: the picture beside the name, and the
+   * name in bold and dark («اسم الصنف مميز وداكن»).
+   * The table escapes every cell it is given, so the cell carries a MARK
+   * and the markup is put in once the table is built.
+   */
+  function itemCell(l, size, print, urls) {
+    const name = String((l && l.itemImage) || '').trim();
+    const mark = `~~SAM-ITEM-${++picSeq}~~`;
+    PIC_MARKS.set(mark, {
+      url: (urls && name) ? (urls.get(name) || '') : '',
+      title: (l && l.itemName) || '',
+      size, print
+    });
+    return mark;
+  }
+
+  /** the markup of the marked cells — the picture and the bold name */
+  function paintItems(html) {
+    let out = html;
+    const done = [];
+    PIC_MARKS.forEach((m, mark) => {
+      if (out.indexOf(mark) < 0) return;      /* a mark of another table */
+      const pic = picThumb(m.url, m.size, m.print, m.title);
+      const label = `<b style="font-weight:800;color:#17202f">${esc(m.title)}</b>`;
+      const cell = pic
+        ? `<span style="display:inline-flex;align-items:center;gap:5px;vertical-align:middle">${pic}${label}</span>`
+        : label;
+      out = out.split(mark).join(cell);
+      done.push(mark);
+    });
+    done.forEach((mark) => PIC_MARKS.delete(mark));
+    return out;
+  }
+
   /* ---------------- view ---------------- */
   /** the batch a document points at — its number, its customer and its
       material. The list is read first; the database answers when the
@@ -1300,9 +1427,12 @@
     const d = await SamDB.call('getDocument', id);
     const st = KIND_STYLE[d.kind] || { ar: d.kindAr, icon: 'i-clipboard', tone: 'plain' };
     const isAdj = isAdjustment(d.kind);
+    /* the picture of every item — it sits beside the name, and the code
+       of the item does not appear at all */
+    const pics = await preparePics(d.lines);
     const rows = d.lines.map((l, i) => ({
       no: i + 1,
-      item: `${l.itemCode} — ${l.itemName}`,
+      item: itemCell(l, 16, false, pics),
       bucket: bucketAr(l.bucket),
       dir: isAdj ? (Number(l.sign) === -1 ? 'عجز' : 'زيادة') : '',
       pieces: SamDB.fmt(l.pieces),
@@ -1310,7 +1440,7 @@
       dest: l.destWarehouseName ? `← ${l.destWarehouseName}` : '',
       ...packRowOf(l)
     }));
-    const html = SamUI.tableHtml(
+    const html = paintItems(SamUI.tableHtml(
       [
         { key: 'no', label: 'م' },
         { key: 'item', label: 'الصنف' },
@@ -1323,7 +1453,7 @@
       ],
       rows,
       SamDB.fmt(d.totalPieces)
-    );
+    ));
     const whSummary = [...new Set(d.lines.map((l) => l.warehouseName).filter(Boolean))].join(' · ');
     const batch = await batchOf(d);
     const v = await modal({
@@ -1379,9 +1509,11 @@
     const d = await SamDB.call('getDocument', id);
     const isTransfer = d.kind === 'transfer';
     const isAdj = isAdjustment(d.kind);
+    /* the picture of every item beside its name — the code of the item is gone */
+    const pics = await preparePics(d.lines);
     const rows = d.lines.map((l, i) => ({
       no: i + 1,
-      item: `${l.itemCode} — ${l.itemName}`,
+      item: itemCell(l, 17, true, pics),
       warehouse: l.warehouseName || '—',
       dest: l.destWarehouseName || '',
       unit: l.baseUnit,
@@ -1414,12 +1546,12 @@
         ...(batch ? [{ k: 'دفعة العميل', v: `${batch.doc_no} — ${batch.partyName}` }] : []),
         { k: 'التاريخ', v: d.doc_date }
       ],
-      bodyHtml: `${tableHtml(cols, rows, SamDB.fmt(d.totalPieces))}
+      bodyHtml: paintItems(`${tableHtml(cols, rows, SamDB.fmt(d.totalPieces))}
         <p class="doc-note" style="margin-top:4mm">
           <b>قيمة الفاتورة:</b> ${d.invoice_value ? `${esc(d.invoice_value)} ${esc(CURRENCY)}` : '—'}
           ${d.blowing_fee ? `<br><b>أجور نفخ:</b> ${esc(d.blowing_fee)} ${esc(CURRENCY)}` : ''}
           ${d.notes ? `<br><b>ملاحظات:</b> ${esc(d.notes)}` : ''}
-        </p>`,
+        </p>`),
       footer: 'SAM Management System — جميع الكميات بالوحدة الأساسية',
       /* the footer comes from the one signature system */
       kind: 'invoice'
@@ -1436,7 +1568,7 @@
    * The quantities on all permits add up to the document total, and no
    * price ever appears on a permit.
    */
-  function permitPages(d) {
+  function permitPages(d, pics) {
     const isTransfer = d.kind === 'transfer';
     const isProd = d.kind === 'prod_receipt';
     const isProdIssue = d.kind === 'prod_issue';
@@ -1464,7 +1596,7 @@
     const pages = [...groups.values()].map((g, gi) => {
       const rows = g.lines.map((l, i) => ({
         no: i + 1,
-        item: `${l.itemCode} — ${l.itemName}`,
+        item: itemCell(l, 17, true, pics),
         unit: l.baseUnit,
         pieces: SamDB.fmt(l.pieces),
         ...packRowOf(l)
@@ -1523,14 +1655,14 @@
         docRef: `GP-${d.doc_no}-${gi + 1}`,
         docRefLabel: 'رقم التصريح',
         head,
-        bodyHtml: `
+        bodyHtml: paintItems(`
           <p class="doc-note">${note}
             <b>لا تظهر الأسعار في هذا التصريح.</b></p>
           <p class="doc-note">${isGateIn
             ? 'وسيلة النقل: .......................... &nbsp;&nbsp; رقم اللوحة: .................'
             : 'وسيلة النقل: .......................... &nbsp;&nbsp; اسم السائق: .......................... &nbsp;&nbsp; رقم اللوحة: .................'}</p>
           ${tableHtml(cols, rows, SamDB.fmt(total))}
-          <p class="doc-note" style="margin-top:3mm"><b>إجمالي هذا التصريح:</b> ${SamDB.fmt(total)} · <b>إجمالي المستند:</b> ${SamDB.fmt(d.totalPieces)}</p>`,
+          <p class="doc-note" style="margin-top:3mm"><b>إجمالي هذا التصريح:</b> ${SamDB.fmt(total)} · <b>إجمالي المستند:</b> ${SamDB.fmt(d.totalPieces)}</p>`),
         footer: 'SAM Management System — تصريح (كميات فقط)',
         /* the footer of a permit comes from the one system — the driver
            signs an EXIT permit, and only an exit permit */
@@ -1553,7 +1685,9 @@
   async function printPermits(id) {
     const d = await SamDB.call('getDocument', id);
     if (!d) return toast('المستند غير موجود', 'bad');
-    const pages = permitPages(d);
+    /* the picture of every item beside its name — the code of the item is gone */
+    const pics = await preparePics(d.lines);
+    const pages = permitPages(d, pics);
     if (!pages.length) return toast('لا توجد أصناف في المستند', 'warn');
     const label = d.kind === 'transfer' ? 'تصاريح انتقال'
       : d.kind === 'prod_receipt' ? 'تصريح خروج إنتاج'

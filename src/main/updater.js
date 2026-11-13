@@ -17,13 +17,39 @@
  *     call return the state of the first one.
  *
  * The verdict itself no longer depends on the updater library: the app asks
- * GitHub directly (ONE request, 12-second deadline) for the published tag and
+ * GitHub directly (ONE request, 18-second deadline) for the published tag and
  * compares it with the running version. The library is kept for the download
  * and is configured from updater.config.json, so it never depends on an
  * app-update.yml that may be missing from the installed folder.
  *
+ * V7.1 — the DOWNLOAD was silent, and that is what the customer reported:
+ * «عند تحميل التحديث لم يستجيب شي ولم يتحدث البرنامج» (he pressed «تحميل»
+ * and the program said nothing at all).
+ *
+ *  1. THE SILENCE. `download()` did three things in a row without saying a
+ *     word: it prepared the download (a SECOND network round-trip — the
+ *     library asks GitHub again), it copied the database (the safety copy),
+ *     and only THEN did it push the first state. On a slow line the first
+ *     step alone takes 1–15 seconds and the copy takes more — the modal
+ *     kept showing the old state («يتوفر تحديث»), the button did nothing,
+ *     and the program looked dead.
+ *     Now EVERY slow step pushes a state BEFORE it starts:
+ *        «جارٍ تجهيز التحميل…» → «جارٍ أخذ نسخة احتياطية…» → «جارٍ التحميل…»
+ *     The state keeps its machine values (available / downloading /
+ *     downloaded / error …) so the settings screen and the title-bar button
+ *     keep working, and it carries a `phase` that says WHAT is happening.
+ *  2. THE SECOND ROUND-TRIP. The check already prepares the download in the
+ *     background. That preparation is now SHARED: pressing «تحميل» never
+ *     asks GitHub a second time — it waits for the preparation that is
+ *     already running, or goes straight to the download when it succeeded.
+ *  3. THE RAW ERRORS. Every failure the customer may see is now an Arabic
+ *     sentence — never the English text of the updater library.
+ *  4. THE PROGRESS. `download-progress` moves the bar with the percentage,
+ *     the speed and the size — and the label follows it, so the modal is
+ *     never frozen at «0%».
+ *
  * Events are pushed to the renderer on channel 'app:update-state' with
- * { status, percent, speed, transferred, total, version, message }.
+ * { status, phase, percent, speed, transferred, total, version, message }.
  */
 
 const { app, ipcMain } = require('electron');
@@ -35,12 +61,20 @@ const CHANNEL = 'app:update-state';
 /* the deadlines — nothing in this file may wait for ever */
 const TIME = {
   check: 18000,             /* our own answer to "is there a new version?" */
-  prepare: 45000,           /* the library's own check, which prepares the download */
+  prepare: 120000,          /* the library's own check — a slow line needs room */
   download: 30 * 60 * 1000  /* a slow line is not a broken line */
+};
+
+/* what is happening RIGHT NOW — the customer reads this, never a key */
+const PHASE = {
+  prepare: 'جارٍ تجهيز التحميل…',
+  backup: 'جارٍ أخذ نسخة احتياطية…',
+  download: 'جارٍ التحميل…'
 };
 
 let state = {
   status: 'idle',
+  phase: '',       /* '' | 'prepare' | 'backup' | 'download' */
   percent: 0,
   speed: 0,
   transferred: 0,
@@ -48,14 +82,19 @@ let state = {
   version: null,
   latest: null,
   current: null,
-  message: ''
+  message: '',
+  note: ''         /* the safety copy — a line of its own, not the headline */
 };
 
 let getWindow = () => null;
 let autoUpdater = null;
-let busy = false;      /* our own check is running */
-let prepared = false;  /* the library knows what to download */
-let inflight = null;   /* the check that is running RIGHT NOW */
+let busy = false;          /* our own check is running */
+let prepared = false;      /* the library knows what to download */
+let inflight = null;       /* the check that is running RIGHT NOW */
+let preparePromise = null; /* the preparation that is running RIGHT NOW */
+let prepareError = null;   /* why the last preparation failed (Arabic) */
+let downloading = false;   /* a download is running RIGHT NOW */
+let providerReady = false; /* the provider was pointed at our feed already */
 
 /**
  * The version of THIS program.
@@ -84,9 +123,27 @@ function loadAutoUpdater() {
   return autoUpdater;
 }
 
+/**
+ * The state goes to EVERY window.
+ *
+ * The updater lives in a window of its own (the small window that shows
+ * the bar), and it listens on ITS OWN webContents — sending the state to
+ * the main window only meant the customer pressed «تحميل» and nothing
+ * happened: the bar never moved and no word was said.
+ */
 function push() {
+  let windows = [];
+  try { windows = require('electron').BrowserWindow.getAllWindows(); }
+  catch (e) { windows = []; }
   const w = getWindow();
-  if (w && !w.isDestroyed()) w.webContents.send(CHANNEL, state);
+  if (w && windows.indexOf(w) < 0) windows.push(w);
+  windows.forEach((win) => {
+    try {
+      if (win && !win.isDestroyed() && !win.webContents.isDestroyed()) {
+        win.webContents.send(CHANNEL, state);
+      }
+    } catch (e) { /* the window closed while we were talking to it */ }
+  });
   return state;
 }
 
@@ -97,14 +154,53 @@ function set(patch) {
 
 const fmtError = (e) => (e && (e.message || e.description)) || String(e);
 
-/** a friendly Arabic sentence for every failure the user may see */
+/** the customer must know WHICH version he has, not only that it is the last */
+const upToDate = (v) => (v ? `أنت على أحدث إصدار (${v})` : 'أنت على أحدث إصدار');
+
+/**
+ * A friendly ARABIC sentence for every failure the user may see.
+ *
+ * The customer reads Arabic only: a raw English error of the updater
+ * library («Please check update first», «net::ERR_…») is no help at all,
+ * so it is translated — and when it cannot be translated, a clear Arabic
+ * sentence replaces it instead of leaking the English text.
+ */
 function friendly(e) {
   const raw = fmtError(e);
-  if (/timeout|timed out|مهلة/i.test(raw)) return raw.replace(/^.*?(انتهت.*)$/, '$1');
-  if (/ENOTFOUND|ECONNREFUSED|ECONNRESET|EAI_AGAIN|getaddrinfo/i.test(raw)) {
+  /* a sentence we wrote ourselves — it is already Arabic */
+  if (/[؀-ۿ]/.test(raw)) return raw;
+  if (/ETIMEDOUT|timeout|timed out/i.test(raw)) {
+    return 'انتهت المهلة — الاتصال بالإنترنت بطيء جداً، حاول مرة أخرى';
+  }
+  if (/ENOTFOUND|ECONNREFUSED|ECONNRESET|EAI_AGAIN|getaddrinfo|ENETUNREACH/i.test(raw)) {
     return 'تعذّر الوصول إلى GitHub — تحقق من الاتصال بالإنترنت';
   }
-  return raw;
+  if (/ECONNABORTED|socket hang up|aborted/i.test(raw)) {
+    return 'انقطع الاتصال أثناء التحديث — حاول مرة أخرى';
+  }
+  if (/check update first/i.test(raw)) {
+    return 'تعذّر بدء التحميل — أعد فحص التحديثات أولاً';
+  }
+  if (/already in progress/i.test(raw)) {
+    return 'التحميل جارٍ بالفعل — انتظر حتى ينتهي';
+  }
+  if (/ENOSPC|no space/i.test(raw)) {
+    return 'لا توجد مساحة كافية على القرص لتثبيت التحديث';
+  }
+  if (/EACCES|EPERM|permission denied/i.test(raw)) {
+    return 'تعذّر الكتابة على القرص — تحقق من الصلاحيات';
+  }
+  if (/certificate|SSL|self.signed/i.test(raw)) {
+    return 'تعذّر الاتصال الآمن بـ GitHub — تحقق من الشبكة';
+  }
+  if (/404|not found|no published/i.test(raw)) {
+    return 'لم يُعثر على ملف التحديث على GitHub';
+  }
+  if (/ERR_UPDATER|updater is inactive|not packaged/i.test(raw)) {
+    return 'التحديث متاح في النسخة المثبتة (exe) فقط';
+  }
+  /* nothing we recognise — the customer still gets a sentence, not a code */
+  return 'تعذّر تحميل التحديث — تحقق من الاتصال بالإنترنت ثم أعد المحاولة';
 }
 
 /** a promise that can never hang: it rejects with a clear message instead */
@@ -200,6 +296,19 @@ async function latestPublished(cfg) {
   return { tag, version, url: `https://github.com/${cfg.owner}/${cfg.repo}/releases/tag/${tag}` };
 }
 
+/**
+ * The percentage of the download.
+ *
+ * The library reports 0–100 (percent: transferred / total * 100); the
+ * older versions reported 0–1. Both are understood, so the bar never
+ * freezes at 10% because of a change in the library.
+ */
+function progressPercent(p) {
+  let v = Number(p && p.percent) || 0;
+  if (v > 0 && v <= 1) v = v * 100;
+  return Math.max(0, Math.min(100, Math.round(v * 10) / 10));
+}
+
 function wire() {
   const au = loadAutoUpdater();
   if (!au) return;
@@ -212,22 +321,31 @@ function wire() {
   au.on('checking-for-update', () => { /* handled by our own check */ });
 
   au.on('update-available', (info) => {
+    /* while a download is running WE own the screen: the library must not
+       wipe «جارٍ تجهيز التحميل…» and put the old verdict back */
+    if (downloading) return;
     if (state.status === 'available') return;
-    set({ status: 'available', version: info.version, percent: 0, message: `يتوفر الإصدار ${info.version}` });
+    set({ status: 'available', phase: '', version: info.version, percent: 0, message: `يتوفر الإصدار ${info.version}` });
   });
   au.on('update-not-available', (info) => {
     if (state.status !== 'checking' && state.status !== 'idle') return;
-    set({ status: 'up-to-date', version: (info && info.version) || state.version, percent: 0, message: 'أنت على أحدث إصدار' });
+    set({ status: 'up-to-date', phase: '', version: (info && info.version) || state.version, percent: 0, message: upToDate((info && info.version) || state.version) });
   });
-  au.on('download-progress', (p) => set({
-    status: 'downloading',
-    percent: Math.round((p.percent || 0) * 10) / 10,
-    speed: p.bytesPerSecond || 0,
-    transferred: p.transferred || 0,
-    total: p.total || 0
-  }));
+  au.on('download-progress', (p) => {
+    const pct = progressPercent(p);
+    set({
+      status: 'downloading',
+      phase: 'download',
+      percent: pct,
+      speed: p.bytesPerSecond || 0,
+      transferred: p.transferred || 0,
+      total: p.total || 0,
+      message: `جارٍ التحميل… ${Math.round(pct)}%`
+    });
+  });
   au.on('update-downloaded', (info) => set({
     status: 'downloaded',
+    phase: '',
     version: info.version,
     percent: 100,
     message: 'اكتمل التحميل — جاهز للتثبيت'
@@ -236,11 +354,24 @@ function wire() {
     /* a failure while preparing the download must not overwrite a verdict we
        already reached; a failure during the download must be shown */
     if (!['checking', 'idle', 'downloading'].includes(state.status)) return;
-    set({ status: 'error', percent: 0, message: friendly(e) });
+    set({ status: 'error', phase: '', percent: 0, message: friendly(e) });
   });
 }
 
-function devMode() { return !app.isPackaged; }
+/**
+ * The program is not packaged (npm start) — there is no installer to
+ * download, so the real path is refused with a clear sentence.
+ *
+ * SAM_UPDATE_MODE=real forces the real path; the harness
+ * (tools/v7-download-check.js) uses it to drive the REAL download machine
+ * of a program that is not packaged.
+ */
+function devMode() {
+  const forced = String(process.env.SAM_UPDATE_MODE || '').toLowerCase();
+  if (forced === 'real') return false;
+  if (forced === 'dev') return true;
+  return !app.isPackaged;
+}
 
 /**
  * V4 — a copy of the database is taken BEFORE any update is installed.
@@ -279,8 +410,10 @@ function feedConfig() {
 function configureProvider(cfg) {
   const au = loadAutoUpdater();
   if (!au) return null;
+  if (providerReady) return au;
   try {
     au.setFeedURL({ provider: 'github', owner: cfg.owner, repo: cfg.repo });
+    providerReady = true;
   } catch (e) { /* the provider will complain later, with a readable message */ }
   return au;
 }
@@ -303,6 +436,7 @@ async function check() {
   const current = appVersion();
   set({
     status: 'checking',
+    phase: '',
     percent: 0,
     speed: 0,
     transferred: 0,
@@ -317,15 +451,18 @@ async function check() {
       const found = await withTimeout(latestPublished(cfg), TIME.check, 'انتهت مهلة الفحص عن التحديث');
       const cmp = cmpVersions(found.version, current);
       if (cmp > 0) {
-        set({ status: 'available', version: found.version, latest: found.version, percent: 0, message: `يتوفر الإصدار ${found.version}` });
-        /* the library prepares the download in the background — its failure
-           never changes the verdict we already reached */
+        set({ status: 'available', phase: '', version: found.version, latest: found.version, percent: 0, message: `يتوفر الإصدار ${found.version}` });
+        /* the library prepares the download in the background — it is QUIET
+           (it must not change the verdict we already reached) and it is
+           SHARED: the download waits for THIS preparation instead of
+           asking GitHub a second time. */
         prepare(cfg).catch(() => {});
       } else if (cmp === 0) {
-        set({ status: 'up-to-date', version: found.version, latest: found.version, percent: 0, message: 'أنت على أحدث إصدار' });
+        set({ status: 'up-to-date', phase: '', version: found.version, latest: found.version, percent: 0, message: upToDate(found.version) });
       } else {
         set({
           status: 'up-to-date',
+          phase: '',
           version: found.version,
           latest: found.version,
           percent: 0,
@@ -333,7 +470,7 @@ async function check() {
         });
       }
     } catch (e) {
-      set({ status: 'error', percent: 0, message: friendly(e) });
+      set({ status: 'error', phase: '', percent: 0, message: friendly(e) });
     } finally {
       busy = false;
     }
@@ -345,37 +482,115 @@ async function check() {
   return state;
 }
 
-/** ask the library what it would download, under a deadline */
+/**
+ * Ask the library what it would download, under a deadline.
+ *
+ * ONE preparation at a time: when the background preparation of the check
+ * is still running, this waits for THAT one — the customer never pays for
+ * a second round-trip to GitHub. When it already succeeded, nothing is
+ * asked at all.
+ */
 async function prepare(cfg) {
+  if (prepared) return true;                 /* nothing to ask — no network */
+  if (preparePromise) return preparePromise; /* the same request, shared */
   const au = configureProvider(cfg || feedConfig());
   if (!au) throw new Error('مكتبة التحديث غير متوفرة');
-  await withTimeout(au.checkForUpdates(), TIME.prepare, 'انتهت مهلة تجهيز التحميل');
-  prepared = true;
-  return true;
+  /* the work starts in a microtask, so the promise is registered BEFORE it
+     can finish — a dead promise is never left behind */
+  const work = Promise.resolve().then(async () => {
+    try {
+      await withTimeout(au.checkForUpdates(), TIME.prepare,
+        'انتهت مهلة تجهيز التحميل — الاتصال بطيء، حاول مرة أخرى');
+      prepared = true;
+      prepareError = null;
+      return true;
+    } catch (e) {
+      prepareError = friendly(e);
+      throw e;
+    }
+  });
+  const run = work.finally(() => { if (preparePromise === run) preparePromise = null; });
+  preparePromise = run;
+  return run;
 }
 
+/**
+ * The download — the part the customer called dead.
+ *
+ * Every step says what it is doing BEFORE it starts:
+ *   «جارٍ تجهيز التحميل…»     → the preparation (only when it is really needed)
+ *   «جارٍ أخذ نسخة احتياطية…» → the safety copy of the database
+ *   «جارٍ التحميل… NN%»       → the file itself, with the real progress
+ *
+ * A second press while the download runs does NOT start a second download:
+ * the current state is returned, so the screen can report the progress.
+ */
 async function download() {
   if (devMode()) {
-    return set({ status: 'dev', percent: 0, message: 'التحميل متاح في النسخة المثبتة (exe) فقط — جرّب «معاينة شريط التقدم»' });
+    return set({ status: 'dev', phase: '', percent: 0, message: 'التحميل متاح في النسخة المثبتة (exe) فقط — جرّب «معاينة شريط التقدم»' });
   }
+  if (downloading) {
+    /* the customer pressed again — report where we are, start nothing */
+    return state;
+  }
+  downloading = true;
   try {
     const cfg = feedConfig();
     const au = configureProvider(cfg);
     if (!au) throw new Error('مكتبة التحديث غير متوفرة');
-    if (!prepared) await prepare(cfg);
-    /* V4 — never let an update touch the data without a safety copy first */
+
+    /* ---- 1. the preparation (the second network round-trip) ---- */
+    const already = prepared;
+    set({
+      status: 'downloading',
+      phase: 'prepare',
+      percent: 0, speed: 0, transferred: 0, total: 0,
+      message: already ? 'التحميل جاهز — جارٍ البدء' : PHASE.prepare
+    });
+    if (!already) {
+      try {
+        await prepare(cfg);
+      } catch (e) {
+        throw new Error(prepareError || friendly(e));
+      }
+    }
+
+    /* ---- 2. the safety copy (the database) ---- */
+    set({
+      status: 'downloading',
+      phase: 'backup',
+      percent: 0, speed: 0, transferred: 0, total: 0,
+      message: PHASE.backup
+    });
     const safety = await safetyBackup();
-    set({ status: 'downloading', percent: 0, message: safety ? `${safety} — جارٍ التحميل` : 'جارٍ التحميل' });
-    await withTimeout(au.downloadUpdate(), TIME.download, 'انتهت مهلة التحميل');
+
+    /* ---- 3. the file itself ---- */
+    set({
+      status: 'downloading',
+      phase: 'download',
+      percent: 0, speed: 0, transferred: 0, total: 0,
+      message: PHASE.download,
+      note: safety || 'تعذّر أخذ نسخة احتياطية — التحميل مستمر'
+    });
+    await withTimeout(au.downloadUpdate(), TIME.download,
+      'انتهت مهلة التحميل — الشبكة بطيئة جداً، حاول مرة أخرى');
+
+    /* the library normally announces the finished file; if it did not, the
+       customer must still be offered the install */
+    if (state.status === 'downloading') {
+      set({ status: 'downloaded', phase: '', percent: 100, message: 'اكتمل التحميل — جاهز للتثبيت' });
+    }
     return state;
   } catch (e) {
-    return set({ status: 'error', percent: 0, message: friendly(e) });
+    return set({ status: 'error', phase: '', percent: 0, message: friendly(e) });
+  } finally {
+    downloading = false;
   }
 }
 
 async function install() {
   if (devMode()) {
-    return set({ status: 'dev', percent: 0, message: 'التثبيت متاح في النسخة المثبتة (exe) فقط' });
+    return set({ status: 'dev', phase: '', percent: 0, message: 'التثبيت متاح في النسخة المثبتة (exe) فقط' });
   }
   /* the last line of defence: copy the database before the app restarts */
   const safety = await safetyBackup();
@@ -384,6 +599,7 @@ async function install() {
   });
   return set({
     status: 'installing',
+    phase: '',
     percent: 100,
     message: safety ? `${safety} — جارٍ إعادة التشغيل والتثبيت…` : 'جارٍ إعادة التشغيل والتثبيت…'
   });
@@ -417,20 +633,22 @@ function init(getWindowFn) {
   /* honest preview of the progress UI while developing */
   ipcMain.handle('update:simulate', async () => {
     const total = 78 * 1024 * 1024;
-    set({ status: 'available', version: '0.2.0', percent: 0, message: 'معاينة — يتوفر إصدار جديد 0.2.0' });
+    set({ status: 'available', phase: '', version: '0.2.0', percent: 0, message: 'معاينة — يتوفر إصدار جديد 0.2.0' });
     await new Promise((r) => setTimeout(r, 500));
     for (let i = 1; i <= 20; i++) {
       const percent = i * 5;
       set({
         status: 'downloading',
+        phase: 'download',
         percent,
         transferred: Math.round((total * percent) / 100),
         total,
-        speed: 3.2 * 1024 * 1024 + Math.round(Math.random() * 1.6 * 1024 * 1024)
+        speed: 3.2 * 1024 * 1024 + Math.round(Math.random() * 1.6 * 1024 * 1024),
+        message: `جارٍ التحميل… ${percent}%`
       });
       await new Promise((r) => setTimeout(r, 160));
     }
-    return set({ status: 'downloaded', percent: 100, message: 'اكتمل التحميل (معاينة) — جاهز للتثبيت' });
+    return set({ status: 'downloaded', phase: '', percent: 100, message: 'اكتمل التحميل (معاينة) — جاهز للتثبيت' });
   });
 
   ipcMain.handle('update:feed', () => {
@@ -444,4 +662,8 @@ function autoCheck(delayMs = 8000) {
   setTimeout(() => { check().catch(() => { /* the state already says what happened */ }); }, delayMs);
 }
 
-module.exports = { init, autoCheck, state: () => state, check, cmpVersions, fetchJson, withTimeout, appVersion };
+module.exports = {
+  init, autoCheck, state: () => state, check, cmpVersions, fetchJson, withTimeout, appVersion,
+  /* the harness (tools/v7-download-check.js) drives the REAL machine */
+  __test: { set, push, prepare, download, install, wire, progressPercent, friendly }
+};

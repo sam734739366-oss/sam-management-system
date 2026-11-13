@@ -1393,3 +1393,82 @@
 .sheet.half .co-logo { max-width: 100px; max-height: 40px; min-width: 36px; min-height: 22px; }
 .sheet.half .co-name { font-size: 13px; }
 .sheet.half .co-sub { font-size: 10.5px; }
+
+/* =====================================================================
+   V7.2 — EVERY WRITING INSIDE THE BOXES IS IN THE MIDDLE
+   ---------------------------------------------------------------------
+   The customer wrote (verbatim):
+   «اجعل كل الكتابات داخل المربعات في التقارير او الطباعة او في البرنامج
+     بالوسط»
+   — every writing inside the boxes must be in the middle: in the reports,
+   in the print AND in the program.
+
+   The box of a table is its CELL, and the writing inside a cell — the
+   number, the name, the unit, the reading that sits under a box of
+   packs — now stands in the middle of that box:
+     · the HEAD keeps its solid fill and its bold label, and it is
+       centred too (a head that hangs to the side is not a head);
+     · the TOTALS row is centred as well;
+     · the ORDER of the columns never changes — the page stays RTL.
+       The centring is about the writing INSIDE the box, never about the
+       order of the boxes.
+
+   The `!important` is not decoration: the report tables and the printed
+   sheets carry their alignment as an INLINE style (style="text-align:left")
+   and an inline style beats every class — without it the old alignment
+   would keep winning in half of the tables of the program.
+   ===================================================================== */
+
+/* --- the cell of the screen AND the cell of the paper --- */
+.tbl th,
+.tbl td {
+  text-align: center !important;
+}
+
+/* --- the head of the table: the same middle, the same solid fill --- */
+.tbl thead th,
+.tbl th.grp {
+  text-align: center !important;
+}
+
+/* --- the totals row: it is a row of writing as well --- */
+.tbl .tot-row td,
+.tbl tfoot .tot-row td {
+  text-align: center !important;
+}
+
+/* --- the small writing that lives INSIDE a cell ---
+   the quiet second line under a value (.sub), the reading under a box of
+   packs (.pack-read) and the badge of the available stock (.avail) all
+   stand in the middle of their cell, with the value above them. The
+   INPUT of a box keeps its own alignment — only the writing around it
+   moves to the middle. */
+.tbl .sub,
+.tbl .pack-read,
+.tbl .avail {
+  text-align: center !important;
+}
+/* the head of the boxes of the packs keeps the same middle */
+.lines-tbl th.pack-th { text-align: center !important; }
+
+/* --- the cell that carries the picture of the item beside its name ---
+   The picture and the name are ONE group and the group stands in the
+   middle of the cell — the picture never pushes the name off the centre.
+   When the group is a flex row (the picture beside the name), the row
+   centres its own content, so the two travel together in the middle. */
+.tbl td img,
+.sheet table.tbl td img {
+  vertical-align: middle;
+}
+.tbl td:has(img) > *,
+.sheet table.tbl td:has(img) > * {
+  justify-content: center;
+}
+/* the picture inside a cell never grows past its box (the inline size of
+   the picture, when it carries one, wins) */
+.tbl td img.sam-pic {
+  max-width: 100%;
+  max-height: 34px;
+  object-fit: contain;
+  vertical-align: middle;
+}

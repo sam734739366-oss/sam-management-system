@@ -17,8 +17,9 @@
     { key: 'docNo', label: 'رقم المستند', on: true },
     { key: 'docTypeAr', label: 'نوع المستند', on: true },
     { key: 'partyName', label: 'العميل / المورد', on: true },
-    { key: 'itemCode', label: 'كود الصنف', on: true },
-    { key: 'itemName', label: 'اسم الصنف', on: true },
+    /* the code of the item is gone — the picture takes its place beside
+       the name, and the name is dark and bold */
+    { key: 'itemName', label: 'اسم الصنف', on: true, pic: true },
     { key: 'baseUnit', label: 'الوحدة', on: true },
     { key: 'warehouseName', label: 'المخزن', on: true },
     { key: 'bucketAr', label: 'الحالة', on: true },
@@ -33,6 +34,115 @@
     { key: 'isCustomer', label: 'مادة العميل', on: false },
     { key: 'note', label: 'ملاحظة', on: false }
   ];
+
+  /* =====================================================================
+     The picture of the item — «الصورة بجانب اسم الصنف بدل الكود»:
+       · the file lives in the data folder (with the database)
+       · the renderer asks the main process for the folder and for the
+         file link — exactly the way the items screen does it
+       · an item WITHOUT a picture shows its name alone: no empty box,
+         no broken image, nothing but the name
+     ===================================================================== */
+  const PIC_SCREEN = 13;   /* the picture in the report on the screen */
+  const PIC_PRINT = 17;    /* the picture on the paper — a little bigger */
+  const picState = { dir: '' };
+
+  /** the folder of the pictures — known only after the first call */
+  async function imagesDir() {
+    if (picState.dir) return picState.dir;
+    /* the shared helper of the app knows the folder too */
+    try {
+      const P = window.SamItemPic;
+      if (P && typeof P.ensure === 'function') {
+        const d = await P.ensure();
+        if (d) { picState.dir = d; return picState.dir; }
+      }
+    } catch (e) { /* the shared helper is only a shortcut */ }
+    const a = (window.sam && window.sam.app) ? window.sam.app : null;
+    if (!a || !a.imagesDir) return '';
+    try {
+      const r = await a.imagesDir();
+      picState.dir = (r && r.ok && r.dir) ? r.dir : '';
+    } catch (e) { picState.dir = ''; }
+    return picState.dir;
+  }
+
+  /** the link of the picture of an item ('' when the item has no picture) */
+  function pictureUrl(item) {
+    if (!item) return '';
+    const name = String(item.image || '').trim();
+    if (!name) return '';
+    /* the items screen may already know the folder — take its answer */
+    try {
+      if (window.SamItems && typeof window.SamItems.pictureUrl === 'function') {
+        const u = window.SamItems.pictureUrl(item);
+        if (u) return u;
+      }
+    } catch (e) { /* the helper of the items screen is only a shortcut */ }
+    if (!picState.dir) return '';
+    const a = window.sam && window.sam.app;
+    if (!a || !a.fileUrl) return '';
+    try { return a.fileUrl(picState.dir + '/' + name); } catch (e) { return ''; }
+  }
+
+  /** the tiny picture that sits beside the name — nothing without a picture */
+  function thumbHtml(item, size, print) {
+    /* the shared helper of the app draws the same picture */
+    try {
+      const P = window.SamItemPic;
+      if (P && typeof P.thumbHtml === 'function' && P.has(item)) {
+        const html = P.thumbHtml(item, size, print);
+        if (html) return html;
+      }
+    } catch (e) { /* the shared helper is only a shortcut */ }
+    const url = pictureUrl(item);
+    if (!url) return '';
+    const px = Number(size) || PIC_SCREEN;
+    const frame = print
+      ? 'border:1px solid #cfd6e0;box-shadow:none;'
+      : 'border:1px solid var(--line);box-shadow:0 1px 3px rgba(15,23,42,.14);';
+    return `<img class="sam-pic" src="${esc(url)}" alt="" title="${esc(item.name || '')}"`
+      + ` style="width:${px}px;height:${px}px;object-fit:contain;border-radius:6px;${frame}`
+      + 'background:#f1f5f9;flex:none;align-self:center;vertical-align:middle;">';
+  }
+
+  /** the item of a row — the one that carries the picture */
+  function itemForPic(row) {
+    if (!row) return null;
+    if (row.itemId != null) { const it = itemById(row.itemId); if (it) return it; }
+    if (row.itemCode != null) { const it = itemByCode(row.itemCode); if (it) return it; }
+    return null;
+  }
+
+  /**
+   * The cell of the item: the picture BESIDE the name, and the name DARK
+   * and bold («اسم الصنف مميز وداكن»). The code is no longer a column of
+   * its own — it stays as a small quiet hint beside the picture, so the
+   * number is never lost.
+   */
+  function itemCellHtml(row, c, size, print) {
+    const it = itemForPic(row);
+    const name = row[c.key] || (it && it.name) || '';
+    const pic = it ? thumbHtml(it, size, print) : '';
+    const code = row.itemCode
+      ? `<span class="sam-item-code" style="font-size:${print ? '8pt' : '11px'};color:${print ? '#475467' : '#94a3b8'};font-weight:600;white-space:nowrap">${esc(row.itemCode)}</span>`
+      : '';
+    const ink = print ? '#101828' : 'var(--ink)';
+    return `<span class="sam-item" style="display:inline-flex;align-items:center;gap:6px">`
+      + code + pic
+      + `<span class="sam-item-name" style="font-weight:800;color:${ink}">${esc(name)}</span>`
+      + `</span>`;
+  }
+
+  /**
+   * The columns of a report: the code of the item goes away — the picture
+   * takes its place beside the name — and the name becomes a picture cell.
+   */
+  function itemColumns(cols) {
+    return (cols || [])
+      .filter((c) => c.key !== 'itemCode')
+      .map((c) => (c.key === 'itemName' ? Object.assign({}, c, { pic: true }) : c));
+  }
 
   /** الحالات القابلة للاختيار */
   const BUCKETS = [
@@ -555,7 +665,9 @@
         SamDB.call('listItems', ''),
         SamDB.call('listWarehouses'),
         SamDB.call('listParties', ''),
-        SamDB.call('DOC_KINDS')
+        SamDB.call('DOC_KINDS'),
+        /* the folder of the pictures — the item column carries them */
+        imagesDir()
       ]);
       ref.items = items || [];
       ref.warehouses = whs || [];
@@ -609,13 +721,15 @@
     state.report = key;
     state.error = '';
     const f = collectFilters();
+    /* the folder of the pictures — the item column carries the picture */
+    if (!picState.dir) await imagesDir();
     /* the packs are counted from the items — they are read in the
        background, so the report itself is never delayed by them */
     const needsItems = !ref.loaded;
     const itemsReady = needsItems ? loadRef() : null;
     try {
       if (key === 'movements') {
-        const cols = COLUMNS.filter((c) => c.on);
+        const cols = itemColumns(COLUMNS.filter((c) => c.on));
         if (!cols.length) {
           state.result = null;
           state.error = 'اختر عموداً واحداً على الأقل من «الأعمدة» لعرض التقرير';
@@ -632,11 +746,27 @@
         };
       } else {
         const r = await SamDB.call('runReport', Object.assign({ report: key }, f));
+        const rows = r.rows || [];
+        /* the code of the item is gone — the picture takes its place */
+        let columns = itemColumns((r.columns || []).map((c) => Object.assign({}, c)));
+        /* the ledger of ONE item — the name of that item belongs to every
+           row of it, with the picture beside it */
+        if ((r.report || key) === 'item_ledger' && f.itemId) {
+          const it = itemById(f.itemId) || await SamDB.call('getItem', f.itemId);
+          if (it) {
+            rows.forEach((row) => {
+              row.itemId = it.id;
+              row.itemCode = it.code;
+              row.itemName = it.name;
+            });
+            columns = [{ key: 'itemName', label: 'الصنف', pic: true }].concat(columns);
+          }
+        }
         state.result = {
           report: r.report || key,
           title: r.title || key,
-          columns: (r.columns || []).map((c) => Object.assign({}, c)),
-          rows: r.rows || [],
+          columns,
+          rows,
           totals: r.totals || {}
         };
       }
@@ -789,7 +919,9 @@
       const cls = c.signed
         ? `num qty ${SamDB.n(r[c.key]) >= 0 ? 'plus' : 'minus'}`
         : (c.num || c.money) ? 'num' : '';
-      return `<td class="${cls}">${esc(cellText(r, c))}</td>`;
+      /* the item carries its picture beside the name — never the code */
+      const inner = c.pic ? itemCellHtml(r, c, PIC_SCREEN, false) : esc(cellText(r, c));
+      return `<td class="${cls}">${inner}</td>`;
     }).join('')}</tr>`).join('')}</tbody>`;
 
     // السطر المزدوج يفتح المستند المصدر (فاتورة / مرتجع / سند …)
@@ -900,8 +1032,20 @@
     const cols = activeColumns(res);
     const rows = res.rows || [];
     const fs = fontFor(cols.length);
-    const th = cols.map((c) => `<th${c.num || c.money ? ' style="text-align:left"' : ''}>${esc(c.label)}</th>`).join('');
-    const tr = rows.map((r) => `<tr>${cols.map((c) => `<td${c.num || c.money ? ' style="text-align:left"' : ''}>${esc(cellText(r, c))}</td>`).join('')}</tr>`).join('');
+    /* the column of the item gets its own room — the picture and the name
+       of the item must never be squeezed into one letter */
+    const th = cols.map((c) => {
+      const style = [];
+      if (c.num || c.money) style.push('text-align:left');
+      if (c.pic) style.push(`width:${cols.length > 10 ? 128 : 150}px`);
+      return `<th${style.length ? ` style="${style.join(';')}"` : ''}>${esc(c.label)}</th>`;
+    }).join('');
+    /* the paper carries the same truth as the screen: the picture beside
+       the name, and the name dark and bold */
+    const tr = rows.map((r) => `<tr>${cols.map((c) => {
+      const inner = c.pic ? itemCellHtml(r, c, PIC_PRINT, true) : esc(cellText(r, c));
+      return `<td${c.num || c.money ? ' style="text-align:left"' : ''}>${inner}</td>`;
+    }).join('')}</tr>`).join('');
     const parts = sumParts(res);
     const tot = parts.length
       ? `<tr class="tot-row"><td colspan="${cols.length}">${esc(parts.map((p) => `${p.label}: ${p.money ? SamDB.money(p.value) : SamDB.fmt(p.value)}`).join(' · '))}</td></tr>`
@@ -954,6 +1098,9 @@
     const res = state.result;
     if (!res) return null;
     const cols = activeColumns(res);
+    /* a cell of Excel cannot carry the picture — the CODE stays in the
+       workbook instead, right beside the name */
+    const withCode = (res.rows || []).some((r) => r.itemCode != null && String(r.itemCode) !== '');
     const rows = res.rows.map((r) => {
       const o = {};
       cols.forEach((c) => {
@@ -961,9 +1108,26 @@
         else if (c.key === 'isCustomer') o[c.key] = r[c.key] ? 'نعم' : 'لا';
         else o[c.key] = r[c.key] == null ? '' : String(r[c.key]);
       });
+      if (withCode) o.itemCode = r.itemCode == null ? '' : String(r.itemCode);
       return o;
     });
     const totals = sumParts(res).map((p) => ({ key: p.key, value: p.value }));
+
+    /* the columns of the workbook — the code comes back beside the name */
+    const xcols = [];
+    cols.forEach((c) => {
+      if (withCode && c.key === 'itemName') {
+        xcols.push({ header: 'كود الصنف', key: 'itemCode' });
+      }
+      xcols.push({
+        header: c.label,
+        key: c.key,
+        num: !!(c.num || c.money),
+        fmt: c.money ? '#,##0.00' : '#,##0',
+        /* the name of the item is DARK and BOLD in the workbook too */
+        bold: c.key === 'itemName'
+      });
+    });
 
     return {
       fileName: `SAM-${res.title.replace(/\s+/g, '-')}-${SamUI.today()}.xlsx`,
@@ -975,12 +1139,7 @@
         ['النطاق', scopeLabel()],
         ['عدد الأسطر', SamDB.fmt(res.rows.length)]
       ],
-      columns: cols.map((c) => ({
-        header: c.label,
-        key: c.key,
-        num: !!(c.num || c.money),
-        fmt: c.money ? '#,##0.00' : '#,##0'
-      })),
+      columns: xcols,
       rows,
       totals
     };

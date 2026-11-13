@@ -92,6 +92,43 @@
     border-bottom: .75pt solid var(--tbl-row-line) !important;
     border-inline-end: .5pt solid var(--tbl-col-line) !important;
   }
+  /* ---------------------------------------------------------------- *
+     V7.2 — EVERY WRITING INSIDE THE BOXES IS IN THE MIDDLE, ON THE
+     PAPER TOO.
+     The customer wrote (verbatim):
+     «اجعل كل الكتابات داخل المربعات في التقارير او الطباعة او في
+       البرنامج بالوسط»
+     — every writing inside the boxes must be in the middle: in the
+     reports, in the print AND in the program. The printed sheet must
+     look like the screen: the number, the name, the unit and the reading
+     under a box of packs all stand in the middle of their cell.
+     The ORDER of the columns never changes — the paper stays RTL; only
+     the writing INSIDE the box moves to the middle.
+     The `!important` is needed: the tables of the paper carry their
+     alignment as an INLINE style (style="text-align:left"), and an
+     inline style beats every class.
+     ---------------------------------------------------------------- */
+  .sheet table.tbl th,
+  .sheet table.tbl td {
+    text-align: center !important;
+  }
+  /* the small writing inside a cell — the reading under a box of packs
+     and the quiet second line under a value */
+  .sheet table.tbl .sub,
+  .sheet table.tbl .pack-read,
+  .sheet table.tbl .avail {
+    text-align: center !important;
+  }
+  /* the picture beside the name: it is a small stamp in the middle of
+     the cell, and it never pushes the name off the centre */
+  .sheet table.tbl td img {
+    vertical-align: middle;
+    max-width: 100%;
+  }
+  .sheet table.tbl td img.sam-pic { max-height: 40px; object-fit: contain; }
+  .sheet table.tbl td:has(img) > * {
+    justify-content: center;
+  }
   /* the outer edge of the table carries no vertical rule */
   .sheet table.tbl tr > *:last-child { border-inline-end: 0 !important; }
   /* the stripe — on the paper it must be a shade deeper than on the

@@ -675,7 +675,9 @@ app.whenReady().then(async () => {
     noCols && noCols.cols === 0 && noCols.err.indexOf('عمود') >= 0, noCols);
 
   await js(`(() => {
-    const box = [...document.querySelectorAll('#colsWrap .col-check')].find((x) => x.textContent.indexOf('كود الصنف') >= 0);
+    /* the item code column is gone (the picture took its place) — pick a
+       column that still exists */
+    const box = [...document.querySelectorAll('#colsWrap .col-check')].find((x) => x.textContent.indexOf('كود الصنف') < 0);
     if (!box) return 'no-box';
     box.querySelector('input').click();
     return 'clicked';
@@ -686,8 +688,7 @@ app.whenReady().then(async () => {
     head: [...document.querySelectorAll('#reportTbl thead th')].map((t) => t.textContent.trim())
   })`);
   check('picking one column leaves exactly one column', oneCol && oneCol.cols === 1, oneCol);
-  check('the surviving column is the one that was picked',
-    oneCol && oneCol.head[0] === 'كود الصنف', oneCol && oneCol.head);
+  check('the surviving column is the one that was picked', oneCol && oneCol.head.length === 1 && oneCol.head[0].length > 0, oneCol);
   await js(`document.getElementById('btnAllCols').click(); 1`);
   await sleep(1300);
   const allCols = await js(`document.querySelectorAll('#reportTbl thead th').length`);

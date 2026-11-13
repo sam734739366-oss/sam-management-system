@@ -15,6 +15,8 @@
     checking: 'جارٍ الفحص…',
     available: 'يتوفر تحديث',
     'up-to-date': 'أحدث إصدار',
+    preparing: 'جارٍ تجهيز التحميل…',
+    'backing-up': 'جارٍ أخذ نسخة احتياطية…',
     downloading: 'جارٍ التحميل',
     downloaded: 'جاهز للتثبيت',
     installing: 'جارٍ التثبيت',
@@ -22,7 +24,16 @@
     dev: 'وضع التطوير'
   };
 
+  /* the phase says WHAT is happening RIGHT NOW — the badge follows it, so
+     the customer never sees a key like «preparing» */
+  const PHASE = {
+    prepare: 'جارٍ تجهيز التحميل…',
+    backup: 'جارٍ أخذ نسخة احتياطية…',
+    download: 'جارٍ التحميل…'
+  };
+
   const MB = (b) => (Number(b) || 0) / 1048576;
+  const hasArabic = (s) => /[؀-ۿ]/.test(String(s || ''));
 
   let current = null;
 
@@ -71,6 +82,8 @@
       .forEach(([key, label, ic]) => {
         const b = el('button', 'btn btn-ghost');
         b.type = 'button';
+        b.id = 'uwBtn' + key.charAt(0).toUpperCase() + key.slice(1);
+        b.dataset.kind = key;
         b.innerHTML = `${SamUI.iconTile(ic, null, 'xs')}<span class="btn-txt">${esc(label)}</span>`;
         b.addEventListener('click', () => run(key));
         btns[key] = b;
@@ -79,24 +92,68 @@
 
     /* ---------- state painting ---------- */
     let last = { status: 'idle' };
+    let meta = { info: null, feed: null };
+
+    /** the Arabic sentence of a state — never a raw key */
+    function labelOf(s) {
+      const st = (s && s.status) || 'idle';
+      if (s && s.phase && PHASE[s.phase]) return PHASE[s.phase];
+      if (STATUS[st]) return STATUS[st];
+      return hasArabic(s && s.message) ? s.message : (s && s.message) || 'جارٍ العمل…';
+    }
 
     function paint(s) {
       s = s || last;
       last = s;
       const st = s.status || 'idle';
-      badge.textContent = STATUS[st] || st;
-      badge.className = `badge ${st === 'error' ? 'bad' : st === 'downloaded' || st === 'up-to-date' ? 'ok' : 'gold'}`;
       const pct = Math.max(0, Math.min(100, Number(s.percent) || 0));
+      badge.textContent = labelOf(s);
+      badge.className = `badge ${st === 'error' ? 'bad' : st === 'downloaded' || st === 'up-to-date' ? 'ok' : 'gold'}`;
       bar.classList.toggle('done', st === 'downloaded');
       bar.classList.toggle('err', st === 'error');
+      /* the stripes move while the file is really coming down — and the bar
+         breathes while the program prepares it, so it never looks frozen */
+      const breathing = st === 'checking' || (st === 'downloading' && s.phase !== 'download');
+      bar.classList.toggle('busy', st === 'downloading' && s.phase === 'download');
+      bar.classList.toggle('checking', breathing);
       bar.querySelector('#uwFill').style.width = `${pct}%`;
       bar.querySelector('#uwPercent').textContent = `${pct.toFixed(1)}%`;
-      bar.querySelector('#uwLabel').textContent = s.message || STATUS[st] || '';
+      bar.querySelector('#uwLabel').textContent = s.message || labelOf(s);
       bar.querySelector('#uwSize').textContent = `${MB(s.transferred).toFixed(1)} / ${MB(s.total).toFixed(1)} MB`;
       bar.querySelector('#uwSpeed').textContent = s.speed ? `${MB(s.speed).toFixed(2)} MB/ث` : '— MB/ث';
 
-      btns.download.classList.toggle('hidden', st !== 'available');
+      /* the buttons follow the state — the download button NEVER vanishes
+         while the customer is waiting for it */
+      const busy = st === 'downloading';
+      btns.download.classList.toggle('hidden', !(st === 'available' || st === 'error' || busy));
       btns.install.classList.toggle('hidden', st !== 'downloaded');
+      btns.download.classList.toggle('busy', busy);
+      const dlText = btns.download.querySelector('.btn-txt');
+      if (dlText) {
+        if (busy) {
+          const pctText = `${Math.round(pct)}%`;
+          dlText.textContent = s.phase === 'prepare' ? 'جارٍ التجهيز…'
+            : s.phase === 'backup' ? 'جارٍ النسخ الاحتياطي…'
+              : `جارٍ التحميل… ${pctText}`;
+        } else if (st === 'error') {
+          dlText.textContent = 'إعادة المحاولة';
+        } else {
+          dlText.textContent = 'تحميل التحديث';
+        }
+      }
+      btns.download.title = busy ? 'اضغط لعرض نسبة التحميل الحالية' : '';
+      renderInfo();
+    }
+
+    function renderInfo() {
+      const rows = [
+        ['الإصدار الحالي', `v${meta.info ? meta.info.version : '—'}`],
+        ['الإصدار المتوفر', last.version ? `v${last.version}` : '—'],
+        ['الحالة', labelOf(last)],
+        ['مصدر التحديثات', meta.feed && meta.feed.provider ? `${meta.feed.provider} / ${meta.feed.owner || ''}/${meta.feed.repo || ''}` : '—']
+      ];
+      if (last.note) rows.push(['نسخة احتياطية', last.note]);
+      info.innerHTML = rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('');
     }
 
     async function refresh() {
@@ -104,12 +161,8 @@
         const st = await sam.update.state();
         paint(st && st.ok ? st.data : st);
         const [info2, feed] = await Promise.all([sam.app.info(), sam.update.feed()]);
-        info.innerHTML = [
-          ['الإصدار الحالي', `v${info2.version}`],
-          ['الإصدار المتوفر', last.version ? `v${last.version}` : '—'],
-          ['الحالة', STATUS[last.status] || 'جاهز'],
-          ['مصدر التحديثات', feed && feed.provider ? `${feed.provider} / ${feed.owner || ''}/${feed.repo || ''}` : '—']
-        ].map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('');
+        meta = { info: info2, feed };
+        renderInfo();
       } catch (e) { toast(e.message, 'bad'); }
     }
 
@@ -124,8 +177,18 @@
           return;
         }
         if (kind === 'download') {
+          /* a second press must not look dead: it reports where we are */
+          if (last.status === 'downloading') {
+            const pct = Math.max(0, Math.min(100, Number(last.percent) || 0));
+            const speed = last.speed ? ` — ${MB(last.speed).toFixed(2)} MB/ث` : '';
+            toast(`التحميل جارٍ… ${pct.toFixed(0)}% (${MB(last.transferred).toFixed(1)} من ${MB(last.total).toFixed(1)} MB)${speed}`, 'ok', 4000);
+            return;
+          }
           const r = await sam.update.download();
-          paint(r && r.ok ? r.data : r);
+          const st = (r && r.ok) ? r.data : r;
+          paint(st);
+          if (r && !r.ok) toast(r.error, 'bad');
+          else if (st && st.status === 'error') toast(st.message || 'تعذّر تحميل التحديث', 'bad', 5000);
           return;
         }
         if (kind === 'install') { await sam.update.install(); return; }
