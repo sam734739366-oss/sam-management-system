@@ -162,11 +162,14 @@ app.whenReady().then(async () => {
     if (!modal) return { error: 'no modal' };
     const grids = modal.querySelectorAll('.form-grid-4');
     const fields = [...modal.querySelectorAll('.form-grid-4 .field')];
+    /* a field may hold something else than a plain input (the picture,
+       the unit of its own) — only the plain inputs are measured */
     const boxes = fields.map((f) => {
       const i = f.querySelector('.input');
+      if (!i) return null;
       const r = i.getBoundingClientRect();
       return { w: Math.round(r.width), h: Math.round(r.height) };
-    });
+    }).filter(Boolean);
     const bal = [...modal.querySelectorAll('.bal-grid .bal-in')].map((i) => {
       const r = i.getBoundingClientRect();
       return { w: Math.round(r.width), h: Math.round(r.height) };
@@ -185,8 +188,8 @@ app.whenReady().then(async () => {
     };
   })()`);
   check('the item form has two 4-column groups', formGeom.grids === 2, formGeom);
-  check('all 8 input boxes share one width', formGeom.widths && formGeom.widths.length === 1, formGeom.widths);
-  check('all 8 input boxes share one height', formGeom.heights && formGeom.heights.length === 1, formGeom.heights);
+  check('all the input boxes share one width', formGeom.widths && formGeom.widths.length === 1, formGeom.widths);
+  check('all the input boxes share one height', formGeom.heights && formGeom.heights.length === 1, formGeom.heights);
   check('the balance boxes share one width', formGeom.balWidths && formGeom.balWidths.length === 1, formGeom.balWidths);
   check('the balance boxes share one height', formGeom.balHeights && formGeom.balHeights.length === 1, formGeom.balHeights);
   check('every warehouse row has exactly 2 balance boxes',

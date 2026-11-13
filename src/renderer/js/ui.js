@@ -478,6 +478,32 @@
   }
 
   /* ---------------- print sheet (premium A4 layout) ---------------- */
+
+  /* ---------------- the company of the customer ----------------
+     The masthead of every paper carries the company of the customer — its
+     name and, when the customer has one, its logo — beside the program's
+     own mark. The program keeps its own name and its footer in every
+     paper, whatever the customer writes. */
+  function company() {
+    const c = (global.SamCompany && global.SamCompany.data) || {};
+    return { name: String(c.name || '').trim(), logo: String(c.logo || '').trim() };
+  }
+
+  function companyBlockHtml() {
+    const c = company();
+    if (!c.name && !c.logo) return '';
+    const logo = c.logo
+      ? `<img class="co-logo" src="${esc(c.logo)}" alt="" />`
+      : '';
+    return `<div class="m-company">
+      ${logo}
+      <div class="co-txt">
+        ${c.name ? `<div class="co-name">${esc(c.name)}</div>` : ''}
+        <div class="co-sub">عبر نظام SAM لإدارة المخزون</div>
+      </div>
+    </div>`;
+  }
+
   function sheet(o) {
     const s = el('section', `sheet${o.landscape ? ' landscape' : ''}${o.half ? ' half' : ''}`);
     const now = new Date().toLocaleString('ar-EG-u-nu-latn');
@@ -489,10 +515,7 @@
           <div><b>SAM</b> — 775158678</div>
           <div>${esc(o.orgLine || 'نظام إدارة الأصناف والمخازن والإنتاج')}</div>
         </div>
-        <div class="m-brand">
-          <div class="b-name">SAM</div>
-          <div class="b-sub">${esc(o.brandLine || 'إدارة المخزون والإنتاج')}</div>
-        </div>
+        ${companyBlockHtml()}
         <div class="m-side right">
           <div>${esc(o.docRefLabel || 'رقم المستند')}: <b>${esc(o.docRef || '')}</b></div>
           <div>التاريخ: ${esc(o.printDate || now)}</div>

@@ -33,6 +33,15 @@ contextBridge.exposeInMainWorld('sam', {
     pathForFile: (file) => {
       try { return require('electron').webUtils.getPathForFile(file); }
       catch (e) { return ''; }
+    },
+    /* the picture of an item and the logo of the company */
+    saveImage: (spec) => ipcRenderer.invoke('app:saveImage', spec || {}),
+    removeImage: (name) => ipcRenderer.invoke('app:removeImage', name),
+    imagesDir: () => ipcRenderer.invoke('app:imagesDir'),
+    /* a file of the data folder as a link the page can show */
+    fileUrl: (p) => {
+      try { return require('url').pathToFileURL(String(p || '')).href; }
+      catch (e) { return ''; }
     }
   },
   restore: {

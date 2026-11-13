@@ -176,6 +176,45 @@ module.exports = function registerIpc(getWindow) {
       dbPath
     };
   });
+  /* ---- the pictures: the photo of an item and the logo of the company ----
+     The renderer cannot write a file, so the picture travels as a data URL
+     and lands in the data folder (with the database) — never in the
+     installation folder, which the installer would replace. */
+  ipcMain.handle('app:saveImage', async (_e, spec = {}) => {
+    try {
+      const name = String(spec.name || 'image').replace(/[^a-zA-Z0-9._-]/g, '_').slice(-60);
+      const dataUrl = String(spec.dataUrl || '');
+      const m = /^data:image\/(png|jpe?g|webp|gif|svg\+xml);base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl);
+      if (!m) return { ok: false, error: 'الصورة غير صالحة' };
+      const dir = path.join(require('./db').dataDir(), 'images');
+      fs.mkdirSync(dir, { recursive: true });
+      const ext = m[1] === 'svg+xml' ? 'svg' : (m[1] === 'jpeg' ? 'jpg' : m[1]);
+      const file = path.join(dir, `${name}.${ext}`);
+      fs.writeFileSync(file, Buffer.from(m[2], 'base64'));
+      return { ok: true, name: `${name}.${ext}`, path: file };
+    } catch (err) {
+      return { ok: false, error: (err && err.message) ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('app:removeImage', async (_e, name) => {
+    try {
+      const safe = String(name || '').replace(/[^a-zA-Z0-9._-]/g, '');
+      if (!safe) return { ok: true };
+      const file = path.join(require('./db').dataDir(), 'images', safe);
+      try { fs.unlinkSync(file); } catch (e) { /* it was never there */ }
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: (err && err.message) ? err.message : String(err) };
+    }
+  });
+
+  /* the folder of the pictures, so the renderer can show them */
+  ipcMain.handle('app:imagesDir', async () => {
+    try { return { ok: true, dir: path.join(require('./db').dataDir(), 'images') }; }
+    catch (e) { return { ok: false, dir: '' }; }
+  });
+
   ipcMain.handle('app:openPath', async (_e, target) => {
     if (typeof target !== 'string' || !target) return false;
     await shell.openPath(target);

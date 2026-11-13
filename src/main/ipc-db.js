@@ -85,6 +85,14 @@ const API = {
   saveArchive: (payload) => d.saveArchive(payload),
   deleteArchive: (id) => d.deleteArchive(id),
 
+  /* the program's own settings (the company name, the logo, the options) */
+  getSetting: (key) => d.getSetting(key, ''),
+  setSetting: (key, value) => d.setSetting(key, value),
+  allSettings: () => {
+    const rows = d.listSettings ? d.listSettings() : [];
+    return rows;
+  },
+
   reportQuery: (filters) => d.reportQuery(filters || {}),
   reportFacets: () => d.reportFacets(),
   dailyReport: (filters) => d.dailyReport(filters || {}),
@@ -162,6 +170,9 @@ const PERMS = {
   saveArchive: (a) => ['production', a[0] && a[0].id ? 'edit' : 'add'],
   deleteArchive: ['production', 'delete'],
 
+  getSetting: ['settings', 'view'],
+  setSetting: ['settings', 'edit'],
+  allSettings: ['settings', 'view'],
   reportQuery: ['reports', 'view'],
   reportFacets: ['reports', 'view'],
   dailyReport: ['reports', 'view'],

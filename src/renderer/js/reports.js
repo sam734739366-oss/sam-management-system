@@ -71,8 +71,8 @@
   /** أنواع حركات إضافية لا تندرج تحت مستندات الفواتير */
   const EXTRA_KINDS = {
     opening: 'رصيد افتتاحي',
-    issue: 'صرف إنتاج',
-    receipt: 'استلام إنتاج',
+    issue: 'صرف إنتاج (سجل قديم)',
+    receipt: 'استلام إنتاج (سجل قديم)',
     tolling_in: 'استلام نفخ للغير',
     tolling_out: 'إصدار نفخ للغير',
     scrap: 'هدر'
@@ -98,8 +98,184 @@
     report: 'movements',
     period: 'd30',
     ran: false,
+    packs: readPacks(),  // show the cartons/bags columns (remembered)
     win: null
   };
+
+  /* =====================================================================
+     الكراتين والأكياس — the packs of an item, for READING only:
+     the accounting stays on the piece, the packs are only another way
+     to say the same quantity («12 كيس + 12 حبة»). Every report that
+     shows an item with a quantity gets them:
+       · a report of MOVEMENTS describes that movement;
+       · a report that only knows a BALANCE describes that balance.
+     The switch is remembered (the same key the daily report uses).
+     ===================================================================== */
+  const PACKS_KEY = 'sam.packs.v1';
+
+  /** the customer's choice: on (the default) or off */
+  function readPacks() {
+    try {
+      const v = window.localStorage.getItem(PACKS_KEY);
+      return v === null ? true : v !== '0';
+    } catch (e) { return true; }
+  }
+  function writePacks(on) {
+    try { window.localStorage.setItem(PACKS_KEY, on ? '1' : '0'); }
+    catch (e) { /* a blocked storage never breaks the report */ }
+  }
+
+  /** the kinds of packs, in the order they are shown */
+  const PACK_KINDS = [
+    { key: 'cartons', label: 'كرتون' },
+    { key: 'bags', label: 'كيس' },
+    { key: 'unit', label: 'وحدة الصنف' }
+  ];
+
+  /** the columns that carry the quantity of a movement */
+  const MOVEMENT_QTY = ['inQty', 'outQty', 'delta'];
+
+  /** what the packs of each report describe */
+  const PACK_SPECS = {
+    /* every line of the movement — the packs of THAT movement */
+    movements: {
+      label: 'الحركة',
+      qty: (r) => Math.abs(SamDB.n(r.delta)),
+      recorded: (r) => ({ cartons: r.cartons, bags: r.bags }),
+      item: (r) => itemOfRow(r),
+      /* the packs are the reading of the movement — they only stand beside
+         the columns that show it */
+      needs: (cols) => cols.some((c) => MOVEMENT_QTY.indexOf(c.key) >= 0)
+    },
+    /* the ledger of one item — the packs of every movement of it */
+    item_ledger: {
+      label: 'الحركة',
+      qty: (r) => Math.abs(SamDB.n(r.delta)),
+      item: () => itemById(filters.itemId)
+    },
+    /* the stock of an item in every warehouse — the packs of its balance */
+    stock_status: {
+      label: 'الرصيد',
+      qty: (r) => SamDB.n(r.allTotal),
+      item: (r) => itemById(r.itemId)
+    },
+    /* the damage of an item — the packs of what went out */
+    damage: {
+      label: 'صادر تالف',
+      qty: (r) => SamDB.n(r.outQty),
+      item: (r) => itemByCode(r.itemCode)
+    },
+    /* the shortage of an item — the packs of what is left */
+    shortage: {
+      label: 'سليم',
+      qty: (r) => SamDB.n(r.good),
+      item: (r) => itemById(r.itemId)
+    }
+  };
+
+  /** the item of a row — its packs (how many pieces in a bag / carton) */
+  function itemOfRow(row) {
+    if (!row) return null;
+    const byId = row.itemId ? itemById(row.itemId) : null;
+    if (byId) return byId;
+    const byCode = row.itemCode ? itemByCode(row.itemCode) : null;
+    if (byCode) return byCode;
+    /* the row itself carries the pack sizes of its item */
+    if (row.perCarton || row.perBag) {
+      return { pieces_per_carton: row.perCarton, pieces_per_bag: row.perBag };
+    }
+    return null;
+  }
+
+  function itemById(id) {
+    if (id == null) return null;
+    return (ref.byId && ref.byId[id]) || null;
+  }
+  function itemByCode(code) {
+    if (code == null) return null;
+    return (ref.byCode && ref.byCode[String(code)]) || null;
+  }
+
+  /** the packs of a quantity, written the way the customer counts them */
+  function packText(item, key, pieces, recorded) {
+    if (!item) return '';
+    const u = SamUnits.unitsOf(item).find((x) => x.key === key);
+    if (!u) return '';
+    const q = Math.max(0, Math.round(SamDB.n(pieces)));
+    const s = SamUnits.split(item, key, q);
+    let count = s.count;
+    let part = s.part;
+    /* the line of the document carries the count the user typed — it wins
+       when it still fits the quantity (the rest is the incomplete part) */
+    const rec = Math.max(0, Math.round(SamDB.n(recorded)));
+    if (rec > 0) {
+      const rest = q - rec * u.pieces;
+      if (rest >= 0 && rest < u.pieces) { count = rec; part = rest; }
+    }
+    return SamUnits.describe(item, key, count, part);
+  }
+
+  /**
+   * Give the result its pack columns — one per kind the items really use —
+   * and write the numbers of every row («12 كيس + 12 حبة»).
+   */
+  function applyPacks(res) {
+    const spec = PACK_SPECS[res.report];
+    const rows = res.rows || [];
+    res.packColumns = [];
+    if (!spec || !rows.length) return res;
+    /* the packs describe the quantity of the report — when the table shows
+       no quantity at all, they have nothing to stand beside */
+    if (spec.needs && !spec.needs(res.columns || [])) return res;
+
+    const used = {};
+    rows.forEach((r) => {
+      const it = spec.item(r);
+      if (!it) return;
+      SamUnits.unitsOf(it).forEach((u) => {
+        if (!used[u.key]) used[u.key] = new Set();
+        used[u.key].add(u.label);
+      });
+    });
+    const kinds = PACK_KINDS.filter((k) => used[k.key]).map((k) => {
+      const labels = [...used[k.key]];
+      return { key: k.key, label: labels.length === 1 ? labels[0] : k.label };
+    });
+    if (!kinds.length) return res;
+
+    res.packColumns = kinds.map((k) => ({
+      key: `pack_${k.key}`,
+      label: `${k.label} (${spec.label})`,
+      pack: true
+    }));
+    rows.forEach((r) => {
+      const it = spec.item(r);
+      const rec = spec.recorded ? spec.recorded(r) : null;
+      kinds.forEach((k) => {
+        const txt = packText(it, k.key, spec.qty(r), rec ? rec[k.key] : null);
+        r[`pack_${k.key}`] = txt || '';
+      });
+    });
+    return res;
+  }
+
+  /** the columns the screen shows — the packs follow the switch */
+  function activeColumns(res) {
+    const base = (res && res.columns) || [];
+    if (!state.packs) return base;
+    return base.concat((res && res.packColumns) || []);
+  }
+
+  /** turn the packs on / off — the choice is remembered and shared */
+  function setPacks(on) {
+    state.packs = !!on;
+    writePacks(state.packs);
+    try { window.dispatchEvent(new CustomEvent('sam-packs-change', { detail: { on: state.packs } })); }
+    catch (e) { /* an old runtime without the event still works */ }
+    if (refs && refs.fPacks) refs.fPacks.checked = state.packs;
+    /* the columns are already counted — only the painting changes */
+    if (state.win) state.win.pick(state.win.activeKey || state.report);
+  }
 
   /** حالة الفلاتر — تبقى كما هي عبر كل إعادة رسم للنافذة */
   const filters = {
@@ -115,7 +291,7 @@
   };
 
   /** البيانات المرجعية (المخازن / الأصناف / الأطراف) */
-  const ref = { items: [], warehouses: [], parties: [], kinds: {}, loaded: false };
+  const ref = { items: [], warehouses: [], parties: [], kinds: {}, byId: {}, byCode: {}, loaded: false };
 
   let combos = null;      // قوائم الفلاتر
   let filterHost = null;  // لوحة الفلاتر (تُعاد إضافتها بعد كل رسم)
@@ -164,7 +340,8 @@
     const r3 = el('div', 'rw-frow rw-f-state');
     r3.innerHTML = `<div class="rw-flabel">${SamUI.plate('rw-fic', 'i-box', null, 'xs')}<span>الحالة</span></div>`;
     const b3 = el('div', 'rw-fbody rw-state');
-    b3.innerHTML = `<div class="rw-chips" id="bucketWrap"></div><div class="rw-chips" id="optWrap"></div>`;
+    b3.innerHTML = `<div class="rw-chips" id="bucketWrap"></div><div class="rw-chips" id="optWrap"></div>
+      <label class="col-check"><input type="checkbox" id="fPacks" /><span>إظهار الكراتين والأكياس</span></label>`;
     r3.appendChild(b3);
 
     /* الصف 4 — الأعمدة (تقرير الحركة فقط) */
@@ -198,6 +375,7 @@
       bucketWrap: host.querySelector('#bucketWrap'),
       optWrap: host.querySelector('#optWrap'),
       colsWrap: host.querySelector('#colsWrap'),
+      fPacks: host.querySelector('#fPacks'),
       btnAllCols: host.querySelector('#btnAllCols'),
       btnNoCols: host.querySelector('#btnNoCols'),
       btnReset: host.querySelector('#btnResetFilters'),
@@ -237,6 +415,12 @@
       renderColumns();
       rerun();
     });
+    /* the packs — a reading switch, not a filter: it changes the columns
+       of the screen, of the print and of the Excel */
+    if (refs.fPacks) {
+      refs.fPacks.checked = state.packs;
+      refs.fPacks.addEventListener('change', () => setPacks(refs.fPacks.checked));
+    }
 
     renderPeriods();
     renderColumns();
@@ -377,6 +561,13 @@
       ref.warehouses = whs || [];
       ref.parties = parties || [];
       ref.kinds = kinds || {};
+      /* the items are needed for the packs — how many pieces in a bag */
+      ref.byId = {};
+      ref.byCode = {};
+      ref.items.forEach((i) => {
+        ref.byId[i.id] = i;
+        if (i.code != null) ref.byCode[String(i.code)] = i;
+      });
       ref.loaded = true;
     } catch (e) {
       toast(e && e.message ? e.message : String(e), 'bad');
@@ -418,6 +609,10 @@
     state.report = key;
     state.error = '';
     const f = collectFilters();
+    /* the packs are counted from the items — they are read in the
+       background, so the report itself is never delayed by them */
+    const needsItems = !ref.loaded;
+    const itemsReady = needsItems ? loadRef() : null;
     try {
       if (key === 'movements') {
         const cols = COLUMNS.filter((c) => c.on);
@@ -450,7 +645,20 @@
       state.error = e && e.message ? e.message : String(e);
       return null;
     }
+    /* the pack columns of the result — they are counted once, and the
+       switch decides whether they are shown */
+    applyPacks(state.result);
     state.ran = true;
+    const result = state.result;
+    /* when the items arrive, the packs are counted again — the report is
+       repainted so the columns join the table */
+    if (itemsReady) {
+      itemsReady.then(() => {
+        if (state.result !== result) return;
+        applyPacks(result);
+        if (state.win) state.win.pick(state.win.activeKey || state.report);
+      });
+    }
     return state.result;
   }
 
@@ -497,7 +705,15 @@
       ${parts.join('')}
       ${value}
       <span class="dim">${esc(periodLabel())}</span>
-      ${units ? `<span class="dim">الوحدة: ${esc(units)}</span>` : ''}`;
+      ${units ? `<span class="dim">الوحدة: ${esc(units)}</span>` : ''}
+      ${packsNote(res)}`;
+  }
+
+  /** the packs are a reading — the accounting stays on the piece */
+  function packsNote(res) {
+    if (!state.packs) return '';
+    if (!(res && res.packColumns && res.packColumns.length)) return '';
+    return '<span class="dim">الكراتين والأكياس: قراءة فقط — الحسبة على الحبة</span>';
   }
 
   /** جدول تفصيل الدخول والخروج لكل مخزن — يظهر في المعاينة وفي الطباعة */
@@ -565,7 +781,7 @@
     const footHost = wrap.querySelector('#reportFoot');
     if (!tbl) return;
 
-    const cols = res.columns || [];
+    const cols = activeColumns(res);
     const rows = res.rows || [];
 
     tbl.innerHTML = `<thead><tr>${cols.map((c) => `<th>${esc(c.label)}</th>`).join('')}</tr></thead>
@@ -670,7 +886,7 @@
   function isLandscape(res) {
     const cat = (state.catalogue || []).find((r) => r.key === (res ? res.report : state.report));
     if (cat && cat.landscape) return true;
-    return ((res && res.columns) || []).length > 8;
+    return ((res && activeColumns(res)) || []).length > 8;
   }
 
   /** حجم الخط يتقلص مع زيادة عدد الأعمدة — لا نصّ باهت ولا صغير */
@@ -681,7 +897,7 @@
   }
 
   function printTable(res) {
-    const cols = res.columns || [];
+    const cols = activeColumns(res);
     const rows = res.rows || [];
     const fs = fontFor(cols.length);
     const th = cols.map((c) => `<th${c.num || c.money ? ' style="text-align:left"' : ''}>${esc(c.label)}</th>`).join('');
@@ -709,7 +925,8 @@
       bodyHtml: printTable(res) + locationHtml(res),
       dense: true,
       landscape: isLandscape(res),
-      footer: `SAM Management System — ${res.title} (الكميات بالوحدة الأساسية)`,
+      footer: `SAM Management System — ${res.title} (الكميات بالوحدة الأساسية)`
+        + (packsNote(res) ? ' · الكراتين والأكياس قراءة فقط' : ''),
       /* a report is not a document — nobody signs a report */
       kind: 'report'
     };
@@ -732,10 +949,11 @@
     else if (r && !r.canceled) toast(r.error || 'تعذّر حفظ الملف', 'bad');
   }
 
-  async function exportExcel() {
+  /** the workbook of the report — the export and the checks share it */
+  function excelSpec() {
     const res = state.result;
-    if (!res) return toast('شغّل التقرير أولاً', 'bad');
-    const cols = res.columns || [];
+    if (!res) return null;
+    const cols = activeColumns(res);
     const rows = res.rows.map((r) => {
       const o = {};
       cols.forEach((c) => {
@@ -747,7 +965,7 @@
     });
     const totals = sumParts(res).map((p) => ({ key: p.key, value: p.value }));
 
-    const out = await sam.app.saveXlsx({
+    return {
       fileName: `SAM-${res.title.replace(/\s+/g, '-')}-${SamUI.today()}.xlsx`,
       sheetName: res.title.slice(0, 28),
       title: res.title,
@@ -765,7 +983,15 @@
       })),
       rows,
       totals
-    });
+    };
+  }
+
+  async function exportExcel() {
+    const res = state.result;
+    if (!res) return toast('شغّل التقرير أولاً', 'bad');
+    const spec = excelSpec();
+
+    const out = await sam.app.saveXlsx(spec);
     if (out && out.ok) {
       toast(`تم حفظ ملف Excel: ${out.data.path} (${SamDB.fmt(out.data.rows)} سطر)`, 'ok', 5600);
       sam.app.openPath(out.data.path.replace(/[\\/][^\\/]+$/, ''));
@@ -893,8 +1119,22 @@
     buckets: BUCKETS,
     options: OPTIONS,
     state,
-    filters
+    filters,
+    /* the sheet and the workbook of the report — the checks read them */
+    sheetSpec: () => (state.result ? sheetOpts() : null),
+    excelSpec: () => excelSpec(),
+    setPacks
   };
+
+  /* the switch is shared with the daily report — whoever turns it off,
+     every surface follows (and the choice is remembered) */
+  window.addEventListener('sam-packs-change', (e) => {
+    const on = !!(e && e.detail && e.detail.on);
+    if (on === state.packs) return;
+    state.packs = on;
+    if (refs && refs.fPacks) refs.fPacks.checked = state.packs;
+    if (state.win) state.win.pick(state.win.activeKey || state.report);
+  });
 
   SamUI.bus.on(async () => {
     if (!window.SamReports) return;

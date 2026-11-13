@@ -8,18 +8,320 @@
 
   const state = { users: [], meta: { screens: [], perms: [] }, backup: null, sync: null, datadir: null, cloud: null, tab: 'general' };
 
+  /* the tabs of the screen — «الشركة» sits right after «عام» */
+  const TABS = ['general', 'company', 'users', 'backup', 'data', 'update'];
+
   /* ---------------- tabs ---------------- */
   function showTab(tab) {
     state.tab = tab;
-    ['general', 'users', 'backup', 'data', 'update'].forEach((t) => {
+    TABS.forEach((t) => {
       const box = document.getElementById(`set-${t}`);
       if (box) box.classList.toggle('hidden', t !== tab);
     });
     document.querySelectorAll('#settingsTabs .tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
+    if (tab === 'company') loadCompanyTab();
     if (tab === 'users') loadUsers();
     if (tab === 'backup') loadBackup();
     if (tab === 'data') loadDataTab();
     if (tab === 'update') loadUpdate();
+  }
+
+  /* =====================================================================
+     V7 — the company of the customer: its name and its logo
+     =====================================================================
+     The tab is built here — the page itself is not touched — and it speaks
+     the same language as the other tabs: the same cards, the same fields,
+     the same buttons, the same foot-notes.
+
+     The picture lives in the DATA folder (never inside the installation,
+     which the installer would replace) and the setting keeps only its
+     NAME — so the logo survives a restart and a reinstall.
+
+     The program's own name and its watermark stay in the footer of every
+     paper whatever the customer writes here — they never disappear.
+     ===================================================================== */
+
+  const company = {
+    dirty: false,     /* the name was typed and not saved yet */
+    pending: '',      /* the picture just picked (a data URL) */
+    savedFile: '',    /* the name of the picture inside the data folder */
+    logoUrl: ''       /* the link the preview shows */
+  };
+
+  const MIME_BY_EXT = {
+    png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
+    webp: 'image/webp', gif: 'image/gif', svg: 'image/svg+xml'
+  };
+  const MAX_LOGO_BYTES = 4 * 1024 * 1024;
+
+  const cnode = (id) => document.getElementById(id);
+
+  /* ---------------- the tab and its panel ---------------- */
+  function buildCompanyTab() {
+    const tabs = document.getElementById('settingsTabs');
+    const view = document.getElementById('v-settings');
+    if (!tabs || !view) return;
+
+    /* the button of the tab — right after «عام» */
+    if (!tabs.querySelector('.tab[data-tab="company"]')) {
+      const btn = el('button', 'tab', 'الشركة');
+      btn.type = 'button';
+      btn.dataset.tab = 'company';
+      const general = tabs.querySelector('.tab[data-tab="general"]');
+      if (general) tabs.insertBefore(btn, general.nextSibling);
+      else tabs.appendChild(btn);
+    }
+    if (cnode('set-company')) return;          /* the panel is already there */
+
+    /* the panel — the same cards as the other tabs */
+    const panel = el('div', 'hidden');
+    panel.id = 'set-company';
+    panel.innerHTML = `
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-head">
+            <h3>بيانات الشركة</h3>
+            <span class="badge accent" id="companyLogoBadge">بدون شعار</span>
+          </div>
+          <div class="card-body">
+            <label class="field">
+              <span class="field-label">
+                <span class="field-ic t3d xs tone-info"><svg class="ic"><use href="#i-warehouse"/></svg></span>
+                <span class="field-txt">اسم الشركة</span>
+              </span>
+              <input class="input" id="companyName" type="text" placeholder="مثال: مصنع الأمل للمشروبات" autocomplete="off" />
+            </label>
+
+            <div class="field" style="margin-top:14px">
+              <span class="field-label">
+                <span class="field-ic t3d xs tone-sreturn"><svg class="ic"><use href="#i-tag"/></svg></span>
+                <span class="field-txt">شعار الشركة</span>
+              </span>
+              <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-top:2px">
+                <div id="companyLogoBox" style="width:120px;height:60px;flex:none;border:1px solid var(--line);border-radius:10px;background:#ffffff;display:flex;align-items:center;justify-content:center;overflow:hidden">
+                  <img id="companyLogoImg" alt="شعار الشركة" style="display:none;max-width:100%;max-height:100%;object-fit:contain" />
+                  <span id="companyLogoHint" style="font-size:11px;font-weight:700;color:var(--muted-fg)">لا شعار</span>
+                </div>
+                <div style="display:flex;flex-direction:column;gap:8px;align-items:flex-start">
+                  <button class="btn btn-primary" id="btnPickLogo" type="button"><span class="t3d xs tone-info"><svg class="ic"><use href="#i-download"/></svg></span><span class="btn-txt">اختيار صورة الشعار</span></button>
+                  <button class="btn btn-ghost" id="btnRemoveLogo" type="button"><span class="t3d xs tone-adjust"><svg class="ic"><use href="#i-trash"/></svg></span><span class="btn-txt">إزالة الشعار</span></button>
+                </div>
+                <input type="file" id="companyLogoFile" class="hidden" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml" />
+              </div>
+            </div>
+
+            <div class="row-btns" style="margin-top:16px">
+              <button class="btn btn-primary" id="btnSaveCompany" type="button"><span class="t3d xs tone-ok"><svg class="ic"><use href="#i-check"/></svg></span><span class="btn-txt">حفظ</span></button>
+            </div>
+            <p class="foot-note">يُحفظ الشعار داخل مجلد بيانات البرنامج، فيبقى بعد إعادة التشغيل. يقبل PNG و JPG و WebP و GIF و SVG — والأفضل صورة شفافة بخلفية بيضاء.</p>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <h3>خيارات التقارير</h3>
+            <span class="badge">الكراتين والأكياس</span>
+          </div>
+          <div class="card-body">
+            <label class="check-row" style="align-self:flex-start;padding-bottom:0">
+              <input type="checkbox" id="showPackUnits" />
+              <span>إظهار الكراتين والأكياس في التقارير</span>
+            </label>
+            <p class="foot-note">يظهر عمودا «الكراتين» و«الأكياس» في تقارير الجرد والإنتاج والمخازن. لا يغيّر الحساب — الوحدة الأساسية (الحبة) هي المعتمدة دائماً.</p>
+          </div>
+        </div>
+      </div>
+      <p class="foot-note">اسم البرنامج «SAM Management System» وعلامته المائية «SAM 775158678» يبقيان في ذيل كل ورقة مهما كتبت هنا — لا يختفيان أبداً.</p>`;
+    view.appendChild(panel);
+
+    /* ---- the wiring of the panel ---- */
+    const nameInput = cnode('companyName');
+    if (nameInput) {
+      nameInput.addEventListener('input', () => { company.dirty = true; });
+    }
+    const fileInput = cnode('companyLogoFile');
+    if (fileInput) {
+      fileInput.addEventListener('change', () => {
+        const f = fileInput.files && fileInput.files[0];
+        onCompanyLogoChosen(f);
+      });
+    }
+    const pick = cnode('btnPickLogo');
+    if (pick) pick.addEventListener('click', pickCompanyLogo);
+    const remove = cnode('btnRemoveLogo');
+    if (remove) remove.addEventListener('click', removeCompanyLogo);
+    const save = cnode('btnSaveCompany');
+    if (save) save.addEventListener('click', saveCompany);
+    const pack = cnode('showPackUnits');
+    if (pack) pack.addEventListener('change', () => storePackUnits(false));
+  }
+
+  /* ---------------- the picture ---------------- */
+  function mimeOfFile(file) {
+    const t = String(file.type || '').toLowerCase().trim();
+    if (t === 'image/jpg') return 'image/jpeg';
+    if (/^image\/(png|jpeg|webp|gif|svg\+xml)$/.test(t)) return t;
+    const ext = (String(file.name || '').split('.').pop() || '').toLowerCase();
+    return MIME_BY_EXT[ext] || '';
+  }
+
+  /** the picture as a data URL the main process can write */
+  async function fileToDataUrl(file, mime) {
+    const buf = await file.arrayBuffer();
+    const bytes = new Uint8Array(buf);
+    let bin = '';
+    const CH = 0x8000;
+    for (let i = 0; i < bytes.length; i += CH) {
+      bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CH));
+    }
+    return `data:${mime};base64,${btoa(bin)}`;
+  }
+
+  function pickCompanyLogo() {
+    const inp = cnode('companyLogoFile');
+    if (!inp) return;
+    inp.value = '';
+    inp.click();
+  }
+
+  async function onCompanyLogoChosen(file) {
+    if (!file) return;
+    const mime = mimeOfFile(file);
+    if (!mime) {
+      toast('اختر صورة بصيغة PNG أو JPG أو WebP أو GIF أو SVG', 'bad');
+      return;
+    }
+    if (file.size > MAX_LOGO_BYTES) {
+      toast('حجم الشعار كبير — اختر صورة أصغر من 4 ميجابايت', 'bad');
+      return;
+    }
+    try {
+      company.pending = await fileToDataUrl(file, mime);
+      refreshCompanyLogo();
+      toast('تم اختيار الشعار — اضغط «حفظ» لاعتماده', 'info');
+    } catch (e) {
+      toast('تعذّر قراءة الصورة', 'bad');
+    }
+  }
+
+  async function removeCompanyLogo() {
+    const old = company.savedFile || (window.SamCompany ? SamCompany.logoFile : '') || '';
+    try {
+      if (old) await sam.app.removeImage(old);
+      await SamDB.call('setSetting', 'company_logo', '');
+      company.pending = '';
+      company.savedFile = '';
+      const inp = cnode('companyLogoFile');
+      if (inp) inp.value = '';
+      if (window.SamCompany) await SamCompany.load();
+      company.logoUrl = (window.SamCompany && SamCompany.logo) || '';
+      refreshCompanyLogo();
+      toast('تم إزالة الشعار', 'ok');
+    } catch (e) {
+      toast((e && e.message) ? e.message : 'تعذّرت إزالة الشعار', 'bad');
+    }
+  }
+
+  /* ---------------- the preview ---------------- */
+  function refreshCompanyLogo() {
+    const img = cnode('companyLogoImg');
+    const hint = cnode('companyLogoHint');
+    const badge = cnode('companyLogoBadge');
+    const rm = cnode('btnRemoveLogo');
+    if (!img) return;
+    const src = company.pending || company.logoUrl || '';
+    if (src) {
+      img.src = src;
+      img.style.display = '';
+      if (hint) hint.style.display = 'none';
+    } else {
+      img.removeAttribute('src');
+      img.style.display = 'none';
+      if (hint) { hint.style.display = ''; hint.textContent = 'لا شعار'; }
+    }
+    if (badge) {
+      if (company.pending) { badge.textContent = 'شعار جديد — لم يُحفظ بعد'; badge.className = 'badge gold'; }
+      else if (company.logoUrl) { badge.textContent = 'الشعار مضبوط'; badge.className = 'badge ok'; }
+      else { badge.textContent = 'بدون شعار'; badge.className = 'badge'; }
+    }
+    if (rm) rm.disabled = !src && !company.savedFile;
+  }
+
+  /* ---------------- the tab ---------------- */
+  async function loadCompanyTab() {
+    try {
+      const all = (await SamDB.call('allSettings')) || {};
+      if (!company.dirty) {
+        const nameInput = cnode('companyName');
+        if (nameInput) nameInput.value = String(all.company_name || '');
+      }
+      company.savedFile = String(all.company_logo || '').trim();
+      const pack = cnode('showPackUnits');
+      if (pack) {
+        const raw = all.show_pack_units;
+        /* a missing setting means ON — the reports have always shown them */
+        pack.checked = (raw === undefined || raw === null || String(raw).trim() === '')
+          ? true
+          : String(raw).trim() !== '0';
+      }
+    } catch (e) { /* the tab opens even when the read failed */ }
+    try { if (window.SamCompany) await SamCompany.load(); } catch (e) { /* no settings yet */ }
+    company.logoUrl = (window.SamCompany && SamCompany.logo) || '';
+    refreshCompanyLogo();
+  }
+
+  /* ---------------- saving ---------------- */
+  async function saveCompany() {
+    const nameInput = cnode('companyName');
+    const pack = cnode('showPackUnits');
+    const name = ((nameInput && nameInput.value) || '').trim();
+    const btn = cnode('btnSaveCompany');
+    if (btn) btn.disabled = true;
+    try {
+      /* 1. the picture FIRST — it becomes a file in the data folder */
+      let logoFile = company.savedFile || '';
+      if (company.pending) {
+        const r = await sam.app.saveImage({ name: 'company-logo', dataUrl: company.pending });
+        if (!r || !r.ok) throw new Error((r && r.error) || 'تعذّر حفظ الشعار');
+        logoFile = r.name;
+        /* the old picture goes away — unless it IS the new one */
+        if (company.savedFile && company.savedFile !== logoFile) {
+          await sam.app.removeImage(company.savedFile);
+        }
+      }
+      /* 2. the settings — the logo keeps only the NAME of the file */
+      await SamDB.call('setSetting', 'company_name', name);
+      await SamDB.call('setSetting', 'company_logo', logoFile);
+      await SamDB.call('setSetting', 'show_pack_units', (pack && pack.checked) ? '1' : '0');
+      /* 3. the papers and the screen pick it up at once */
+      company.pending = '';
+      company.dirty = false;
+      company.savedFile = logoFile;
+      if (window.SamCompany) await SamCompany.load();
+      company.logoUrl = (window.SamCompany && SamCompany.logo) || '';
+      refreshCompanyLogo();
+      toast('تم حفظ بيانات الشركة', 'ok');
+    } catch (e) {
+      toast((e && e.message) ? e.message : 'تعذّر حفظ بيانات الشركة', 'bad');
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  /* the switch of the reports — it keeps itself, no save needed */
+  async function storePackUnits(quiet) {
+    const pack = cnode('showPackUnits');
+    if (!pack) return;
+    try {
+      await SamDB.call('setSetting', 'show_pack_units', pack.checked ? '1' : '0');
+      if (!quiet) {
+        toast(pack.checked
+          ? 'ستظهر الكراتين والأكياس في التقارير'
+          : 'ستُخفى الكراتين والأكياس من التقارير', 'ok');
+      }
+    } catch (e) {
+      toast((e && e.message) ? e.message : 'تعذّر حفظ الخيار', 'bad');
+    }
   }
 
   /* ---------------- users ---------------- */
@@ -617,6 +919,8 @@
   }
 
   /* ---------------- wiring ---------------- */
+  /* the tab of the company is built here — the page stays untouched */
+  buildCompanyTab();
   document.getElementById('settingsTabs').addEventListener('click', (e) => {
     const b = e.target.closest('.tab');
     if (b) showTab(b.dataset.tab);
@@ -656,5 +960,5 @@
     });
   }
 
-  window.SamSettings = { load: loadBackup, loadUsers, showTab, applyPermissions };
+  window.SamSettings = { load: loadBackup, loadUsers, showTab, applyPermissions, loadCompany: loadCompanyTab };
 })();

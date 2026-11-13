@@ -36,7 +36,9 @@ app.whenReady().then(async () => {
   check('per-warehouse breakdown', attached.stockByWarehouse[A.id].good === 100 && attached.stockByWarehouse[B.id].good === 50);
 
   const cust = db.addParty({ name: 'عميل', type: 'customer' });
-  const today = new Date().toISOString().slice(0, 10);
+  /* the program counts in the LOCAL day (date('now','localtime')) — the
+     test must use the same day, or it fails after midnight */
+  const today = new Date().toLocaleDateString('sv');
   const past = '2026-01-15';
 
   // Task 2/3: sale with past date, lines in two warehouses

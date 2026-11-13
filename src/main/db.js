@@ -59,6 +59,9 @@ CREATE TABLE IF NOT EXISTS items (
   category TEXT,
   pieces_per_carton INTEGER NOT NULL DEFAULT 0,
   pieces_per_bag INTEGER NOT NULL DEFAULT 0,
+  unit_label TEXT,
+  unit_pieces INTEGER NOT NULL DEFAULT 0,
+  image TEXT,
   min_good_alert INTEGER NOT NULL DEFAULT 0,
   max_defect_alert INTEGER NOT NULL DEFAULT 0,
   is_active INTEGER NOT NULL DEFAULT 1,
@@ -121,6 +124,10 @@ CREATE TABLE IF NOT EXISTS doc_lines (
   pieces INTEGER NOT NULL DEFAULT 0,
   cartons INTEGER NOT NULL DEFAULT 0,
   bags INTEGER NOT NULL DEFAULT 0,
+  cartons_part INTEGER NOT NULL DEFAULT 0,
+  bags_part INTEGER NOT NULL DEFAULT 0,
+  unit_count INTEGER NOT NULL DEFAULT 0,
+  unit_part INTEGER NOT NULL DEFAULT 0,
   note TEXT
 );
 
@@ -315,6 +322,8 @@ function migrate() {
   widenDocumentsV6();
   // V7 — the tolling batch and the blowing fee
   widenDocumentsV7();
+  // V7 — the pack units of an item and the photo of the item
+  widenItemsV7();
 }
 
 /**
@@ -337,6 +346,27 @@ function widenDocumentsV7() {
   if (!cols.includes('batch_id')) {
     db.exec('ALTER TABLE documents ADD COLUMN batch_id INTEGER REFERENCES tolling_orders(id) ON DELETE SET NULL');
   }
+}
+
+/**
+ * V7 — the pack units of an item and the photo of the item.
+ *
+ * · items.unit_label / items.unit_pieces — a unit of its own, beside the
+ *   carton and the bag (a «كيس كبير» or a « Arteson » of its own).
+ * · items.image — the name of the photo file inside the data folder.
+ * · doc_lines.*_part — the pieces of the INCOMPLETE unit: a carton that is
+ *   not whole is 12 pieces of a 24, not a half.
+ */
+function widenItemsV7() {
+  const cols = db.prepare('PRAGMA table_info(items)').all().map((c) => c.name);
+  if (!cols.includes('unit_label')) db.exec('ALTER TABLE items ADD COLUMN unit_label TEXT');
+  if (!cols.includes('unit_pieces')) db.exec('ALTER TABLE items ADD COLUMN unit_pieces INTEGER NOT NULL DEFAULT 0');
+  if (!cols.includes('image')) db.exec('ALTER TABLE items ADD COLUMN image TEXT');
+  const dl = db.prepare('PRAGMA table_info(doc_lines)').all().map((c) => c.name);
+  if (!dl.includes('cartons_part')) db.exec('ALTER TABLE doc_lines ADD COLUMN cartons_part INTEGER NOT NULL DEFAULT 0');
+  if (!dl.includes('bags_part')) db.exec('ALTER TABLE doc_lines ADD COLUMN bags_part INTEGER NOT NULL DEFAULT 0');
+  if (!dl.includes('unit_count')) db.exec('ALTER TABLE doc_lines ADD COLUMN unit_count INTEGER NOT NULL DEFAULT 0');
+  if (!dl.includes('unit_part')) db.exec('ALTER TABLE doc_lines ADD COLUMN unit_part INTEGER NOT NULL DEFAULT 0');
 }
 
 /**
@@ -763,11 +793,13 @@ function addItem(item, balances = []) {
   validateItem(item);
   const tx = db.transaction(() => {
     const info = db.prepare(
-      `INSERT INTO items(code,name,base_unit,category,pieces_per_carton,pieces_per_bag,min_good_alert,max_defect_alert,is_active)
-       VALUES(?,?,?,?,?,?,?,?,?)`
+      `INSERT INTO items(code,name,base_unit,category,pieces_per_carton,pieces_per_bag,unit_label,unit_pieces,image,min_good_alert,max_defect_alert,is_active)
+       VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`
     ).run(
       item.code.trim(), item.name.trim(), item.base_unit?.trim() || 'حبة', item.category?.trim() || null,
-      int(item.pieces_per_carton), int(item.pieces_per_bag), int(item.min_good_alert), int(item.max_defect_alert),
+      int(item.pieces_per_carton), int(item.pieces_per_bag),
+      str(item.unit_label) || null, int(item.unit_pieces), str(item.image) || null,
+      int(item.min_good_alert), int(item.max_defect_alert),
       item.is_active === false ? 0 : 1
     );
     const id = info.lastInsertRowid;
@@ -785,11 +817,14 @@ function updateItem(id, item, balances = null) {
   const tx = db.transaction(() => {
     db.prepare(
       `UPDATE items SET code=?, name=?, base_unit=?, category=?, pieces_per_carton=?, pieces_per_bag=?,
+        unit_label=?, unit_pieces=?, image=?,
         min_good_alert=?, max_defect_alert=?, is_active=?, updated_at=datetime('now','localtime')
        WHERE id=?`
     ).run(
       item.code.trim(), item.name.trim(), item.base_unit?.trim() || 'حبة', item.category?.trim() || null,
-      int(item.pieces_per_carton), int(item.pieces_per_bag), int(item.min_good_alert), int(item.max_defect_alert),
+      int(item.pieces_per_carton), int(item.pieces_per_bag),
+      str(item.unit_label) || null, int(item.unit_pieces), str(item.image) || null,
+      int(item.min_good_alert), int(item.max_defect_alert),
       item.is_active === false ? 0 : 1, id
     );
     if (balances) {
@@ -1002,8 +1037,8 @@ const DOC_PER_LINE_WH = ['prod_receipt', 'prod_issue', 'gate_in', 'gate_out', 'a
 const DOC_LABELS_ALL = {
   ...Object.fromEntries(Object.entries(DOC_KINDS).map(([k, v]) => [k, v.ar])),
   opening: 'رصيد افتتاحي',
-  issue: 'صرف إنتاج',
-  receipt: 'استلام إنتاج',
+  issue: 'صرف إنتاج (سجل قديم)',
+  receipt: 'استلام إنتاج (سجل قديم)',
   bags: 'أكياس مستخدمة',
   tolling_in: 'استلام نفخ للغير',
   tolling_out: 'إصدار نفخ للغير',
@@ -1210,8 +1245,9 @@ function saveDocument(payload) {
     }
 
     const insLine = db.prepare(
-      `INSERT INTO doc_lines(document_id,item_id,warehouse_id,dest_warehouse_id,bucket,pieces,cartons,bags,note,sign)
-       VALUES(?,?,?,?,?,?,?,?,?,?)`
+      `INSERT INTO doc_lines(document_id,item_id,warehouse_id,dest_warehouse_id,bucket,pieces,cartons,bags,
+        cartons_part,bags_part,unit_count,unit_part,note,sign)
+       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
     );
     const warnings = [];
     const insMove = db.prepare(
@@ -1239,7 +1275,8 @@ function saveDocument(payload) {
         if (pieces > here) {
           warnings.push(`«${item.name}» في ${whName(src)} ${here} ${item.base_unit} فقط، والمخزن سيتجاوز الحد إلى ${here - pieces}.`);
         }
-        insLine.run(docId, itemId, src, dst, bucket, pieces, cartons, bags, l.note || null, -1);
+        insLine.run(docId, itemId, src, dst, bucket, pieces, cartons, bags,
+          int(l.cartons_part), int(l.bags_part), int(l.unit_count), int(l.unit_part), l.note || null, -1);
         insMove.run(itemId, src, bucket, -pieces, cartons, bags, payload.kind, docId, numbers.docNo, moveParty, moveCustomer, l.note || 'نقل صادر', payload.doc_date);
         insMove.run(itemId, dst, bucket, pieces, cartons, bags, payload.kind, docId, numbers.docNo, moveParty, moveCustomer, l.note || 'نقل وارد', payload.doc_date);
       } else {
@@ -1258,7 +1295,8 @@ function saveDocument(payload) {
             warnings.push(`رصيد «${item.name}» في ${whName(wh)} ${avail} ${item.base_unit} فقط والإصدار ${pieces} — الرصيد بعد الحفظ ${avail - pieces}.`);
           }
         }
-        insLine.run(docId, itemId, wh, null, bucket, pieces, cartons, bags, l.note || null, sign);
+        insLine.run(docId, itemId, wh, null, bucket, pieces, cartons, bags,
+          int(l.cartons_part), int(l.bags_part), int(l.unit_count), int(l.unit_part), l.note || null, sign);
         insMove.run(itemId, wh, bucket, sign * pieces, cartons, bags, payload.kind, docId, numbers.docNo,
           moveParty, moveCustomer, l.note || null, payload.doc_date);
       }
@@ -1300,6 +1338,7 @@ function getDocument(id) {
   const lines = db.prepare(
     `SELECT l.*, i.code AS itemCode, i.name AS itemName, i.base_unit AS baseUnit,
             i.pieces_per_carton AS perCarton, i.pieces_per_bag AS perBag,
+            i.unit_label AS unitLabel, i.unit_pieces AS perUnit, i.image AS itemImage,
             w.name AS warehouseName, w.code AS warehouseCode, w.location AS warehouseLocation,
             dw.name AS destWarehouseName, dw.code AS destWarehouseCode, dw.location AS destWarehouseLocation
      FROM doc_lines l
@@ -1511,6 +1550,13 @@ function userCount() {
 function getSetting(key, fallback = '') {
   const row = db.prepare('SELECT value FROM settings WHERE key=?').get(key);
   return row ? row.value : fallback;
+}
+
+/** every setting of the program, as one map */
+function listSettings() {
+  const out = {};
+  db.prepare('SELECT key, value FROM settings').all().forEach((r) => { out[r.key] = r.value; });
+  return out;
 }
 
 function setSetting(key, value) {
@@ -2893,6 +2939,7 @@ module.exports = {
   availableInLocation,
   availableByLocation,
   getSetting,
+  listSettings,
   setSetting,
   prodRouting,
   setProdRouting,

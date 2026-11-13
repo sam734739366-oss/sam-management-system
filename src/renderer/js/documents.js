@@ -115,6 +115,57 @@
   const unitOf = (id) => (itemById(id) || {}).base_unit || 'حبة';
   const whById = (id) => state.warehouses.find((w) => w.id === Number(id)) || null;
 
+  /* ---------------- the packs — الكراتين والأكياس والوحدة الخاصة ----------
+     The QUANTITY in pieces is the only truth of a line. The carton, the
+     bag and the unit of its own are only a way to READ that same
+     quantity — they never change the accounting. The arithmetic lives in
+     SamUnits (js/units.js); this file shows it and writes it down. */
+  const PACK_ORDER = ['cartons', 'bags', 'unit'];
+  /** the column title of a unit — «كراتين» / «أكياس» / the unit's own name */
+  const packLabel = (u) => (u.key === 'cartons' ? 'كراتين' : u.key === 'bags' ? 'أكياس' : (u.label || u.short));
+  /** the title of the incomplete pack — «كسور كرتون» / «كسور كيس» */
+  const packPartLabel = (u) => `كسور ${u.short || u.label}`;
+  /** the item of a saved line — the units it really uses */
+  const lineItemOf = (l) => ({
+    pieces_per_carton: SamDB.n(l.perCarton),
+    pieces_per_bag: SamDB.n(l.perBag),
+    unit_label: l.unitLabel || '',
+    unit_pieces: SamDB.n(l.perUnit)
+  });
+  /** the units of the item of a saved line */
+  function lineUnitsOf(l) {
+    const U = window.SamUnits;
+    return U ? U.unitsOf(lineItemOf(l)) : [];
+  }
+  /** the units a set of lines speaks of — only the ones they really use */
+  function packUnitsOf(linesArr) {
+    const found = new Map();
+    (linesArr || []).forEach((l) => lineUnitsOf(l).forEach((u) => { if (!found.has(u.key)) found.set(u.key, u); }));
+    return [...found.keys()]
+      .sort((a, b) => PACK_ORDER.indexOf(a) - PACK_ORDER.indexOf(b))
+      .map((k) => found.get(k));
+  }
+  /** the columns of the packs — two for every unit: the count and the part */
+  function packColsOf(linesArr) {
+    const out = [];
+    packUnitsOf(linesArr).forEach((u) => {
+      out.push({ key: `pack_${u.key}`, label: packLabel(u), align: 'center' });
+      out.push({ key: `packpart_${u.key}`, label: packPartLabel(u), align: 'center' });
+    });
+    return out;
+  }
+  /** the numbers of the packs of a saved line */
+  function packRowOf(l) {
+    const out = {};
+    lineUnitsOf(l).forEach((u) => {
+      const count = u.key === 'cartons' ? l.cartons : u.key === 'bags' ? l.bags : l.unit_count;
+      const part = u.key === 'cartons' ? l.cartons_part : u.key === 'bags' ? l.bags_part : l.unit_part;
+      out[`pack_${u.key}`] = SamDB.fmt(count);
+      out[`packpart_${u.key}`] = SamDB.fmt(part);
+    });
+    return out;
+  }
+
   /* ---------------- data ---------------- */
   async function load() {
     try {
@@ -509,16 +560,9 @@
     const linesSec = el('div', 'ed-sec', `${SamUI.iconTile('i-box', 'tone-move', 'sm')}<span>أسطر المستند — لكل سطر مخزنه، والكمية بالوحدة الأساسية</span>`);
     body.appendChild(linesSec);
     const linesTbl = el('table', 'tbl lines-tbl');
-    linesTbl.innerHTML = `<thead><tr>
-        <th class="item-h">الصنف</th>
-        <th style="width:158px">المخزن</th>
-        <th style="width:158px" class="dest-col">الوجهة</th>
-        <th class="unit-h" style="width:74px">الوحدة</th>
-        <th style="width:132px">الحالة</th>
-        <th class="sign-h" style="width:132px">الاتجاه</th>
-        <th style="width:100px">الكمية</th>
-        <th style="width:80px" title="معلوماتي فقط">كراتين</th><th style="width:80px" title="معلوماتي فقط">أكياس</th>
-        <th style="width:90px">المتاح</th><th style="width:40px"></th></tr></thead><tbody></tbody>`;
+    /* the head of the table is built here in JS — it follows the units the
+       lines really use, and it is rebuilt whenever they change */
+    linesTbl.innerHTML = `<thead></thead><tbody></tbody>`;
     const linesBody = linesTbl.querySelector('tbody');
     /* the table may be wider than the window — it scrolls sideways instead of
        squeezing the item column, which is the column that matters most */
@@ -542,6 +586,199 @@
 
     /* --- line model --- */
     const lines = [];
+
+    /* ---------------- the packs of a line ----------------
+       The QUANTITY in pieces is the only truth. The carton, the bag and
+       the unit of its own are a way to READ that quantity, so:
+         · typing the quantity fills the packs (300 pieces → 12 bags + 12);
+         · typing the packs fills the quantity (12 bags + 12 → 300 pieces);
+         · an incomplete pack is written in PIECES, never as a fraction;
+         · a line shows ONLY the units its own item uses.
+       While the user types, the field he is typing in is never touched —
+       the calculation only fills the OTHER boxes. */
+    let tableUnits = [];            /* the units the whole table speaks of */
+
+    /** the units of the item of this line */
+    function rowUnits(l) {
+      const U = window.SamUnits;
+      return U ? U.unitsOf(itemById(l.itemCombo.getValue())) : [];
+    }
+    /** a number box that is written with the app's own format */
+    const setNum = (input, v) => { input.value = v ? SamDB.fmt(v) : ''; };
+    /** the head of the lines table — it follows the units of the lines */
+    function buildHead() {
+      const head = linesTbl.querySelector('thead');
+      if (!head) return;
+      const pack = tableUnits.map((u) => `
+        <th class="pack-th" data-pack="${u.key}" style="width:88px">${esc(packLabel(u))}</th>
+        <th class="pack-th" data-pack="${u.key}_part" style="width:72px">${esc(packPartLabel(u))}</th>`).join('');
+      head.innerHTML = `<tr>
+        <th class="item-h">الصنف</th>
+        <th style="width:158px">المخزن</th>
+        <th style="width:158px" class="dest-col">الوجهة</th>
+        <th class="unit-h" style="width:74px">الوحدة</th>
+        <th style="width:132px">الحالة</th>
+        <th class="sign-h" style="width:132px">الاتجاه</th>
+        <th style="width:100px">الكمية</th>
+        ${pack}
+        <th style="width:90px">المتاح</th><th style="width:40px"></th></tr>`;
+      /* the table keeps its shape: every unit takes the room the old
+         «كراتين / أكياس» pair took, so the item column is never crushed */
+      linesTbl.style.minWidth = `${1180 + Math.max(0, tableUnits.length - 1) * 160}px`;
+    }
+    /** the union of the units of every line — the table speaks of these */
+    function syncPackColumns() {
+      const found = new Map();
+      lines.forEach((l) => rowUnits(l).forEach((u) => { if (!found.has(u.key)) found.set(u.key, u); }));
+      const keys = [...found.keys()].sort((a, b) => PACK_ORDER.indexOf(a) - PACK_ORDER.indexOf(b));
+      const same = keys.length === tableUnits.length && keys.every((k, i) => k === tableUnits[i].key);
+      tableUnits = keys.map((k) => found.get(k));
+      buildHead();
+      if (same) return;
+      lines.forEach((l) => renderPackCells(l));
+      /* the quantity still decides — every line keeps its own truth */
+      lines.forEach((l) => applyQuantity(l, SamDB.n(l.piecesEl.value), 'pieces'));
+    }
+    /** the pack boxes of one line — only the units of ITS item */
+    function renderPackCells(l) {
+      const mine = rowUnits(l);
+      const sig = tableUnits.map((u) => u.key).join(',') + '|' + mine.map((u) => u.key).join(',');
+      if (l.packSig === sig) return;
+      l.packSig = sig;
+      (l.packCells || []).forEach((td) => td.remove());
+      l.packCells = [];
+      l.packEls = {};
+      const host = l.availCell.parentNode;
+      tableUnits.forEach((u) => {
+        if (!mine.find((x) => x.key === u.key)) {
+          /* this line's item does not use this unit — the two columns of
+             that unit stay empty, so every line keeps the same shape */
+          const td = el('td', 'pack-c pack-na', '<span class="muted">—</span>');
+          td.colSpan = 2;
+          td.dataset.packNa = u.key;
+          l.packCells.push(td);
+          host.insertBefore(td, l.availCell);
+          return;
+        }
+        /* the number of the packs */
+        const cTd = el('td', 'pack-c');
+        const cIn = numInput({ value: 0, placeholder: '0' });
+        cIn.dataset.pack = u.key;
+        cIn.dataset.role = 'pack';
+        const read = el('em', 'pack-read');
+        read.style.cssText = 'font-style:normal;display:block;margin-top:3px;font-size:10px;font-weight:700;color:var(--muted-fg);line-height:1.25;text-align:center';
+        cTd.appendChild(cIn);
+        cTd.appendChild(read);
+        /* the incomplete pack — in PIECES, never a fraction */
+        const pTd = el('td', 'pack-c pack-part-c');
+        const pIn = numInput({ value: 0, placeholder: '0' });
+        pIn.dataset.pack = `${u.key}_part`;
+        pIn.dataset.role = 'pack';
+        pTd.appendChild(pIn);
+        l.packCells.push(cTd, pTd);
+        l.packEls[u.key] = { count: cIn, part: pIn, read };
+        host.insertBefore(cTd, l.availCell);
+        host.insertBefore(pTd, l.availCell);
+        wirePack(l, u.key);
+      });
+      /* what the model knows goes back into the fresh boxes */
+      rowUnits(l).forEach((u) => {
+        const st = l.packs[u.key] || (l.packs[u.key] = { count: 0, part: 0 });
+        setPack(l, u.key, st.count, st.part);
+      });
+      refreshReading(l);
+    }
+    /** the two boxes of one pack: the count and the incomplete part */
+    function wirePack(l, key) {
+      const e = l.packEls[key];
+      const read = (which) => {
+        const U = window.SamUnits;
+        const it = itemById(l.itemCombo.getValue());
+        const st = l.packs[key] || (l.packs[key] = { count: 0, part: 0 });
+        if (which === 'part') st.part = SamDB.n(e.part.value); else st.count = SamDB.n(e.count.value);
+        /* the packs write the quantity — the pieces of an incomplete pack too */
+        const qty = U ? U.join(it, key, st.count, st.part) : 0;
+        applyQuantity(l, qty, key);
+        afterEdit(l);
+      };
+      e.count.addEventListener('input', () => read('count'));
+      e.part.addEventListener('input', () => read('part'));
+      /* when the user leaves the box, the whole line takes one shape */
+      e.count.addEventListener('blur', () => normalizeLine(l));
+      e.part.addEventListener('blur', () => normalizeLine(l));
+    }
+    /** write one pack — its number and the pieces of an incomplete pack */
+    function setPack(l, key, count, part) {
+      const st = l.packs[key] || (l.packs[key] = { count: 0, part: 0 });
+      st.count = Math.max(0, Math.round(SamDB.n(count)));
+      st.part = Math.max(0, Math.round(SamDB.n(part)));
+      const e = l.packEls[key];
+      if (!e) return;
+      setNum(e.count, st.count);
+      setNum(e.part, st.part);
+    }
+    /** the quantity is the truth — it fills every pack of the line */
+    function applyQuantity(l, qty, skip) {
+      const U = window.SamUnits;
+      if (!U) return;
+      const it = itemById(l.itemCombo.getValue());
+      const n = Math.max(0, Math.round(SamDB.n(qty)));
+      if (skip !== 'pieces') setNum(l.piecesEl, n);
+      rowUnits(l).forEach((u) => {
+        if (skip === u.key) return;          /* the user is typing in it */
+        const sp = U.split(it, u.key, n);
+        setPack(l, u.key, sp.count, sp.part);
+      });
+      refreshReading(l);
+    }
+    /** the reading of a line — «12 كيس + 12 حبة» */
+    function refreshReading(l) {
+      const U = window.SamUnits;
+      const it = itemById(l.itemCombo.getValue());
+      rowUnits(l).forEach((u) => {
+        const e = l.packEls[u.key];
+        if (!e || !e.read) return;
+        const st = l.packs[u.key] || { count: 0, part: 0 };
+        const txt = U ? U.describe(it, u.key, st.count, st.part) : '';
+        e.read.textContent = txt;
+        e.count.title = txt;
+      });
+    }
+    /** the quantity was typed — the packs follow it */
+    function onPiecesInput(l) {
+      applyQuantity(l, SamDB.n(l.piecesEl.value), 'pieces');
+      afterEdit(l);
+    }
+    /** when the user leaves a pack box, the line takes one shape */
+    function normalizeLine(l) {
+      const U = window.SamUnits;
+      if (!U) return;
+      applyQuantity(l, SamDB.n(l.piecesEl.value), null);
+      afterEdit(l);
+    }
+    /** the totals and the availability follow every change */
+    function afterEdit(l) {
+      recomputeTotals();
+      if (!l) return;
+      const avail = l.avail;
+      if (avail != null) {
+        l.availEl.className = (lineTakesFromStock(l) && SamDB.n(l.piecesEl.value) > avail) ? 'avail low' : 'avail';
+      }
+    }
+    /** the item decides which packs the line shows */
+    function onItemChanged(l) {
+      syncPackColumns();
+      applyQuantity(l, SamDB.n(l.piecesEl.value), 'pieces');
+      refreshAvail(l);
+      afterEdit(l);
+    }
+    /** the packs of a line, as they are written down */
+    function packOf(l, key) {
+      const used = rowUnits(l).some((u) => u.key === key);
+      const st = l.packs[key];
+      if (!used || !st) return { count: 0, part: 0 };
+      return { count: SamDB.n(st.count), part: SamDB.n(st.part) };
+    }
 
     /* «سند استلام الإنتاج» can take its warehouses from the production
        routing (سليم → مخزن السليم، تالف → مخزن التالف). Nothing is filled
@@ -579,18 +816,22 @@
 
     function recomputeTotals() {
       const pieces = lines.reduce((a, l) => a + SamDB.n(l.piecesEl.value), 0);
-      const cartons = lines.reduce((a, l) => a + SamDB.n(l.cartonsEl.value), 0);
-      const bags = lines.reduce((a, l) => a + SamDB.n(l.bagsEl.value), 0);
       const units = new Set(lines.map((l) => unitOf(l.itemCombo.getValue())));
       /* a stock adjustment has two directions — the net is what matters there */
       const net = isAdjustment(kind)
         ? lines.reduce((a, l) => a + (l.sign === 1 ? SamDB.n(l.piecesEl.value)
           : l.sign === -1 ? -SamDB.n(l.piecesEl.value) : 0), 0)
         : null;
+      /* the packs of the table — only the units the lines really use */
+      const packs = tableUnits.map((u) => {
+        const count = lines.reduce((a, l) => a + packOf(l, u.key).count, 0);
+        const part = lines.reduce((a, l) => a + packOf(l, u.key).part, 0);
+        return `<span>${esc(packLabel(u))}: <b>${SamDB.fmt(count)}</b></span>` +
+          (part ? `<span>${esc(packPartLabel(u))}: <b>${SamDB.fmt(part)}</b></span>` : '');
+      }).join('');
       totals.innerHTML = `<span>الأسطر: <b>${lines.length}</b></span>
         <span>إجمالي الكمية: <b class="big">${SamDB.fmt(pieces)}</b> <span class="chip sub">${esc([...units].join(' / ') || 'حبة')}</span></span>
-        <span>كراتين: <b>${SamDB.fmt(cartons)}</b></span>
-        <span>أكياس: <b>${SamDB.fmt(bags)}</b></span>
+        ${packs}
         ${net != null ? `<span>الصافي: <b class="${net < 0 ? 'bad' : 'ok'}">${SamDB.fmt(net)}</b></span>` : ''}`;
     }
 
@@ -625,8 +866,7 @@
       const bucketBox = el('div', 'bucket-seg');
       const signBox = el('div', 'sign-seg');
       const piecesEl = numInput({ value: data ? data.pieces : 0, placeholder: '0' });
-      const cartonsEl = numInput({ value: data ? data.cartons : 0, placeholder: '0' });
-      const bagsEl = numInput({ value: data ? data.bags : 0, placeholder: '0' });
+      piecesEl.dataset.role = 'pieces';
       const availEl = el('span', 'avail', '—');
       const del = el('button', 'row-del', '×');
       del.type = 'button';
@@ -634,7 +874,10 @@
       const l = {
         itemCombo: null, whCombo: null, destCombo: null,
         bucket: data ? data.bucket : 'good',
-        piecesEl, cartonsEl, bagsEl, availEl, unitEl: unitBox, signBox,
+        piecesEl, availEl, unitEl: unitBox, signBox,
+        /* the packs of this line — its count and the pieces of an
+           incomplete pack, for every unit its own item uses */
+        packs: {}, packEls: {}, packCells: [], packSig: null,
         /* a stock adjustment has no direction until the user picks one */
         sign: data && (Number(data.sign) === 1 || Number(data.sign) === -1) ? Number(data.sign) : null
       };
@@ -642,7 +885,7 @@
         placeholder: 'اكتب حرفين من اسم الصنف أو الكود…',
         emptyText: 'لا يوجد صنف مطابق',
         items: itemOptions(),
-        onChange: () => refreshAvail(l)
+        onChange: () => onItemChanged(l)
       });
       if (data) l.itemCombo.setValue(data.item_id, false);
 
@@ -676,33 +919,41 @@
         bucketBox.appendChild(b);
       });
 
-      [piecesEl, cartonsEl, bagsEl].forEach((n) => n.addEventListener('input', () => {
-        recomputeTotals();
-        const avail = l.avail;
-        if (avail != null) {
-          l.availEl.className = (lineTakesFromStock(l) && SamDB.n(l.piecesEl.value) > avail) ? 'avail low' : 'avail';
-        }
-      }));
+      piecesEl.addEventListener('input', () => onPiecesInput(l));
       del.addEventListener('click', () => {
         const i = lines.indexOf(l);
         if (i >= 0) lines.splice(i, 1);
         tr.remove();
+        syncPackColumns();
         recomputeTotals();
       });
 
+      const piecesCell = el('td', 'qty-c');
+      piecesCell.appendChild(piecesEl);
+      const availCell = el('td', 'avail-c');
+      availCell.appendChild(availEl);
+      l.availCell = availCell;
       tr.append(el('td', 'item-c').appendChild(itemHost).parentNode,
         el('td', 'wh-c').appendChild(whLineHost).parentNode,
         el('td', 'dest-col').appendChild(destLineHost).parentNode,
         el('td', 'unit-c').appendChild(unitBox).parentNode,
         el('td').appendChild(bucketBox).parentNode,
         el('td', 'sign-c').appendChild(signBox).parentNode,
-        el('td').appendChild(piecesEl).parentNode,
-        el('td').appendChild(cartonsEl).parentNode,
-        el('td').appendChild(bagsEl).parentNode,
-        el('td').appendChild(availEl).parentNode,
+        piecesCell,
+        availCell,
         el('td').appendChild(del).parentNode);
       linesBody.appendChild(tr);
       lines.push(l);
+      /* the packs this line already carries (an existing document) */
+      if (data) {
+        const saved = { cartons: data.cartons, bags: data.bags, unit: data.unit_count };
+        const savedPart = { cartons: data.cartons_part, bags: data.bags_part, unit: data.unit_part };
+        rowUnits(l).forEach((u) => {
+          l.packs[u.key] = { count: SamDB.n(saved[u.key]), part: SamDB.n(savedPart[u.key]) };
+        });
+      }
+      renderPackCells(l);
+      syncPackColumns();
       renderSign(l);
       recomputeTotals();
       setUnit(l);
@@ -728,6 +979,8 @@
       const l = empty || addLine();
       l.itemCombo.setValue(b.raw_item_id, true);
       l.piecesEl.value = SamDB.fmt(b.remaining);
+      /* the packs follow the quantity that was just filled */
+      applyQuantity(l, b.remaining, 'pieces');
       if (l.whCombo && b.warehouse_id) l.whCombo.setValue(b.warehouse_id, true);
       recomputeTotals();
     }
@@ -808,7 +1061,8 @@
         if (span) span.textContent = PERMIT_BTN_LABEL[kind] || 'حفظ وطباعة تصاريح الخروج';
       }
       /* the helper text under the table follows the kind too */
-      footNote.innerHTML = KIND_HINT[kind] || '';
+      footNote.innerHTML = (KIND_HINT[kind] || '') +
+        '<br>الكمية بالحبة هي المرجع: الكراتين والأكياس ووحدة الصنف تُحسب منها تلقائياً، والعبوة الناقصة تُكتب بالحبة (كسور كرتون / كسور كيس).';
       errBar.innerHTML = '';
       refreshInternalNo();
     }
@@ -937,8 +1191,14 @@
           item_id: l.itemCombo.getValue(),
           bucket: l.bucket,
           pieces: SamDB.n(l.piecesEl.value),
-          cartons: SamDB.n(l.cartonsEl.value),
-          bags: SamDB.n(l.bagsEl.value),
+          /* the packs — they are a reading of the quantity, never another
+             quantity: a pack the item does not use is written as zero */
+          cartons: packOf(l, 'cartons').count,
+          bags: packOf(l, 'bags').count,
+          cartons_part: packOf(l, 'cartons').part,
+          bags_part: packOf(l, 'bags').part,
+          unit_count: packOf(l, 'unit').count,
+          unit_part: packOf(l, 'unit').part,
           warehouse_id: l.whCombo.getValue(),
           dest_warehouse_id: kind === 'transfer' ? l.destCombo.getValue() : null,
           /* only a stock adjustment carries its own direction */
@@ -1046,10 +1306,9 @@
       bucket: bucketAr(l.bucket),
       dir: isAdj ? (Number(l.sign) === -1 ? 'عجز' : 'زيادة') : '',
       pieces: SamDB.fmt(l.pieces),
-      cartons: SamDB.fmt(l.cartons),
-      bags: SamDB.fmt(l.bags),
       wh: l.warehouseName || '—',
-      dest: l.destWarehouseName ? `← ${l.destWarehouseName}` : ''
+      dest: l.destWarehouseName ? `← ${l.destWarehouseName}` : '',
+      ...packRowOf(l)
     }));
     const html = SamUI.tableHtml(
       [
@@ -1057,11 +1316,10 @@
         { key: 'item', label: 'الصنف' },
         { key: 'bucket', label: 'الحالة' },
         ...(isAdj ? [{ key: 'dir', label: 'الاتجاه' }] : []),
-        { key: 'cartons', label: 'كراتين' },
-        { key: 'bags', label: 'أكياس' },
-        { key: 'pieces', label: 'الكمية' },
         { key: 'wh', label: 'المخزن' },
-        { key: 'dest', label: 'الوجهة' }
+        { key: 'dest', label: 'الوجهة' },
+        ...packColsOf(d.lines),
+        { key: 'pieces', label: 'الكمية' }
       ],
       rows,
       SamDB.fmt(d.totalPieces)
@@ -1128,9 +1386,8 @@
       dest: l.destWarehouseName || '',
       unit: l.baseUnit,
       dir: Number(l.sign) === -1 ? 'عجز' : 'زيادة',
-      cartons: SamDB.fmt(l.cartons),
-      bags: SamDB.fmt(l.bags),
-      pieces: SamDB.fmt(l.pieces)
+      pieces: SamDB.fmt(l.pieces),
+      ...packRowOf(l)
     }));
     const cols = [
       { key: 'no', label: 'م', align: 'center' },
@@ -1139,8 +1396,7 @@
       ...(isTransfer ? [{ key: 'dest', label: 'الوجهة' }] : []),
       ...(isAdj ? [{ key: 'dir', label: 'الاتجاه', align: 'center' }] : []),
       { key: 'unit', label: 'الوحدة', align: 'center' },
-      { key: 'cartons', label: 'كراتين', align: 'center' },
-      { key: 'bags', label: 'أكياس', align: 'center' },
+      ...packColsOf(d.lines),
       { key: 'pieces', label: 'الكمية', align: 'end' }
     ];
     const refLabel = isExternal(d.kind) ? 'رقم الفاتورة' : 'رقم المستند';
@@ -1210,17 +1466,15 @@
         no: i + 1,
         item: `${l.itemCode} — ${l.itemName}`,
         unit: l.baseUnit,
-        cartons: SamDB.fmt(l.cartons),
-        bags: SamDB.fmt(l.bags),
-        pieces: SamDB.fmt(l.pieces)
+        pieces: SamDB.fmt(l.pieces),
+        ...packRowOf(l)
       }));
       const total = g.lines.reduce((a, l) => a + SamDB.n(l.pieces), 0);
       const cols = [
         { key: 'no', label: 'م', align: 'center' },
         { key: 'item', label: 'الصنف' },
         { key: 'unit', label: 'الوحدة', align: 'center' },
-        { key: 'cartons', label: 'كراتين', align: 'center' },
-        { key: 'bags', label: 'أكياس', align: 'center' },
+        ...packColsOf(g.lines),
         { key: 'pieces', label: 'الكمية', align: 'end' }
       ];
       const head = isTransfer

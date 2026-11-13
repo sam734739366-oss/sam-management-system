@@ -201,7 +201,12 @@ async function loadDashboard() {
 
 const DOC_AR = {
   opening: 'رصيد افتتاحي', purchase: 'مشتريات', sale: 'مبيعات', sale_return: 'مرتجع مبيعات',
-  purchase_return: 'مرتجع مشتريات', transfer: 'نقل بين المخازن', issue: 'صرف إنتاج', receipt: 'استلام إنتاج',
+  purchase_return: 'مرتجع مشتريات', transfer: 'نقل بين المخازن',
+  /* the documents of the program — the same names the screens carry */
+  prod_receipt: 'استلام المنتج التام', prod_issue: 'صرف خام إلى الإنتاج',
+  gate_in: 'إذن إدخال', gate_out: 'إذن خروج', adjustment: 'تسوية جرد',
+  /* the old production rows — history, kept as they are */
+  issue: 'صرف إنتاج (سجل قديم)', receipt: 'استلام إنتاج (سجل قديم)',
   bags: 'أكياس', tolling_in: 'استلام نفخ للغير', tolling_out: 'تسليم نفخ للغير', scrap: 'هدر'
 };
 
@@ -429,6 +434,8 @@ function tickClock() {
   }
   fillUserChip();
   applyPermissions();
+  /* the company of the customer — its name and its logo on the papers */
+  try { if (window.SamCompany) await SamCompany.load(); } catch (e) { /* no settings yet */ }
   fillSysInfo();
   tickClock();
   setInterval(tickClock, 1000);

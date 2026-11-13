@@ -1220,3 +1220,176 @@
 .lines-tbl:not(.kind-transfer) .dest-col { display: none !important; }
 .lines-tbl:not(.kind-adjustment) .sign-h,
 .lines-tbl:not(.kind-adjustment) .sign-c { display: none !important; }
+
+/* =====================================================================
+   V7 — THE GRID OF THE TABLES: Excel's rules, on the screen
+   ---------------------------------------------------------------------
+   The customer wrote (verbatim):
+   «توضيح خطوط الجداول التي تفرق بين الاعمدة والسطور ولون خلفية السطر
+     الملون اوظحها اكثر في البرنامج والطباعة مثل خطوط الاكسل واضحة»
+   — the lines of the tables must tell the COLUMNS from the ROWS, and
+   the tinted (striped) row must be CLEARLY visible, in the program AND
+   on the paper, like the lines of Excel.
+
+   Until now every cell carried the SAME 1px rule (--line #dde5f0) and
+   the striped row was #fbfdff — a tint so faint the eye never saw it.
+   Now the grid is drawn the way Excel draws it:
+     · the COLUMN lines are a hairline (#e4eaf3): they guide the eye
+       down a column and never compete with the text;
+     · the ROW lines are stronger (#c2d0e2): they carry the eye ACROSS
+       the row — exactly what the customer asked for;
+     · the HEAD sits on a solid fill (#cfe0f6) with a strong 2px rule
+       under it, so the head of the table reads as the head;
+     · the STRIPE is #e6effb — visible at a glance, still gentle;
+     · the totals row (.tot-row) wears the fill of the head, so it can
+       NEVER be taken for a striped row.
+   The paper carries the same grid with print-safe sizes — print.css
+   owns it (it is the last stylesheet of the cascade).
+   ===================================================================== */
+
+.tbl {
+  /* the palette of the grid — the paper carries its own copy of it */
+  --tbl-col-line: #e4eaf3;   /* the hairline BETWEEN two columns */
+  --tbl-row-line: #c2d0e2;   /* the rule BETWEEN two rows */
+  --tbl-head-bg: #cfe0f6;    /* the solid fill of the head */
+  --tbl-head-line: #93a9c6;  /* the strong rule under the head */
+  --tbl-stripe: #e6effb;     /* the tinted row */
+  --tbl-plain: #ffffff;      /* the row that carries no tint */
+  --tbl-hover: #dbeafe;      /* the row under the mouse */
+}
+
+/* --- the head: a solid fill, a bold label and a strong rule under it --- */
+.tbl thead th {
+  background: var(--tbl-head-bg);
+  color: var(--ink);
+  font-weight: 900;
+  border-bottom: 2px solid var(--tbl-head-line);
+  border-inline-end: 1px solid var(--tbl-col-line);
+}
+/* the outer edge of the table carries no vertical rule */
+.tbl thead tr > *:last-child,
+.tbl tbody tr > *:last-child { border-inline-end: 0; }
+
+/* --- the body: a calm rule under the row, a hairline between the columns --- */
+.tbl tbody td {
+  border-bottom: 1px solid var(--tbl-row-line);
+  border-inline-end: 1px solid var(--tbl-col-line);
+}
+
+/* --- the stripe — the row that must be SEEN --- */
+.tbl tbody tr:nth-child(odd) { background: var(--tbl-plain); }
+.tbl tbody tr:nth-child(even) { background: var(--tbl-stripe); }
+/* the hover and the selection are drawn AFTER the stripe, so the stripe
+   never hides them */
+.tbl tbody tr:hover { background: var(--tbl-hover); }
+.tbl tbody tr.sel { background: var(--accent-100); }
+
+/* --- the totals row: it wears the fill of the head, never the stripe --- */
+.tbl .tot-row td {
+  background: var(--tbl-head-bg);
+  color: var(--brand-700);
+  font-weight: 800;
+}
+.tbl tbody tr.tot-row { background: var(--tbl-head-bg); }
+/* the strong rule that cuts the totals off from the rows above them */
+.tbl tbody tr:has(+ .tot-row) > td { border-bottom: 2px solid var(--tbl-head-line); }
+
+/* the group header (the name of a group of columns): the SAME solid
+   fill as the rest of the head — the group is marked by its centred
+   blue label, not by a second colour in the middle of the head */
+.tbl th.grp {
+  background: var(--tbl-head-bg);
+  color: var(--brand-700);
+}
+
+/* =====================================================================
+   The PAPER, as it is seen on the screen (the preview). The printed
+   sheet carries the very same grid — print.css owns the paper sizes,
+   because it is the last stylesheet of the cascade.
+   ===================================================================== */
+.sheet table.tbl {
+  /* the palette of the paper: darker than the screen, because the
+     printer puts ink on the page and not light on a screen. The preview
+     wears the very same colours as the printed sheet. */
+  --tbl-col-line: #b3c0d2;
+  --tbl-row-line: #62748f;
+  --tbl-head-bg: #c3d8f2;
+  --tbl-head-line: #475569;
+  --tbl-stripe: #dfe9f7;
+  --tbl-plain: #ffffff;
+}
+.sheet table.tbl { border: 1px solid var(--tbl-row-line); }
+.sheet table.tbl thead th {
+  background: var(--tbl-head-bg) !important;
+  color: #0a1220 !important;
+  font-weight: 900;
+  border-bottom: 2px solid var(--tbl-head-line);
+  border-inline-end: 1px solid var(--tbl-col-line);
+}
+.sheet table.tbl tbody td {
+  border-bottom: 1px solid var(--tbl-row-line);
+  border-inline-end: 1px solid var(--tbl-col-line);
+}
+.sheet table.tbl thead tr > *:last-child,
+.sheet table.tbl tbody tr > *:last-child { border-inline-end: 0; }
+.sheet table.tbl tbody tr:nth-child(odd) td { background: var(--tbl-plain); }
+.sheet table.tbl tbody tr:nth-child(even) td { background: var(--tbl-stripe); }
+/* the totals row is never a striped row */
+.sheet table.tbl tbody tr.tot-row td,
+.sheet table.tbl tfoot tr.tot-row td {
+  background: var(--tbl-head-bg) !important;
+  font-weight: 900 !important;
+  color: #0a1220 !important;
+}
+
+/* =====================================================================
+   The company of the customer — the masthead of the printed paper
+   The block sits in the middle of the masthead: the logo on the right
+   (the page is RTL) and the name beside it. The block never grows past
+   a third of the page, so the two sides of the masthead always keep
+   their own room and the header never pushes the paper sideways.
+   ===================================================================== */
+.m-company {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 33.333%;
+  margin-inline: auto;
+  padding-inline: 6px;
+}
+.co-logo {
+  flex: none;
+  width: auto;
+  height: auto;
+  min-width: 46px;
+  min-height: 28px;
+  max-width: 150px;   /* ~40mm */
+  max-height: 60px;   /* ~16mm */
+  object-fit: contain;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: #fff;
+  padding: 2px;
+}
+.co-txt { min-width: 0; text-align: center; }
+.co-name {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--ink);
+  line-height: 1.3;
+}
+.co-sub {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--muted-fg);
+  line-height: 1.35;
+}
+/* a half sheet (the permit) has a fixed height — the logo takes a
+   smaller room there so nothing is pushed out of the paper */
+.sheet.half .m-company { gap: 6px; max-width: 30%; }
+.sheet.half .co-logo { max-width: 100px; max-height: 40px; min-width: 36px; min-height: 22px; }
+.sheet.half .co-name { font-size: 13px; }
+.sheet.half .co-sub { font-size: 10.5px; }

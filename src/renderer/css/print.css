@@ -57,15 +57,31 @@
   .sheet .doc-meta .m-k { font-size: 10pt; color: #1d2939; }
   .sheet .doc-note { font-size: 10.5pt; color: #000; line-height: 1.7; }
 
-  /* the table: bigger cells, black text, a light rule instead of a
-     heavy one, and a clear head */
-  .sheet table.tbl { border: 1px solid #7d8ea6 !important; }
+  /* the table: Excel's grid, at the sizes of the paper —
+     a real HAIRLINE between two columns, a clear line between two
+     rows, a solid head with a strong rule under it, and a stripe
+     that survives the printer (a tint as faint as the one on the
+     screen simply vanishes on the paper) */
+  .sheet table.tbl {
+    /* the palette of the paper: ink, not light */
+    --tbl-col-line: #b3c0d2;
+    --tbl-row-line: #62748f;
+    --tbl-head-bg: #c3d8f2;
+    --tbl-head-line: #475569;
+    --tbl-stripe: #dfe9f7;
+    --tbl-plain: #ffffff;
+    border: .75pt solid var(--tbl-row-line) !important;
+    /* the fills of the table MUST reach the paper */
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
   .sheet table.tbl th {
     font-size: 10pt !important;
     font-weight: 900 !important;
     color: #000 !important;
-    background: #dde8f7 !important;
-    border-bottom: 1.2px solid #7d8ea6 !important;
+    background: var(--tbl-head-bg) !important;
+    border-bottom: 1.5pt solid var(--tbl-head-line) !important;
+    border-inline-end: .5pt solid var(--tbl-col-line) !important;
     padding: 5px 7px !important;
   }
   .sheet table.tbl td {
@@ -73,10 +89,64 @@
     font-weight: 700 !important;
     color: #000 !important;
     padding: 5px 7px !important;
-    border-bottom: 1px solid #c2cddc !important;
+    border-bottom: .75pt solid var(--tbl-row-line) !important;
+    border-inline-end: .5pt solid var(--tbl-col-line) !important;
   }
-  .sheet table.tbl tr:nth-child(even) td { background: #f5f8fc !important; }
-  .sheet .tot-row td { background: #dde8f7 !important; font-weight: 900 !important; color: #000 !important; }
+  /* the outer edge of the table carries no vertical rule */
+  .sheet table.tbl tr > *:last-child { border-inline-end: 0 !important; }
+  /* the stripe — on the paper it must be a shade deeper than on the
+     screen, or the printer eats it. It belongs to the BODY only: the
+     head keeps its own solid fill. */
+  .sheet table.tbl tbody tr:nth-child(odd) td { background: var(--tbl-plain) !important; }
+  .sheet table.tbl tbody tr:nth-child(even) td { background: var(--tbl-stripe) !important; }
+  /* the totals row wears the fill of the head — it is never a striped
+     row (it must win over the stripe rule above) */
+  .sheet table.tbl tbody tr.tot-row td,
+  .sheet table.tbl tfoot tr.tot-row td {
+    background: var(--tbl-head-bg) !important;
+    font-weight: 900 !important;
+    color: #000 !important;
+  }
+  /* the strong rule that cuts the totals off from the rows above them */
+  .sheet table.tbl tbody tr:has(+ .tot-row) > td { border-bottom: 1.5pt solid var(--tbl-head-line) !important; }
+
+  /* the company of the customer — the masthead of the paper: the logo
+     on the right (the page is RTL), the name beside it, the block
+     centred and never wider than a third of the page */
+  .m-company {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 3mm;
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: 33.333%;
+    margin-inline: auto;
+    padding-inline: 1.5mm;
+  }
+  .co-logo {
+    flex: none;
+    width: auto;
+    height: auto;
+    min-width: 12mm;
+    min-height: 7mm;
+    max-width: 40mm;
+    max-height: 16mm;
+    object-fit: contain;
+    border: .5pt solid #8f9db3;
+    border-radius: 1.5mm;
+    background: #fff;
+    padding: .6mm;
+  }
+  .co-txt { min-width: 0; text-align: center; }
+  .co-name { font-size: 13pt; font-weight: 900; color: #000; line-height: 1.25; }
+  .co-sub { font-size: 8.5pt; font-weight: 600; color: #33415a; line-height: 1.3; }
+  /* a half sheet (the permit) has a fixed height — the logo takes a
+     smaller room there so nothing is pushed out of the paper */
+  .sheet.half .m-company { gap: 2mm; max-width: 30%; }
+  .sheet.half .co-logo { max-width: 28mm; max-height: 11mm; min-width: 9mm; min-height: 5.5mm; }
+  .sheet.half .co-name { font-size: 11pt; }
+  .sheet.half .co-sub { font-size: 7.5pt; }
 
   /* the totals that are written by hand (the «doc-note» block) */
   .sheet .doc-note b { color: #000; }

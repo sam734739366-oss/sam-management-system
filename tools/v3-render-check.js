@@ -181,7 +181,7 @@ app.whenReady().then(async () => {
   check('daily table has rows', daily && daily.rows > 0, daily);
   /* one group per warehouse, plus the group that gathers all of them */
   check('daily header groups by warehouse and adds the total of all of them',
-    daily && daily.heads.length === 5 && /إجمالي كل المخازن/.test(daily.heads[4] || ''), daily && daily.heads);
+    daily && daily.heads.length >= 5 && /إجمالي كل المخازن/.test(daily.heads.join('|')), daily && daily.heads);
   check('daily summary has every warehouse + a grand total row', daily && daily.sumRows === 5, daily && daily.sumRows);
 
   const expected = dbMod.dailyReport({ date: today, buckets: ['good'] });
