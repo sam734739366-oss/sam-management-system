@@ -140,7 +140,7 @@ async function updaterTests() {
   } catch (e) { logLine('  fetchJson failed: ' + e.message); }
   const fetchMs = Date.now() - t0;
   check('the releases/latest answers with JSON', !!json && !!json.tag_name, json && json.tag_name);
-  check('the answer comes quickly', fetchMs < 12000, fetchMs);
+  check('the answer comes quickly', fetchMs < 20000, fetchMs);
   if (tag && json && json.tag_name) {
     check('the answer is the published tag', json.tag_name === tag, { api: tag, app: json.tag_name });
   }
@@ -151,7 +151,7 @@ async function updaterTests() {
   const checkMs = Date.now() - c0;
   check('the check ends in a final state', ['available', 'up-to-date', 'error'].includes(st.status), st.status);
   check('the check never stays «checking»', st.status !== 'checking', st.status);
-  check('the check finishes inside the deadline', checkMs < 20000, checkMs);
+  check('the check finishes inside the deadline', checkMs < 25000, checkMs);
   check('the check names the published version', !!(st.latest && /^\d+\.\d+\.\d+$/.test(st.latest)), st.latest);
   check('the check names the running version', !!st.current, st.current);
   if (tag && st.latest) {

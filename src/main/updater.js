@@ -34,7 +34,7 @@ const CHANNEL = 'app:update-state';
 
 /* the deadlines — nothing in this file may wait for ever */
 const TIME = {
-  check: 12000,             /* our own answer to "is there a new version?" */
+  check: 18000,             /* our own answer to "is there a new version?" */
   prepare: 45000,           /* the library's own check, which prepares the download */
   download: 30 * 60 * 1000  /* a slow line is not a broken line */
 };

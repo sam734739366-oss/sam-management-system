@@ -567,7 +567,7 @@
       if (label) label.textContent = 'انتهت مهلة الفحص — تحقّق من الاتصال بالإنترنت ثم اضغط «فحص التحديثات» من جديد';
       const badge = document.getElementById('updStateBadge');
       if (badge) { badge.textContent = 'انتهت المهلة'; badge.className = 'badge bad'; }
-    }, 25000);
+    }, 30000);
   }
 
   async function loadUpdate() {
