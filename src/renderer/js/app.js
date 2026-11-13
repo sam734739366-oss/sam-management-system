@@ -6,17 +6,20 @@
 
 const { el, icon, esc, toast, bindRow, modal, confirmHardDelete } = SamUI;
 
-/** what V5 changed — shown on the dashboard so the update is self-documenting */
-const V5_CHANGES = [
-  { t: 'التصميم انضغط: خطوط ومربعات أصغر في كل الشاشات — النصوص واضحة والمساحات مستعملة', view: null },
-  { t: 'كل أيقونة صارت ثلاثية الأبعاد وملوّنة بلونها — والمربعات صغيرة ومنظمة', view: null },
-  { t: 'الصفحات مرنة: تتكيّف مع عرض الشاشة بلا تمرير أفقي ولا عناصر مقصوصة', view: null },
-  { t: 'معاينة الطباعة قبل الطباعة: ترى الورقة كما ستخرج تماماً، مع تكبير وتصغير', view: 'reports' },
-  { t: 'الطباعة على A4 واضحة وداكنة، والتقرير يملأ صفحة واحدة مرتّبة', view: 'reports' },
-  { t: 'التصريح الواحد بنصف ورقة A5 بالعرض — تصريحتان في ورقة واحدة', view: 'transactions' },
-  { t: 'صفحة إدخال الصنف: كل المربعات متساوية في العرض والارتفاع ومنظمة', view: 'items' },
-  { t: 'تعديل أي مستند يسجّل بتاريخ اليوم — وتاريخ الإنشاء الأصلي يبقى محفوظاً', view: 'transactions' },
-  { t: 'مزامنة Google Drive: تكتب بريدك فقط فيكتشف البرنامج حسابك ويكتب النسخة فيه', view: 'settings' }
+/** what this round changed — shown on the dashboard so the update is self-documenting */
+const CHANGES = [
+  { t: 'استعادة البيانات: أيقونة «استعادة» في شريط العنوان، وزر «استعادة من ملف…» في الإعدادات — تسحب ملف البيانات على نافذة البرنامج فيقرأه أولاً، وتأخذ نسخة من بياناتك، ثم يستعيد', view: 'settings' },
+  { t: 'فحص التحديث صار يجيب بسرعة: سؤال واحد لـ GitHub بمهلة 12 ثانية — لا يضلّ يبحث بلا توقف، ويقول لك رقم نسختك ورقم الإصدار المنشور', view: 'settings' },
+  { t: 'شريط التحديث يتوقّف دائماً: لا خطوط متحرّكة بعد الخطأ، والنسبة ترجع صفراً، والمعاينة تنتهي عند 100٪', view: 'settings' },
+  { t: 'الطباعة لم تعد تقطع ربع الصفحة: التقرير والورقة يملآن صفحة A4 كاملة، ومعاينة الطباعة تريك النتيجة قبل الطباعة', view: 'reports' },
+  { t: 'كل مربع صار أكبر وأوضح: خط مقروء، حدود واضحة، وزوايا ملوّنة — بلا تمرير يمين وشال', view: null },
+  { t: 'التقرير اليومي: وارد وصادر ومتبقي لكل مخزن على حدة، والمتبقي الإجمالي في الأسفل', view: 'daily' },
+  { t: 'كل نوع مستند له صفحته المنبثقة ولونه الخاص — تختار النوع من صفحة، والمحرر يلبس لونه', view: 'transactions' },
+  { t: 'كل مستند له رقم النظام تلقائي لا يتكرر، وخانة ثانية للرقم القادم من نظام آخر', view: 'transactions' },
+  { t: 'مستند جديد: سند توريد الإنتاج — يخفض رصيد المخزن ويصدر تصريح توريد قابل للطباعة', view: 'production' },
+  { t: 'كل صفحة وكل مستند قابل للطباعة: من شريط العنوان أو Ctrl+P', view: null },
+  { t: 'خط الطباعة صار أوضح وأكبر، والورق أبيض نظيف بلا قصّ على الأطراف', view: 'reports' },
+  { t: 'المربعات كلها ظاهرة بلا تحريك الصفحة يميناً وشمالاً، والجداول تمرّر داخل إطارها', view: null }
 ];
 
 const VIEW_TITLE = {
@@ -85,7 +88,10 @@ document.getElementById('nav').addEventListener('click', (e) => {
   go(btn.dataset.view);
 });
 
-/* global shortcuts: Ctrl+N follows the visible screen, F5 refreshes it */
+/* global shortcuts: Ctrl+N follows the visible screen, F5 refreshes it,
+   Ctrl+P prints the visible screen (every screen in the program is
+   printable — the documents have their own print, the screens use the
+   screen printer) */
 SamUI.pushKeys({
   new: () => {
     const fn = NEW_ACTIONS[currentView];
@@ -93,7 +99,8 @@ SamUI.pushKeys({
     if (!SamSession.can(currentView, 'add') && currentView !== 'reports' && currentView !== 'daily') return toast('لا تملك صلاحية الإضافة', 'bad');
     fn();
   },
-  refresh: () => { if (LOADERS[currentView]) LOADERS[currentView](); }
+  refresh: () => { if (LOADERS[currentView]) LOADERS[currentView](); },
+  print: () => { if (window.SamPrintScreen) window.SamPrintScreen.print(currentView); }
 });
 
 /* ---------------- permissions in the UI ---------------- */
@@ -143,7 +150,7 @@ function fillUserChip() {
 function renderChanges() {
   const host = document.getElementById('roadmap');
   host.innerHTML = '';
-  V5_CHANGES.forEach((c, i) => {
+  CHANGES.forEach((c, i) => {
     const li = el('li', 'done');
     li.innerHTML = `<span class="n">${i + 1}</span><span>${esc(c.t)}</span><span class="st">${c.view ? 'افتح الشاشة' : 'جاهز'}</span>`;
     if (c.view) {
@@ -372,6 +379,12 @@ async function fillSysInfo() {
 document.getElementById('btnOpenDbFolder').addEventListener('click', () => {
   const p = document.getElementById('dbInfo').dataset.path;
   if (p) sam.app.openPath(p.replace(/[\\/][^\\/]+$/, ''));
+});
+
+/* the restore icon in the title bar — it opens the same window the drag
+   and the settings buttons use, so there is ONE way to bring data back */
+document.getElementById('btnRestoreData').addEventListener('click', () => {
+  if (window.SamRestore) window.SamRestore.pick();
 });
 document.getElementById('btnReplayIntro').addEventListener('click', () => {
   if (!SamIntro.play({ force: true })) toast('المقدمة معطّلة لهذا الجهاز — فعّلها من نفس القائمة', 'warn');

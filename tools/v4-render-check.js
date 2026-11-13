@@ -109,18 +109,35 @@ app.whenReady().then(async () => {
   });
 
   /* --- the helpers that drive a real user --- */
-  /** open the editor on a fresh document */
-  const openEditor = async () => { await js(`SamDocs.openEditor(null); 1`); await sleep(900); };
-  /** click the kind card whose name matches */
+  /** V6: a NEW document asks its kind on a page of its own — the picker
+      stands alone and the editor opens below it wearing the chosen colour. */
+  const openPicker = async () => { await js(`SamDocs.openEditor(null); 1`); await sleep(900); };
+  /** open the editor on a fresh document of a given kind */
+  const openEditor = async (kind) => {
+    await js(`SamDocs.openEditor(null, ${JSON.stringify(kind || 'purchase')}); 1`);
+    await sleep(900);
+  };
+  /** click the kind card whose name matches — wherever the picker is:
+      standing alone for a new document, or popped up by the editor to
+      change the kind of a document already open */
   const pickKind = async (name) => {
+    /* an editor that is already open asks for the change first */
     await js(`(() => {
-      const card = [...document.querySelectorAll('.modal.editor .kind-card')]
+      const ed = [...document.querySelectorAll('.modal.editor')].pop();
+      if (ed) { const s = ed.querySelector('.ed-swap'); if (s) s.click(); }
+      return 1;
+    })()`);
+    await sleep(500);
+    const res = await js(`(() => {
+      const ov = [...document.querySelectorAll('.overlay')].pop();
+      const card = [...(ov ? ov.querySelectorAll('.kind-card') : [])]
         .find(c => (c.querySelector('.kc-name')||{}).textContent === ${JSON.stringify(name)});
       if (!card) return 'no-card';
       card.click();
       return 'ok';
     })()`);
-    await sleep(350);
+    if (res !== 'ok') console.log('PICK FAILED: ' + name + ' :: ' + res);
+    await sleep(800);
   };
   /** pick an option from a searchable combo, exactly like a user would */
   const pickCombo = async (hostSel, text) => js(`(async () => {
@@ -184,14 +201,15 @@ app.whenReady().then(async () => {
   await js(`sam.auth.login('admin','admin123')`);
   await sleep(2600);
 
-  /* ================= 1. the kind card grid ================= */
+  /* ================= 1. the kind page ================= */
   await js(`document.querySelector('.nav-item[data-view=transactions]').click()`);
   await sleep(900);
-  await openEditor();
+  await openPicker();
 
   const grid = await js(`(() => {
-    const ed = [...document.querySelectorAll('.modal.editor')].pop();
-    const cards = [...ed.querySelectorAll('.kind-card')];
+    const pk = [...document.querySelectorAll('.modal.picker')].pop();
+    if (!pk) return null;
+    const cards = [...pk.querySelectorAll('.kind-card')];
     return {
       count: cards.length,
       names: cards.map(c => (c.querySelector('.kc-name')||{}).textContent),
@@ -201,19 +219,20 @@ app.whenReady().then(async () => {
       on: cards.filter(c => c.classList.contains('on')).length
     };
   })()`);
-  check('the kind grid shows one card per document kind', grid && grid.count === 9, grid && grid.count);
+  check('the kind page shows one card per document kind', grid && grid.count === 10, grid && grid.count);
   check('every card carries a name, a hint and an icon',
     grid && grid.hints.every(Boolean) && grid.icons.every((i) => !!i && i.startsWith('#')), grid && { hints: grid.hints, icons: grid.icons });
-  check('every card owns its own colour', grid && new Set(grid.tones).size === 9, grid && grid.tones);
-  check('the names are the nine document kinds',
+  check('every card owns its own colour', grid && new Set(grid.tones).size === 10, grid && grid.tones);
+  check('the names are the ten document kinds',
     grid && JSON.stringify(grid.names) === JSON.stringify(['مشتريات', 'مبيعات', 'مرتجع مبيعات', 'مرتجع مشتريات',
-      'نقل بين المخازن', 'سند استلام الإنتاج', 'إذن إدخال', 'إذن خروج', 'تسوية جرد']), grid && grid.names);
-  check('exactly one card is selected', grid && grid.on === 1, grid && grid.on);
+      'نقل بين المخازن', 'سند استلام الإنتاج', 'سند توريد الإنتاج', 'إذن إدخال', 'إذن خروج', 'تسوية جرد']), grid && grid.names);
+  check('a brand-new document selects nothing yet', grid && grid.on === 0, grid && grid.on);
   await shot('01-kind-grid');
 
   /* ================= 2. the header follows the kind ================= */
   const headOf = async () => js(`(() => {
     const ed = [...document.querySelectorAll('.modal.editor')].pop();
+    if (!ed) return null;
     const badge = ed.querySelector('.ed-badge use');
     const chip = ed.querySelector('.kind-chip');
     return {
@@ -225,8 +244,23 @@ app.whenReady().then(async () => {
       chipIcon: chip && chip.querySelector('use') ? chip.querySelector('use').getAttribute('href') : null
     };
   })()`);
+
+  await pickKind('مشتريات');
   const h1 = await headOf();
   check('the header names the chosen kind', h1 && h1.chip === 'مشتريات' && h1.title === 'مستند جديد', h1);
+
+  /* the kind page that the editor opens on its own marks the current kind */
+  await js(`(() => { const ed = [...document.querySelectorAll('.modal.editor')].pop(); if (ed) { const s = ed.querySelector('.ed-swap'); if (s) s.click(); } return 1; })()`);
+  await sleep(600);
+  const sel = await js(`(() => {
+    const pk = [...document.querySelectorAll('.modal.picker')].pop();
+    if (!pk) return null;
+    const on = [...pk.querySelectorAll('.kind-card.on')];
+    return { count: on.length, name: on.length ? (on[0].querySelector('.kc-name')||{}).textContent : null };
+  })()`);
+  check('the kind page marks the kind of the open document', sel && sel.count === 1 && sel.name === 'مشتريات', sel);
+  await js(`(() => { const pk = [...document.querySelectorAll('.modal.picker')].pop(); if (pk) { const b = [...pk.querySelectorAll('.modal-foot .btn')].find(x => /إلغاء/.test(x.textContent)); if (b) b.click(); } return 1; })()`);
+  await sleep(400);
 
   await pickKind('سند استلام الإنتاج');
   const h2 = await headOf();
@@ -423,7 +457,7 @@ app.whenReady().then(async () => {
   check('a production receipt prints an exit permit of the production',
     prodPermits && prodPermits.count === 1 && prodPermits.title === 'تصريح خروج إنتاج', prodPermits);
   check('the production permit names the warehouse and the document',
-    prodPermits && prodPermits.head.includes('المخزن') && prodPermits.head.includes('رقم المستند'), prodPermits && prodPermits.head);
+    prodPermits && prodPermits.head.includes('المخزن') && prodPermits.head.includes('الرقم الداخلي'), prodPermits && prodPermits.head);
 
   const gatePermits = await js(`(async () => {
     const doc = await SamDB.call('getDocument', ${gateDocs[0].id});
@@ -473,15 +507,13 @@ app.whenReady().then(async () => {
     const ed = [...document.querySelectorAll('.modal.editor')].pop();
     if (!ed) return null;
     const chip = ed.querySelector('.kind-chip');
-    const on = ed.querySelector('.kind-card.on .kc-name');
     const route = ed.querySelector('.route-fill');
     return {
       chip: chip ? chip.textContent.trim() : null,
-      on: on ? on.textContent.trim() : null,
       routeVisible: route ? getComputedStyle(route).display !== 'none' : false
     };
   })()`);
-  check('the button opens the editor on the production kind', opened && opened.chip === 'سند استلام الإنتاج' && opened.on === 'سند استلام الإنتاج', opened);
+  check('the button opens the editor on the production kind', opened && opened.chip === 'سند استلام الإنتاج', opened);
   check('the production receipt offers the routing quick-fill', opened && opened.routeVisible === true, opened);
 
   /* the quick-fill takes the warehouses from the production routing */

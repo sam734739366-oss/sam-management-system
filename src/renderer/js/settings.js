@@ -219,8 +219,16 @@
       tb.innerHTML = '';
       (list.data || []).forEach((b) => {
         const tr = el('tr');
-        tr.innerHTML = `<td>${esc(b.name)}</td><td class="num">${SamDB.fmt(Math.round(b.size / 1024))} ك.ب</td><td>${esc(b.mtime)}</td>`;
+        tr.innerHTML = `<td>${esc(b.name)}</td><td class="num">${SamDB.fmt(Math.round(b.size / 1024))} ك.ب</td><td>${esc(b.mtime)}</td>`
+          + `<td class="num"><button class="btn btn-ghost btn-sm" title="استعادة هذه النسخة">استعادة</button></td>`;
         bindRow(tr, { view: () => sam.app.openPath(b.path) });
+        const btn = tr.querySelector('button');
+        if (btn) {
+          btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (window.SamRestore) window.SamRestore.fromPath(b.path);
+          });
+        }
         tb.appendChild(tr);
       });
     } catch (e) { toast(e.message, 'bad'); }
@@ -519,22 +527,47 @@
   };
   const MB = (b) => SamDB.n(b) / 1048576;
 
+  /* the safety net on the screen: if the check never comes back, the label
+     says so instead of searching for ever */
+  let checkWatch = null;
+
   function renderUpdate(s) {
     s = s || {};
+    const status = s.status || 'idle';
     const badge = document.getElementById('updStateBadge');
-    badge.textContent = UPD_STATUS[s.status] || s.status || 'جاهز';
-    badge.className = `badge ${s.status === 'error' ? 'bad' : s.status === 'downloaded' ? 'ok' : 'gold'}`;
+    badge.textContent = UPD_STATUS[status] || status || 'جاهز';
+    badge.className = `badge ${status === 'error' ? 'bad' : (status === 'downloaded' || status === 'up-to-date') ? 'ok' : 'gold'}`;
     const wrap = document.getElementById('updBarWrap');
-    wrap.classList.toggle('done', s.status === 'downloaded');
-    wrap.classList.toggle('err', s.status === 'error');
-    const pct = Math.max(0, Math.min(100, SamDB.n(s.percent)));
+    wrap.classList.toggle('done', status === 'downloaded');
+    wrap.classList.toggle('err', status === 'error');
+    wrap.classList.toggle('busy', status === 'downloading');
+    wrap.classList.toggle('checking', status === 'checking');
+
+    /* the bar carries a REAL percentage only while the file is coming down.
+       Any other state must not leave a stale bar on the screen — that is
+       what made it look as if it never stopped. */
+    const real = status === 'downloading' || status === 'downloaded' || status === 'installing';
+    const pct = real ? Math.max(0, Math.min(100, SamDB.n(s.percent))) : 0;
     document.getElementById('updFill').style.width = `${pct}%`;
     document.getElementById('updPercent').textContent = `${pct.toFixed(1)}%`;
-    document.getElementById('updLabel').textContent = s.message || UPD_STATUS[s.status] || '';
+    document.getElementById('updLabel').textContent = s.message || UPD_STATUS[status] || '';
     document.getElementById('updSize').textContent = `${MB(s.transferred).toFixed(1)} / ${MB(s.total).toFixed(1)} MB`;
     document.getElementById('updSpeed').textContent = s.speed ? `${MB(s.speed).toFixed(2)} MB/ث` : '— MB/ث';
-    document.getElementById('btnDownloadUpdate').classList.toggle('hidden', s.status !== 'available');
-    document.getElementById('btnInstallUpdate').classList.toggle('hidden', s.status !== 'downloaded');
+    document.getElementById('btnDownloadUpdate').classList.toggle('hidden', status !== 'available');
+    document.getElementById('btnInstallUpdate').classList.toggle('hidden', status !== 'downloaded');
+
+    watchCheck(status);
+  }
+
+  function watchCheck(status) {
+    if (checkWatch) { clearTimeout(checkWatch); checkWatch = null; }
+    if (status !== 'checking') return;
+    checkWatch = setTimeout(() => {
+      const label = document.getElementById('updLabel');
+      if (label) label.textContent = 'انتهت مهلة الفحص — تحقّق من الاتصال بالإنترنت ثم اضغط «فحص التحديثات» من جديد';
+      const badge = document.getElementById('updStateBadge');
+      if (badge) { badge.textContent = 'انتهت المهلة'; badge.className = 'badge bad'; }
+    }, 25000);
   }
 
   async function loadUpdate() {
@@ -544,6 +577,7 @@
       renderUpdate(s);
       document.getElementById('updInfo').innerHTML = rows([
         ['الإصدار الحالي', `v${info.version}`],
+        ['الإصدار المنشور على GitHub', (s && s.latest) ? `v${s.latest}` : '—'],
         ['طريقة التشغيل', info.packaged ? 'نسخة مثبتة (exe)' : 'وضع تطوير (npm start)'],
         ['الحالة', UPD_STATUS[(s && s.status) || 'idle']],
         ['الإصدار المتوفر', (s && s.version) || '—']
@@ -564,19 +598,22 @@
 
   async function checkUpdate() {
     const r = await sam.update.check();
-    renderUpdate(r && r.ok ? r.data : r);
-    if (r && !r.ok) toast(r.error, 'bad');
+    const st = (r && r.ok) ? r.data : (r || {});
+    renderUpdate(st);
+    if (st.status === 'error') toast(st.message || 'تعذّر الفحص عن التحديث', 'bad', 5000);
   }
   async function downloadUpdate() {
     const r = await sam.update.download();
-    renderUpdate(r && r.ok ? r.data : r);
+    const st = (r && r.ok) ? r.data : (r || {});
+    renderUpdate(st);
+    if (st.status === 'error') toast(st.message || 'تعذّر تحميل التحديث', 'bad', 5000);
   }
   async function installUpdate() {
     await sam.update.install();
   }
   async function simulateUpdate() {
     const r = await sam.update.simulate();
-    renderUpdate(r && r.ok ? r.data : r);
+    renderUpdate((r && r.ok) ? r.data : (r || {}));
   }
 
   /* ---------------- wiring ---------------- */
@@ -588,6 +625,12 @@
   document.getElementById('btnBackupNow').addEventListener('click', backupNow);
   document.getElementById('btnBackupSaveAs').addEventListener('click', backupSaveAs);
   document.getElementById('btnBackupFolder').addEventListener('click', () => sam.app.openPath(state.sync ? state.sync.backupsDir : ''));
+  document.getElementById('btnRestoreFile').addEventListener('click', () => {
+    if (window.SamRestore) window.SamRestore.pick();
+  });
+  document.getElementById('btnRestoreDataDir').addEventListener('click', () => {
+    if (window.SamRestore) window.SamRestore.pick();
+  });
   document.getElementById('btnGoCloud').addEventListener('click', () => showTab('data'));
   document.getElementById('btnOpenGuide').addEventListener('click', () => {
     if (window.SamGuide) window.SamGuide.open();

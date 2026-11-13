@@ -309,11 +309,15 @@ app.whenReady().then(async () => {
   await sleep(1300);
   const newDates = await js(`(() => {
     const inp = document.querySelector('.modal.editor input[type=date]');
-    const hint = document.querySelector('.modal.editor .hint-txt');
-    return { value: inp ? inp.value : null, today: SamUI.today(), hint: hint ? hint.textContent : null };
+    const hints = [...document.querySelectorAll('.modal.editor .hint-txt')].map(h => h.textContent.trim());
+    const dateHint = hints.find(h => h.indexOf('تاريخ الإنشاء الأصلي') >= 0) || null;
+    return { value: inp ? inp.value : null, today: SamUI.today(), dateHint, hints };
   })()`);
   check("a new document opens on today's date", newDates.value === newDates.today, newDates);
-  check('a new document shows no old-date hint', !newDates.hint, newDates.hint);
+  check('a new document shows no old-date hint', !newDates.dateHint, newDates.dateHint);
+  /* V6 — the editor also explains the internal number it will give */
+  check('the editor explains the internal number of the new document',
+    newDates.hints.some((h) => h.indexOf('رقم النظام') >= 0), newDates.hints);
   await js(`(() => { const b = [...document.querySelectorAll('.overlay .modal .modal-foot .btn')].reverse().find(x => /إلغاء|إغلاق/.test(x.textContent)); if (b) b.click(); return 1; })()`);
   await sleep(600);
 

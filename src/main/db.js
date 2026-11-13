@@ -97,8 +97,9 @@ CREATE TABLE IF NOT EXISTS stock_moves (
 
 CREATE TABLE IF NOT EXISTS documents (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  kind TEXT NOT NULL CHECK (kind IN ('purchase','sale','sale_return','purchase_return','transfer','prod_receipt','gate_in','gate_out','adjustment')),
+  kind TEXT NOT NULL CHECK (kind IN ('purchase','sale','sale_return','purchase_return','transfer','prod_receipt','prod_issue','gate_in','gate_out','adjustment')),
   doc_no TEXT NOT NULL,
+  external_no TEXT,
   doc_date TEXT NOT NULL DEFAULT (date('now','localtime')),
   party_id INTEGER REFERENCES parties(id) ON DELETE RESTRICT,
   warehouse_id INTEGER REFERENCES warehouses(id) ON DELETE RESTRICT,
@@ -308,6 +309,129 @@ function migrate() {
   // V4 — widen the document kinds and retire the «محرز» bucket
   widenDocumentKinds();
   mergeHeldBucket();
+  // V6 — two numbers per document (ours + the user's) and the new kind
+  widenDocumentsV6();
+}
+
+/**
+ * V6 — every document carries TWO numbers:
+ *   · doc_no      — the system's own number: `PREFIX-0001`, generated, and
+ *                   never repeated (not even after a document is deleted).
+ *   · external_no — the number of the paper that came from another system
+ *                   (the customer's invoice number). This is the only number
+ *                   the user types, and it may repeat — it belongs to them.
+ *
+ * Until now there was ONE column, and the number the user typed was stored
+ * in it — which is exactly how two documents ended up with the same number.
+ * SQLite cannot ALTER a CHECK constraint, so the table is rebuilt the
+ * documented way: every row is copied WITH ITS ID (so `doc_lines` and
+ * `stock_moves` keep pointing at the right row), every legacy number moves
+ * to `external_no`, and each document receives a fresh internal number. The
+ * ledger rows follow, so the movements report shows the same number as the
+ * document it belongs to.
+ */
+function widenDocumentsV6() {
+  const sql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='documents'").get();
+  if (!sql) return;
+  const cols = db.prepare('PRAGMA table_info(documents)').all().map((c) => c.name);
+  const hasExternal = cols.includes('external_no');
+  const hasKind = sql.sql.includes("'prod_issue'");
+  if (hasExternal && hasKind) return; // already done
+
+  const old = db.prepare('SELECT * FROM documents ORDER BY id').all();
+
+  /* the plan: which number is ours, which one belongs to the user */
+  const maxes = {};
+  old.forEach((r) => {
+    const n = internalSuffix(r.doc_no, r.kind);
+    if (n > (maxes[r.kind] || 0)) maxes[r.kind] = n;
+  });
+  const counters = {};
+  const plan = old.map((r) => {
+    const meta = DOC_KINDS[r.kind] || DOC_KINDS.adjustment;
+    const own = internalSuffix(r.doc_no, r.kind) > 0;
+    let no;
+    if (own) {
+      no = String(r.doc_no).trim();
+    } else {
+      if (counters[r.kind] == null) counters[r.kind] = (maxes[r.kind] || 0) + 1;
+      no = `${meta.prefix}-${String(counters[r.kind]).padStart(4, '0')}`;
+      counters[r.kind] += 1;
+    }
+    return {
+      id: r.id,
+      kind: r.kind,
+      doc_no: no,
+      external_no: own ? (r.external_no || null) : (String(r.doc_no || '').trim() || null),
+      changed: no !== String(r.doc_no || '').trim()
+    };
+  });
+
+  db.pragma('foreign_keys = OFF');
+  db.pragma('legacy_alter_table = ON');
+  try {
+    db.exec(`
+      CREATE TABLE documents_v6 (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        kind TEXT NOT NULL CHECK (kind IN ('purchase','sale','sale_return','purchase_return','transfer','prod_receipt','prod_issue','gate_in','gate_out','adjustment')),
+        doc_no TEXT NOT NULL,
+        external_no TEXT,
+        doc_date TEXT NOT NULL DEFAULT (date('now','localtime')),
+        party_id INTEGER REFERENCES parties(id) ON DELETE RESTRICT,
+        warehouse_id INTEGER REFERENCES warehouses(id) ON DELETE RESTRICT,
+        dest_warehouse_id INTEGER REFERENCES warehouses(id) ON DELETE RESTRICT,
+        invoice_value TEXT,
+        notes TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+        updated_at TEXT
+      );
+    `);
+    const ins = db.prepare(
+      `INSERT INTO documents_v6 (id,kind,doc_no,external_no,doc_date,party_id,warehouse_id,
+        dest_warehouse_id,invoice_value,notes,created_at,updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`
+    );
+    const byId = new Map(plan.map((p) => [p.id, p]));
+    old.forEach((r) => {
+      const p = byId.get(r.id);
+      ins.run(r.id, r.kind, p.doc_no, p.external_no, r.doc_date, r.party_id, r.warehouse_id,
+        r.dest_warehouse_id, r.invoice_value, r.notes, r.created_at, r.updated_at != null ? r.updated_at : null);
+    });
+    db.exec('DROP TABLE documents; ALTER TABLE documents_v6 RENAME TO documents;');
+  } finally {
+    db.pragma('legacy_alter_table = OFF');
+    db.pragma('foreign_keys = ON');
+  }
+
+  /* the ledger must carry the very same number as its document */
+  const upd = db.prepare('UPDATE stock_moves SET doc_no=? WHERE doc_id=? AND doc_type=?');
+  plan.forEach((p) => {
+    if (p.changed) upd.run(p.doc_no, p.id, p.kind);
+    rememberDocNo(p.kind, p.doc_no);
+  });
+
+  const broken = db.pragma('foreign_key_check');
+  if (broken && broken.length) throw new Error('فشل تحديث أرقام المستندات: ' + JSON.stringify(broken));
+}
+
+/**
+ * The numeric part of OUR number (`SAL-0007` → 7), or 0 when the number is
+ * not one of ours (the user's own invoice number, for instance).
+ */
+function internalSuffix(no, kind) {
+  const meta = DOC_KINDS[kind];
+  if (!meta) return 0;
+  const s = String(no == null ? '' : no).trim();
+  const head = meta.prefix + '-';
+  if (!s.startsWith(head)) return 0;
+  const tail = s.slice(head.length);
+  if (!/^\d{4,}$/.test(tail)) return 0;
+  return Number(tail);
+}
+
+/** is this number one of ours? (the user's own numbers never are) */
+function isInternalNo(no, kind) {
+  return internalSuffix(no, kind) > 0;
 }
 
 /**
@@ -839,13 +963,14 @@ const DOC_KINDS = {
   purchase_return: { ar: 'مرتجع مشتريات', sign: -1, prefix: 'PRT', group: 'تجاري' },
   transfer: { ar: 'نقل بين المخازن', sign: 0, prefix: 'TRF', group: 'مستودع' },
   prod_receipt: { ar: 'سند استلام الإنتاج', sign: 1, prefix: 'PRC', group: 'مستودع' },
+  prod_issue: { ar: 'سند توريد الإنتاج', sign: -1, prefix: 'PRI', group: 'مستودع' },
   gate_in: { ar: 'إذن إدخال', sign: 1, prefix: 'GIN', group: 'بوابة' },
   gate_out: { ar: 'إذن خروج', sign: -1, prefix: 'GOT', group: 'بوابة' },
   adjustment: { ar: 'تسوية جرد', sign: 0, prefix: 'ADJ', group: 'مستودع' }
 };
 
 /** kinds whose lines need a warehouse of their own (one warehouse per line) */
-const DOC_PER_LINE_WH = ['prod_receipt', 'gate_in', 'gate_out', 'adjustment'];
+const DOC_PER_LINE_WH = ['prod_receipt', 'prod_issue', 'gate_in', 'gate_out', 'adjustment'];
 
 /** every doc_type that can appear in stock_moves, including production rows */
 const DOC_LABELS_ALL = {
@@ -859,10 +984,48 @@ const DOC_LABELS_ALL = {
   scrap: 'هدر نفخ للغير'
 };
 
+/**
+ * The highest number this kind EVER received. A deleted document never
+ * frees its number: the paper of the warehouse and the ledger must never
+ * disagree about which number belongs to what. The number is therefore
+ * remembered in `meta`, not only read from the rows that still exist.
+ */
+function docNoMax(kind) {
+  const meta = DOC_KINDS[kind];
+  if (!meta) return 0;
+  let max = 0;
+  db.prepare('SELECT doc_no FROM documents WHERE kind=?').all(kind).forEach((r) => {
+    const n = internalSuffix(r.doc_no, kind);
+    if (n > max) max = n;
+  });
+  const remembered = Number(
+    (db.prepare('SELECT value FROM meta WHERE key=?').get('docno_max:' + kind) || {}).value || 0
+  );
+  return Math.max(max, remembered || 0);
+}
+
+/** remember that this number has been issued, so it is never issued twice */
+function rememberDocNo(kind, no) {
+  const n = internalSuffix(no, kind);
+  if (!n) return;
+  const key = 'docno_max:' + kind;
+  const cur = Number((db.prepare('SELECT value FROM meta WHERE key=?').get(key) || {}).value || 0);
+  if (n <= cur) return;
+  db.prepare('INSERT INTO meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value')
+    .run(key, String(n));
+}
+
+/**
+ * The next number of this kind — OUR number, always `PREFIX-0001`.
+ *
+ * The number comes from the HIGHEST number ever used by this kind, never
+ * from the number of rows: deleting a document must not make its number
+ * available again, or the ledger and the paper would disagree.
+ */
 function nextDocNo(kind) {
   const meta = DOC_KINDS[kind];
-  const used = db.prepare('SELECT COUNT(*) AS c FROM documents WHERE kind=?').get(kind).c;
-  let n = used + 1;
+  if (!meta) throw new Error('نوع المستند غير صالح');
+  let n = docNoMax(kind) + 1;
   const exists = db.prepare('SELECT 1 FROM documents WHERE doc_no=?');
   let candidate = `${meta.prefix}-${String(n).padStart(4, '0')}`;
   while (exists.get(candidate)) {
@@ -927,9 +1090,45 @@ function validateDocument(payload) {
 }
 
 /**
+ * The two numbers of a document:
+ *   · doc_no      — ours. Generated, unique, and it never changes once the
+ *                   document exists (an edit keeps the number it was given).
+ *   · external_no — the user's own number, from the paper that came from
+ *                   another system. It may repeat: it belongs to them.
+ *
+ * An old caller that still sends its number in `doc_no` is not broken: the
+ * number is kept as the external one, and the document receives a fresh
+ * internal number.
+ */
+function resolveDocNumbers(payload, id) {
+  const given = String(payload.doc_no == null ? '' : payload.doc_no).trim();
+  const givenExt = String(payload.external_no == null ? '' : payload.external_no).trim();
+
+  if (id) {
+    const cur = db.prepare('SELECT doc_no, external_no FROM documents WHERE id=?').get(id);
+    const docNo = cur ? cur.doc_no : nextDocNo(payload.kind);
+    const externalNo = payload.external_no === undefined
+      ? (cur ? cur.external_no : null)
+      : (givenExt || null);
+    return { docNo, externalNo };
+  }
+
+  const free = db.prepare('SELECT 1 FROM documents WHERE doc_no=?');
+  if (given && isInternalNo(given, payload.kind) && !free.get(given)) {
+    return { docNo: given, externalNo: givenExt || null };
+  }
+  return { docNo: nextDocNo(payload.kind), externalNo: givenExt || given || null };
+}
+
+/**
  * Create or update a document.
- * payload = { id?, kind, doc_no, doc_date, party_id, warehouse_id, dest_warehouse_id,
- *             invoice_value, notes, lines:[{ item_id, bucket, pieces, cartons, bags, note }] }
+ * payload = { id?, kind, doc_no, external_no, doc_date, party_id, warehouse_id,
+ *             dest_warehouse_id, invoice_value, notes,
+ *             lines:[{ item_id, bucket, pieces, cartons, bags, note }] }
+ *
+ * `doc_no` is OUR number: generated here, never repeated, and it never
+ * changes once the document exists. `external_no` is the number of the
+ * paper that came from another system — the only one the user types.
  */
 function saveDocument(payload) {
   const meta = validateDocument(payload);
@@ -943,27 +1142,28 @@ function saveDocument(payload) {
       db.prepare('DELETE FROM doc_lines WHERE document_id=?').run(id);
     }
 
-    // the number is decided ONCE — computing it again after the insert would
-    // hand the ledger rows a different number than the document itself
-    const docNo = (payload.doc_no || '').trim() || nextDocNo(payload.kind);
+    /* the numbers are decided ONCE — computing them again after the insert
+       would hand the ledger rows a different number than the document */
+    const numbers = resolveDocNumbers(payload, id);
+    rememberDocNo(payload.kind, numbers.docNo);
 
     let docId = id;
     if (docId) {
       db.prepare(
-        `UPDATE documents SET kind=?, doc_no=?, doc_date=?, party_id=?, warehouse_id=?, dest_warehouse_id=?,
+        `UPDATE documents SET kind=?, doc_no=?, external_no=?, doc_date=?, party_id=?, warehouse_id=?, dest_warehouse_id=?,
          invoice_value=?, notes=?, updated_at=datetime('now','localtime') WHERE id=?`
       ).run(
-        payload.kind, docNo, payload.doc_date,
+        payload.kind, numbers.docNo, numbers.externalNo, payload.doc_date,
         int(payload.party_id) || null, int(payload.warehouse_id) || null, int(payload.dest_warehouse_id) || null,
         (payload.invoice_value == null ? '' : String(payload.invoice_value)).trim() || null,
         (payload.notes || '').trim() || null, docId
       );
     } else {
       const info = db.prepare(
-        `INSERT INTO documents(kind,doc_no,doc_date,party_id,warehouse_id,dest_warehouse_id,invoice_value,notes)
-         VALUES(?,?,?,?,?,?,?,?)`
+        `INSERT INTO documents(kind,doc_no,external_no,doc_date,party_id,warehouse_id,dest_warehouse_id,invoice_value,notes)
+         VALUES(?,?,?,?,?,?,?,?,?)`
       ).run(
-        payload.kind, docNo, payload.doc_date,
+        payload.kind, numbers.docNo, numbers.externalNo, payload.doc_date,
         int(payload.party_id) || null, int(payload.warehouse_id) || null, int(payload.dest_warehouse_id) || null,
         (payload.invoice_value == null ? '' : String(payload.invoice_value)).trim() || null,
         (payload.notes || '').trim() || null
@@ -998,8 +1198,8 @@ function saveDocument(payload) {
           warnings.push(`«${item.name}» في ${whName(src)} ${here} ${item.base_unit} فقط، والمخزن سيتجاوز الحد إلى ${here - pieces}.`);
         }
         insLine.run(docId, itemId, src, dst, bucket, pieces, cartons, bags, l.note || null, -1);
-        insMove.run(itemId, src, bucket, -pieces, cartons, bags, payload.kind, docId, docNo, null, l.note || 'نقل صادر', payload.doc_date);
-        insMove.run(itemId, dst, bucket, pieces, cartons, bags, payload.kind, docId, docNo, null, l.note || 'نقل وارد', payload.doc_date);
+        insMove.run(itemId, src, bucket, -pieces, cartons, bags, payload.kind, docId, numbers.docNo, null, l.note || 'نقل صادر', payload.doc_date);
+        insMove.run(itemId, dst, bucket, pieces, cartons, bags, payload.kind, docId, numbers.docNo, null, l.note || 'نقل وارد', payload.doc_date);
       } else {
         const wh = int(l.warehouse_id || payload.warehouse_id) || null;
         if (!wh) throw new Error(`اختر المخزن للسطر ${payload.lines.indexOf(l) + 1}`);
@@ -1017,7 +1217,7 @@ function saveDocument(payload) {
           }
         }
         insLine.run(docId, itemId, wh, null, bucket, pieces, cartons, bags, l.note || null, sign);
-        insMove.run(itemId, wh, bucket, sign * pieces, cartons, bags, payload.kind, docId, docNo,
+        insMove.run(itemId, wh, bucket, sign * pieces, cartons, bags, payload.kind, docId, numbers.docNo,
           int(payload.party_id) || null, l.note || null, payload.doc_date);
       }
     }
@@ -1087,10 +1287,10 @@ function listDocuments(filter = {}) {
      LEFT JOIN warehouses w ON w.id=d.warehouse_id
      LEFT JOIN warehouses dw ON dw.id=d.dest_warehouse_id
      WHERE (?='' OR d.kind=?)
-       AND (?='' OR d.doc_no LIKE ? OR IFNULL(p.name,'') LIKE ? OR IFNULL(d.invoice_value,'') LIKE ?)
+       AND (?='' OR d.doc_no LIKE ? OR IFNULL(d.external_no,'') LIKE ? OR IFNULL(p.name,'') LIKE ? OR IFNULL(d.invoice_value,'') LIKE ?)
      ORDER BY d.id DESC
      LIMIT ?`
-  ).all(kind, kind, search.slice(1), search, search, search, int(filter.limit) || 300);
+  ).all(kind, kind, search.slice(1), search, search, search, search, int(filter.limit) || 300);
   return rows.map((r) => ({ ...r, kindAr: DOC_KINDS[r.kind] ? DOC_KINDS[r.kind].ar : r.kind }));
 }
 
@@ -1102,6 +1302,21 @@ function listDocuments(filter = {}) {
  */
 function listProdReceipts(limit = 200) {
   return listDocuments({ kind: 'prod_receipt', limit: int(limit) || 200 });
+}
+
+/** the vouchers that handed goods over to the factory — the mirror image
+    of «سند استلام الإنتاج»: they take the pieces OUT of the warehouse */
+function listProdIssues(limit = 200) {
+  return listDocuments({ kind: 'prod_issue', limit: int(limit) || 200 });
+}
+
+/** how many documents of each kind — the launcher on the operations screen
+    puts the number beside every kind, so the user sees where the work is */
+function documentKindCounts() {
+  const rows = db.prepare('SELECT kind, COUNT(*) AS n FROM documents GROUP BY kind').all();
+  const out = {};
+  rows.forEach((r) => { out[r.kind] = Number(r.n) || 0; });
+  return out;
 }
 
 /** what will be reverted if this document is hard-deleted */
@@ -2583,6 +2798,8 @@ module.exports = {
   getDocument,
   listDocuments,
   listProdReceipts,
+  listProdIssues,
+  documentKindCounts,
   documentImpact,
   deleteDocument,
   gatePass,

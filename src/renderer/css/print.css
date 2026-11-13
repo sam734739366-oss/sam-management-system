@@ -1,0 +1,105 @@
+/* =====================================================================
+   PRINT LAYER — the LAST stylesheet in the cascade.
+
+   Why this file exists
+   --------------------
+   Chromium does NOT give named pages the priority the CSS spec asks for:
+   when two @page rules match the same page, the LAST one in the cascade
+   wins — even if that last one is an unnamed `@page { size: A4 }`.
+   theme.css and app.css each ended with such an unnamed rule, so every
+   landscape sheet was printed on a PORTRAIT A4 and a quarter of the page
+   was cut off on the left (the document is RTL, so the overflow spills
+   left). The proof is in tools/probe-page-size.js.
+
+   The fix is structural: every @page rule now lives HERE, in the last
+   stylesheet the document loads, in this exact order —
+       1. the unnamed A4 (the default paper)
+       2. the named pages (they must come later so they override it)
+   Nothing after this file may declare an @page rule.
+   ===================================================================== */
+
+/* ------------------------------------------------------------------ *
+   1 — the paper
+   ------------------------------------------------------------------ */
+@media print {
+  html, body { background: #fff !important; overflow: visible !important; }
+  .no-print { display: none !important; }
+  .print-root { display: block !important; position: static !important; }
+
+  /* the sheet keeps its own padding as the paper margin */
+  .sheet { box-shadow: none !important; margin: 0 !important; }
+  .sheet.half { overflow: hidden !important; }
+  .sheet table.tbl thead { display: table-header-group; }
+  .sheet table.tbl tr { break-inside: avoid; page-break-inside: avoid; }
+  /* a table row must never be split across two pages */
+  .sheet table.tbl td, .sheet table.tbl th { break-inside: avoid; }
+}
+
+/* ------------------------------------------------------------------ *
+   2 — the print typography
+   The customer asked for the printed sheet to be tighter, BIGGER and
+   clearer: the same information, at a comfortable reading size, in black
+   instead of soft grey. The screen keeps its compact look; the paper
+   gets the room it needs.
+   ------------------------------------------------------------------ */
+@media print {
+  .sheet {
+    font-size: 11pt;
+    color: #000;
+  }
+  .sheet .doc-mast .m-side { font-size: 9pt; color: #1d2939; line-height: 1.6; }
+  .sheet .doc-mast .m-brand .b-name { font-size: 15pt; }
+  .sheet .doc-mast .m-brand .b-sub { font-size: 9pt; color: #1d2939; }
+  .sheet .doc-title { margin-top: 4mm; padding-top: 2.5mm; }
+  .sheet .doc-title h1 { font-size: 16.5pt; color: #000; }
+  .sheet .doc-title .t-sub { font-size: 10.5pt; color: #1d2939; }
+  .sheet .doc-meta { font-size: 11.5pt; color: #000; gap: 0 14mm; }
+  .sheet .doc-meta .m-k { font-size: 10pt; color: #1d2939; }
+  .sheet .doc-note { font-size: 10.5pt; color: #000; line-height: 1.7; }
+
+  /* the table: bigger cells, black text, a light rule instead of a
+     heavy one, and a clear head */
+  .sheet table.tbl { border: 1px solid #7d8ea6 !important; }
+  .sheet table.tbl th {
+    font-size: 10pt !important;
+    font-weight: 900 !important;
+    color: #000 !important;
+    background: #dde8f7 !important;
+    border-bottom: 1.2px solid #7d8ea6 !important;
+    padding: 5px 7px !important;
+  }
+  .sheet table.tbl td {
+    font-size: 10pt !important;
+    font-weight: 700 !important;
+    color: #000 !important;
+    padding: 5px 7px !important;
+    border-bottom: 1px solid #c2cddc !important;
+  }
+  .sheet table.tbl tr:nth-child(even) td { background: #f5f8fc !important; }
+  .sheet .tot-row td { background: #dde8f7 !important; font-weight: 900 !important; color: #000 !important; }
+
+  /* the totals that are written by hand (the «doc-note» block) */
+  .sheet .doc-note b { color: #000; }
+
+  /* signatures and footer */
+  .sheet .sig { font-size: 10pt; color: #000; }
+  .sheet .sig .nm { font-weight: 900; }
+  .sheet .sig .sp { font-size: 9pt; color: #1d2939; }
+  .sheet .sig .line { border-bottom: 1px solid #2f3b4d; }
+  .sheet .doc-foot { font-size: 8.5pt; color: #1d2939; font-weight: 800; border-top: .5pt solid #9fb0c6; }
+
+  /* the half-sheet permit stays compact — it has a fixed height */
+  .sheet.half table.tbl th { font-size: 9pt !important; padding: 3.5px 5px !important; }
+  .sheet.half table.tbl td { font-size: 9pt !important; padding: 3.5px 5px !important; }
+  .sheet.half.tight table.tbl th { font-size: 8.2pt !important; padding: 2.5px 4px !important; }
+  .sheet.half.tight table.tbl td { font-size: 8.2pt !important; padding: 2.5px 4px !important; }
+}
+
+/* ------------------------------------------------------------------ *
+   3 — THE PAGE RULES — must be the last @page rules in the cascade
+   ------------------------------------------------------------------ */
+/* the base paper — portrait. The named pages below come AFTER it, so
+   they override it (Chromium takes the last matching @page rule). */
+@page { size: A4; margin: 0; }
+@page landscapeSheet { size: A4 landscape; margin: 0; }
+@page permitSheet { size: A4 portrait; margin: 0; }

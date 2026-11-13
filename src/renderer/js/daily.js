@@ -152,19 +152,23 @@
     const whs = shownWarehouses();
     const rows = visibleRows();
 
-    /* --- the header row: one group of two columns per warehouse --- */
+    /* --- the header row: one group of THREE columns per warehouse —
+       وارد (دخل اليوم) · صادر (خروج اليوم) · المتبقي — then the grand
+       total of the remaining balance across all the shown warehouses. */
     const head1 = `<th rowspan="2" style="min-width:170px">الصنف</th>
       <th rowspan="2" style="width:74px">الوحدة</th>
-      ${whs.map((w) => `<th colspan="2" class="grp">${esc(w.name)}${w.location ? ` — ${esc(w.location)}` : ''}</th>`).join('')}
+      ${whs.map((w) => `<th colspan="3" class="grp">${esc(w.name)}${w.location ? ` — ${esc(w.location)}` : ''}</th>`).join('')}
       <th rowspan="2" style="width:120px">إجمالي المتبقي</th>`;
-    const head2 = whs.map(() => '<th style="width:104px">دخل اليوم</th><th style="width:104px">المتبقي</th>').join('');
+    const head2 = whs.map(() => '<th style="width:96px">وارد اليوم</th><th style="width:96px">صادر اليوم</th><th style="width:96px">المتبقي</th>').join('');
 
     const body = rows.map((r) => {
       const cells = whs.map((w) => {
-        const c = r.cells[w.id] || { inQty: 0, balance: 0 };
+        const c = r.cells[w.id] || { inQty: 0, outQty: 0, balance: 0 };
         const inQ = SamDB.n(c.inQty);
+        const outQ = SamDB.n(c.outQty);
         const bal = SamDB.n(c.balance);
         return `<td class="num ${inQ ? 'qty plus' : 'dim'}">${inQ ? SamDB.fmt(inQ) : '—'}</td>
+          <td class="num ${outQ ? 'qty minus' : 'dim'}">${outQ ? SamDB.fmt(outQ) : '—'}</td>
           <td class="num qty ${bal < 0 ? 'minus' : ''}">${SamDB.fmt(bal)}</td>`;
       }).join('');
       const total = whs.reduce((a, w) => a + SamDB.n((r.cells[w.id] || {}).balance), 0);
@@ -205,7 +209,7 @@
 
     if (t.sumTbl) {
       t.sumTbl.innerHTML =
-        `<thead><tr><th>المخزن</th><th>دخل اليوم</th><th>صادر اليوم</th><th>المتبقي</th></tr></thead>
+        `<thead><tr><th>المخزن</th><th>وارد اليوم</th><th>صادر اليوم</th><th>المتبقي</th></tr></thead>
          <tbody>${sums}${grandRow}</tbody>`;
     }
 
@@ -219,7 +223,7 @@
           <span class="k-val">${SamDB.fmt(grandBal)}</span>
           <span class="k-note">${esc(state.whFilter ? 'المخزن المختار' : `${whs.length} مخازن`)} · تاريخ ${esc(res.date)}</span></div>
         <div class="kpi tone-gin"><span class="t3d tone-gin"><svg class="ic"><use href="#i-in"/></svg></span>
-          <span class="k-top">دخل اليوم</span>
+          <span class="k-top">وارد اليوم</span>
           <span class="k-val">${SamDB.fmt(grandIn)}</span>
           <span class="k-note">وارد في تاريخ ${esc(res.date)}</span></div>
         <div class="kpi tone-gout"><span class="t3d tone-gout"><svg class="ic"><use href="#i-out"/></svg></span>
@@ -237,7 +241,7 @@
       t.foot.innerHTML = `
         <span>عدد الأصناف: <b>${SamDB.fmt(rows.length)}</b></span>
         <span>إجمالي المتبقي: <b class="big">${SamDB.fmt(grandBal)}</b></span>
-        <span>دخل اليوم: <b>${SamDB.fmt(grandIn)}</b></span>
+        <span>وارد اليوم: <b>${SamDB.fmt(grandIn)}</b></span>
         <span>صادر اليوم: <b>${SamDB.fmt(grandOut)}</b></span>
         <span class="dim">الوحدة: ${esc([...new Set(rows.map((r) => r.baseUnit))].join(' / ') || '—')}</span>`;
     }
@@ -246,7 +250,7 @@
     emptyState(t.empty, {
       icon: 'i-chart',
       title: hasRows ? '' : 'لا توجد أصناف في هذا التقرير',
-      hint: hasRows ? '' : 'غيّر التاريخ أو أظهر كل الأصناف. «المتبقي» يحسب من كل الحركات السابقة، و«دخل اليوم» من حركات اليوم فقط.'
+      hint: hasRows ? '' : 'غيّر التاريخ أو أظهر كل الأصناف. «المتبقي» يحسب من كل الحركات السابقة، و«وارد/صادر اليوم» من حركات اليوم فقط.'
     });
     toggleEmpty(t.empty, hasRows);
   }
@@ -258,13 +262,13 @@
     const rows = visibleRows();
 
     const head1 = `<th rowspan="2">الصنف</th><th rowspan="2">الوحدة</th>`
-      + whs.map((w) => `<th colspan="2">${esc(w.name)}</th>`).join('')
+      + whs.map((w) => `<th colspan="3">${esc(w.name)}</th>`).join('')
       + '<th rowspan="2">إجمالي المتبقي</th>';
-    const head2 = whs.map(() => '<th>دخل اليوم</th><th>المتبقي</th>').join('');
+    const head2 = whs.map(() => '<th>وارد اليوم</th><th>صادر اليوم</th><th>المتبقي</th>').join('');
     const body = rows.map((r) => {
       const cells = whs.map((w) => {
         const c = r.cells[w.id] || {};
-        return `<td>${SamDB.fmt(SamDB.n(c.inQty))}</td><td>${SamDB.fmt(SamDB.n(c.balance))}</td>`;
+        return `<td>${SamDB.fmt(SamDB.n(c.inQty))}</td><td>${SamDB.fmt(SamDB.n(c.outQty))}</td><td>${SamDB.fmt(SamDB.n(c.balance))}</td>`;
       }).join('');
       const total = whs.reduce((a, w) => a + SamDB.n((r.cells[w.id] || {}).balance), 0);
       return `<tr><td>${esc(r.itemCode)} — ${esc(r.itemName)}</td><td>${esc(r.baseUnit)}</td>${cells}<td>${SamDB.fmt(total)}</td></tr>`;
@@ -282,7 +286,7 @@
 
     return {
       title: 'التقرير اليومي',
-      subtitle: `ما دخل اليوم في كل مخزن وما هو المتبقي فيه — ${res.date}`,
+      subtitle: `وارد وصادر ومتبقي كل مخزن — ${res.date}`,
       docRef: `DR-${res.date}`,
       docRefLabel: 'رقم التقرير',
       head: [
@@ -298,7 +302,7 @@
         </table>
         <div style="margin-top:5mm"><b>ملخص المخازن</b>
           <table class="tbl" style="font-size:9pt">
-            <thead><tr><th>المخزن</th><th>دخل اليوم</th><th>صادر اليوم</th><th>المتبقي</th></tr></thead>
+            <thead><tr><th>المخزن</th><th>وارد اليوم</th><th>صادر اليوم</th><th>المتبقي</th></tr></thead>
             <tbody>${sumBody}</tbody>
           </table>
         </div>`,
@@ -338,7 +342,8 @@
       { header: 'الوحدة', key: 'unit' }
     ];
     whs.forEach((w) => {
-      columns.push({ header: `${w.name} — دخل اليوم`, key: `w${w.id}in`, num: true, fmt: '#,##0' });
+      columns.push({ header: `${w.name} — وارد اليوم`, key: `w${w.id}in`, num: true, fmt: '#,##0' });
+      columns.push({ header: `${w.name} — صادر اليوم`, key: `w${w.id}out`, num: true, fmt: '#,##0' });
       columns.push({ header: `${w.name} — المتبقي`, key: `w${w.id}bal`, num: true, fmt: '#,##0' });
     });
     columns.push({ header: 'إجمالي المتبقي', key: 'total', num: true, fmt: '#,##0' });
@@ -349,6 +354,7 @@
       whs.forEach((w) => {
         const c = r.cells[w.id] || {};
         o[`w${w.id}in`] = SamDB.n(c.inQty);
+        o[`w${w.id}out`] = SamDB.n(c.outQty);
         o[`w${w.id}bal`] = SamDB.n(c.balance);
         total += SamDB.n(c.balance);
       });
@@ -359,6 +365,7 @@
     const totals = [];
     whs.forEach((w) => {
       totals.push({ key: `w${w.id}in`, value: whs.reduce((a, x) => a + SamDB.n((res.warehouseTotals[x.id] || {}).inQty), 0) });
+      totals.push({ key: `w${w.id}out`, value: whs.reduce((a, x) => a + SamDB.n((res.warehouseTotals[x.id] || {}).outQty), 0) });
       totals.push({ key: `w${w.id}bal`, value: whs.reduce((a, x) => a + SamDB.n((res.warehouseTotals[x.id] || {}).balance), 0) });
     });
     totals.push({

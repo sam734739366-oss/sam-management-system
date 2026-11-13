@@ -65,7 +65,7 @@ function fingerprint(dir) {
     items: project('items', ['id', 'code', 'name', 'base_unit']),
     stockMoves: project('stock_moves', ['id', 'item_id', 'warehouse_id', 'piece_delta', 'bucket', 'doc_type']),
     docLines: project('doc_lines', ['id', 'item_id', 'warehouse_id', 'pieces', 'cartons', 'bags', 'bucket']),
-    documents: project('documents', ['id', 'kind', 'doc_no', 'doc_date']),
+    documents: project('documents', ['id', 'kind', 'doc_no', 'external_no', 'doc_date']),
     users: project('users', ['id', 'username', 'role']),
     parties: project('parties', ['id', 'name'])
   };
@@ -218,9 +218,27 @@ async function run() {
       JSON.stringify(liveBefore.stockMoves.map((m) => [m.id, m.item_id, m.warehouse_id, m.piece_delta, m.doc_type])),
       { before: liveBefore.stockMoves.length, after: liveAfter.stockMoves.length });
     check('the live database keeps every document',
-      JSON.stringify(liveAfter.documents.map((d) => [d.id, d.kind, d.doc_no, d.doc_date])) ===
-      JSON.stringify(liveBefore.documents.map((d) => [d.id, d.kind, d.doc_no, d.doc_date])),
+      liveAfter.documents.map((d) => [d.id, d.kind, d.doc_date]).join('|') ===
+      liveBefore.documents.map((d) => [d.id, d.kind, d.doc_date]).join('|'),
       { before: liveBefore.documents.length, after: liveAfter.documents.length });
+    /* V6 moved the number the user typed into «external_no» and gave every
+       document an internal number of its own — the number the customer
+       wrote must survive in its new home, whichever state the database
+       was in before this run. */
+    const isInternal = (n) => /^[A-Z]{3}-\d{4,}$/.test(String(n || ''));
+    check('the number the customer typed survives in the external number',
+      liveAfter.documents.every((d, i) => {
+        const b = liveBefore.documents[i] || {};
+        const typed = isInternal(b.doc_no) ? (b.external_no || '') : (b.doc_no || '');
+        return String(d.external_no || '') === String(typed);
+      }),
+      liveAfter.documents.map((d) => d.doc_no + ' / خارجي=' + d.external_no));
+    check('every document in the live database has an internal number of its own',
+      liveAfter.documents.every((d) => isInternal(d.doc_no)),
+      liveAfter.documents.map((d) => d.doc_no));
+    check('no two documents in the live database share an internal number',
+      new Set(liveAfter.documents.map((d) => d.doc_no)).size === liveAfter.documents.length,
+      liveAfter.documents.map((d) => d.doc_no));
     check('the live database keeps every document line',
       JSON.stringify(liveAfter.docLines.map((d) => [d.id, d.doc_id, d.item_id, d.pieces, d.bucket])) ===
       JSON.stringify(liveBefore.docLines.map((d) => [d.id, d.doc_id, d.item_id, d.pieces, d.bucket])),

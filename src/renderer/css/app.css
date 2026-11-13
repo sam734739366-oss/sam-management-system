@@ -43,8 +43,8 @@
 .tb-logo { width: 26px; height: 26px; border-radius: 8px; }
 .tb-name { display: flex; flex-direction: column; line-height: 1.05; }
 .tb-name strong { font-family: var(--font-display); font-size: 13.5px; letter-spacing: .12em; color: var(--brand); }
-.tb-name span { font-size: 9.5px; color: var(--muted-fg); letter-spacing: .06em; }
-.tb-ver { font-size: 9.5px; color: var(--brand-700); background: var(--brand-050); padding: 1px 7px; border-radius: 999px; font-weight: 700; }
+.tb-name span { font-size: 11px; color: var(--muted-fg); letter-spacing: .06em; }
+.tb-ver { font-size: 11px; color: var(--brand-700); background: var(--brand-050); padding: 1px 7px; border-radius: 999px; font-weight: 700; }
 
 .tb-title {
   flex: 1;
@@ -78,7 +78,7 @@
 }
 .u-meta { display: flex; flex-direction: column; line-height: 1.15; }
 .u-meta b { font-size: 11.5px; color: var(--ink); }
-.u-meta i { font-style: normal; font-size: 9.5px; color: var(--muted-fg); }
+.u-meta i { font-style: normal; font-size: 11px; color: var(--muted-fg); }
 
 .tb-btn .ic { stroke-width: 2; }
 .tb-btn {
@@ -112,7 +112,7 @@
   padding: 8px 0 10px;
 }
 .nav { display: flex; flex-direction: column; gap: 2px; padding: 5px 8px; overflow-y: auto; }
-.nav-cap { font-size: 9.5px; font-weight: 800; letter-spacing: .1em; color: var(--muted-fg); padding: 9px 10px 4px; opacity: .9; }
+.nav-cap { font-size: 11px; font-weight: 800; letter-spacing: .1em; color: var(--muted-fg); padding: 9px 10px 4px; opacity: .9; }
 .nav-item {
   position: relative;
   display: flex; align-items: center; gap: 9px;
@@ -154,7 +154,7 @@
   min-width: 19px; height: 19px; padding: 0 5px;
   display: grid; place-items: center;
   border-radius: 6px;
-  font-size: 9.5px; font-weight: 800; font-style: normal;
+  font-size: 11px; font-weight: 800; font-style: normal;
   background: var(--surface-2);
   color: var(--muted-fg);
   border: 1px solid var(--line);
@@ -169,15 +169,15 @@
   background: var(--accent-050);
   border: 1px solid var(--accent-100);
 }
-.pc-label { grid-column: 1 / -1; font-size: 9.5px; color: var(--accent-600); letter-spacing: .08em; font-weight: 700; }
+.pc-label { grid-column: 1 / -1; font-size: 11px; color: var(--accent-600); letter-spacing: .08em; font-weight: 700; }
 .pc-num {
   font-family: var(--font-display); font-weight: 800; font-size: 21px; line-height: 1;
   color: var(--brand);
 }
 .pc-txt { align-self: center; font-size: 11px; color: var(--label-fg); line-height: 1.45; }
-.wm-tag { font-size: 9.5px; color: var(--muted-fg); text-align: center; letter-spacing: .12em; direction: ltr; }
+.wm-tag { font-size: 11px; color: var(--muted-fg); text-align: center; letter-spacing: .12em; direction: ltr; }
 
-.shortcut-hint { font-size: 9.5px; color: var(--muted-fg); text-align: center; line-height: 1.7; }
+.shortcut-hint { font-size: 11px; color: var(--muted-fg); text-align: center; line-height: 1.7; }
 .shortcut-hint b { color: var(--ink-soft); font-weight: 800; direction: ltr; unicode-bidi: embed; }
 
 /* ---------------- content ---------------- */
@@ -230,7 +230,7 @@
   color: color-mix(in srgb, var(--kt) 74%, #0d1526);
   font-variant-numeric: tabular-nums; line-height: 1.2;
 }
-.k-note { font-size: 10.5px; color: var(--muted-fg); font-weight: 600; }
+.k-note { font-size: var(--fs-xs); color: var(--muted-fg); font-weight: 600; }
 
 .grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; align-items: start; }
 .card-body.tight { padding: 0; }
@@ -255,7 +255,7 @@
 .roadmap li.done .n { background: var(--ok); color: #fff; }
 .roadmap li.now { border-color: var(--accent-300); background: var(--accent-050); color: var(--accent-600); font-weight: 700; }
 .roadmap li.now .n { background: var(--accent); color: #fff; }
-.roadmap li .st { margin-inline-start: auto; font-size: 10.5px; font-weight: 700; white-space: nowrap; }
+.roadmap li .st { margin-inline-start: auto; font-size: var(--fs-xs); font-weight: 700; white-space: nowrap; }
 
 /* settings */
 .info { display: grid; grid-template-columns: auto 1fr; gap: 7px 14px; margin: 0; font-size: 12.5px; }
@@ -282,6 +282,10 @@
 .tbl .qty { font-weight: 800; font-variant-numeric: tabular-nums; }
 .tbl .qty.plus { color: var(--ok); }
 .tbl .qty.minus { color: var(--bad); }
+/* a quiet second line inside a cell — the number that came from another
+   system, or any other detail that must not compete with the main value */
+.tbl .sub { display: block; font-size: var(--fs-2xs); color: var(--muted-fg); font-weight: 600; margin-top: 1px; }
+.tbl .mono { font-family: var(--font-mono); letter-spacing: .2px; }
 .tbl .neg { color: var(--bad); }
 .tbl td.act { text-align: center; }
 .tbl td.center, .tbl th.center { text-align: center; }
@@ -291,7 +295,7 @@
 
 .foot-note { font-size: 11px; color: var(--muted-fg); font-weight: 600; margin-top: 8px; line-height: 1.7; }
 
-.chip { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: 999px; font-size: 10.5px; font-weight: 700; white-space: nowrap; }
+.chip { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: 999px; font-size: var(--fs-xs); font-weight: 700; white-space: nowrap; }
 .chip.main, .chip.brand { background: var(--brand-050); color: var(--brand-700); }
 .chip.sub { background: var(--surface-2); color: var(--ink-soft); }
 .chip.ok { background: var(--ok-bg); color: var(--ok); }
@@ -343,7 +347,7 @@
 .radio:hover { border-color: var(--brand-300); background: var(--brand-050); }
 .radio:has(input:checked) { border-color: var(--brand); background: var(--brand-050); box-shadow: inset 0 0 0 1px var(--brand-100); }
 .radio input { accent-color: var(--brand); margin: 0; }
-.radio .hint-txt { font-style: normal; font-size: 10px; color: var(--muted-fg); font-weight: 600; }
+.radio .hint-txt { font-style: normal; font-size: var(--fs-2xs); color: var(--muted-fg); font-weight: 600; }
 .radio.disabled { opacity: .45; cursor: not-allowed; }
 .check-row { display: flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 700; color: var(--label-fg); align-self: end; padding-bottom: 6px; }
 .check-row input { width: 15px; height: 15px; accent-color: var(--ok); }
@@ -380,13 +384,6 @@
 .tab:hover { border-color: var(--brand-300); color: var(--brand-700); }
 .tab.active { background: var(--brand); color: #fff; border-color: transparent; }
 
-.modal.editor {
-  width: min(1320px, 98vw);
-  max-height: 94vh;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
 .ed-head { padding: 12px 18px 9px; display: flex; flex-direction: column; gap: 9px; border-bottom: 1px solid var(--line); }
 .ed-head h3 { font-size: 17px; color: var(--ink); }
 .ed-body { flex: 1; overflow: auto; padding: 11px 18px 6px; }
@@ -396,6 +393,16 @@
 .ed-cell > label,
 .ed-label { display: flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 700; color: var(--label-fg); min-width: 0; }
 .ed-cell.full { grid-column: 1 / -1; }
+/* V6 — the two numbers of a document. The internal one is ours: mono,
+   read-only, and it says where it comes from. The external one is the
+   number of the paper that came from another system — it is the only
+   number anybody types, so it gets the plain look. */
+.ed-cell.docno-cell .input,
+.ed-cell.extno-cell .input { font-family: var(--font-mono); font-weight: 700; letter-spacing: .3px; }
+.input.mono { font-family: var(--font-mono); letter-spacing: .3px; }
+.ed-cell.docno-cell .input { background: var(--surface-2); color: var(--ink-soft); }
+.ed-cell.docno-cell .input[readonly] { cursor: default; }
+.ed-cell.extno-cell .input { border-color: var(--tone-bd, var(--line-strong)); }
 .ed-sec {
   margin: 14px 0 8px; padding-top: 9px; border-top: 1px solid var(--line);
   font-weight: 800; color: var(--ink); font-size: 13px; display: flex; align-items: center; gap: 7px;
@@ -418,20 +425,22 @@
 .tone-produce { --tone: var(--c-produce); --tone-bg: #f0fdfa; --tone-bd: #99f6e4; --tone-soft: #ccfbf1; }
 .tone-gin     { --tone: var(--c-gin);     --tone-bg: #ecfeff; --tone-bd: #a5f3fc; --tone-soft: #cffafe; }
 .tone-gout    { --tone: var(--c-gout);    --tone-bg: #f0f9ff; --tone-bd: #bae6fd; --tone-soft: #e0f2fe; }
+.tone-issue   { --tone: var(--c-issue);   --tone-bg: #fff7ed; --tone-bd: #fed7aa; --tone-soft: #ffedd5; }
 .tone-adjust  { --tone: var(--c-adjust);  --tone-bg: #fef2f2; --tone-bd: #fecaca; --tone-soft: #fee2e2; }
 .tone-plain   { --tone: var(--c-plain);   --tone-bg: #f1f5f9; --tone-bd: #cbd5e1; --tone-soft: #e2e8f0; }
 .tone-ok      { --tone: var(--c-ok);      --tone-bg: #f0fdf4; --tone-bd: #bbf7d0; --tone-soft: #dcfce7; }
 .tone-warn    { --tone: var(--c-warn);    --tone-bg: #fffbeb; --tone-bd: #fde68a; --tone-soft: #fef3c7; }
 .tone-info    { --tone: var(--c-info);    --tone-bg: #f0f9ff; --tone-bd: #bae6fd; --tone-soft: #e0f2fe; }
 
-.modal.editor { border-top: 4px solid var(--tone, var(--brand)); }
-.ed-head { border-bottom: 1px solid var(--tone-bd, var(--line)); background: linear-gradient(180deg, var(--tone-bg, var(--surface-2)) 0%, var(--surface) 100%); }
+.ed-head { border-bottom: 1px solid var(--tone-bd, var(--line)); background: linear-gradient(180deg, color-mix(in srgb, var(--tone, var(--brand)) 13%, #ffffff) 0%, var(--tone-bg, var(--surface-2)) 100%); }
 .ed-title { display: flex; align-items: center; gap: 12px; }
 .ed-badge { flex: none; --t: var(--tone, var(--brand)); }
 .ed-txt { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .ed-txt h3 { margin: 0; font-size: 17px; color: var(--ink); }
 .ed-sub { font-size: 11.5px; font-weight: 600; color: var(--muted-fg); }
-.ed-title .kind-chip { margin-inline-start: auto; }
+/* the «تغيير النوع» button opens the chooser again — the page recolours itself */
+.ed-swap { margin-inline-start: auto; font-weight: 700; }
+.ed-title .kind-chip { margin-inline-start: 8px; }
 .kind-chip { background: var(--tone-bg); color: var(--tone); border: 1px solid var(--tone-bd); }
 
 /* the kind picker — one card per document kind */
@@ -453,9 +462,65 @@
 .kc-ic { flex: none; --t: var(--tone, var(--brand)); }
 .kc-txt { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .kc-name { font-size: 12.5px; font-weight: 800; color: var(--ink); }
-.kc-hint { font-size: 10.5px; font-weight: 600; color: var(--muted-fg); line-height: 1.4; }
+.kc-hint { font-size: var(--fs-xs); font-weight: 600; color: var(--muted-fg); line-height: 1.4; }
 .kind-card.on { border-color: var(--tone); background: var(--tone-bg); box-shadow: 0 0 0 3px var(--tone-soft); }
 .kind-card.on .kc-name { color: var(--tone); }
+
+/* ---------- the launcher: one page per document kind ----------
+   The operations screen opens with these tiles. Every tile wears the
+   colour of its own document kind — the same colour as its icon — and
+   opens THAT kind's own page. The grid never overflows sideways. */
+.launcher-card .card-head h3 { font-size: 13px; }
+.launcher-card .card-head .sub { font-size: 11.5px; color: var(--muted-fg); font-weight: 600; }
+.kind-launcher { display: grid; grid-template-columns: repeat(auto-fill, minmax(146px, 1fr)); gap: 8px; }
+.kl-tile {
+  position: relative; display: flex; flex-direction: column; align-items: center; gap: 5px;
+  padding: 12px 8px 10px; border-radius: var(--radius); text-align: center;
+  --kt: var(--tone, var(--brand));
+  border: 1.5px solid color-mix(in srgb, var(--kt) 26%, var(--line));
+  background:
+    radial-gradient(130% 120% at 50% 0%, color-mix(in srgb, var(--kt) 16%, #ffffff) 0%, rgba(255, 255, 255, 0) 72%),
+    var(--card-grad);
+  font-family: var(--font-body); cursor: pointer;
+  transition: transform var(--dur), border-color var(--dur), box-shadow var(--dur), background var(--dur);
+}
+.kl-tile:hover { transform: translateY(-2px); border-color: var(--tone); box-shadow: var(--shadow-s); }
+.kl-tile:hover .kl-name { color: var(--tone); }
+.kl-tile .kc-ic { --t: var(--tone, var(--brand)); }
+.kl-name { font-size: 12px; font-weight: 800; color: var(--ink); line-height: 1.35; }
+.kl-count {
+  position: absolute; inset-inline-end: 6px; top: 6px;
+  min-width: 21px; padding: 1px 6px; border-radius: 999px;
+  background: var(--tone); color: #fff; font-size: var(--fs-xs); font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- the chooser: a popup of coloured cards ----------
+   It stands on its own so the editor below wears the colour of the
+   chosen kind with no trace of the other nine. */
+.modal.picker { width: min(1000px, 96vw); max-height: 92vh; border-top-color: var(--brand); }
+.pk-head {
+  display: flex; align-items: center; gap: 11px; flex: none;
+  padding: 12px 18px 10px; border-bottom: 1px solid var(--line);
+  background: linear-gradient(180deg, var(--surface-2), var(--surface));
+}
+.pk-ic { flex: none; --t: var(--brand); }
+.pk-txt { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.pk-txt h3 { margin: 0; padding: 0; font-size: 16px; color: var(--ink); }
+.pk-body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 12px 18px 14px; }
+
+/* ---------- the document page wears the colour of its own kind ---------- */
+.modal.editor {
+  width: min(1320px, 98vw);
+  max-height: 94vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  /* the page itself is tinted in the colour of the document kind */
+  background: var(--tone-bg, var(--card-grad));
+  border: 1px solid var(--tone-bd, var(--line));
+  border-top: 4px solid var(--tone, var(--brand));
+}
 
 /* the direction of an adjustment line (زيادة / عجز) */
 .sign-seg { display: flex; gap: 3px; }
@@ -495,7 +560,7 @@
   display: inline-block; padding: 2px 8px; border-radius: 999px;
   background: var(--accent-050); color: var(--accent-600);
   border: 1px solid var(--accent-100);
-  font-size: 10.5px; font-weight: 800; white-space: nowrap;
+  font-size: var(--fs-xs); font-weight: 800; white-space: nowrap;
 }
 .num-in { text-align: center; font-variant-numeric: tabular-nums; padding: 6px 9px !important; }
 .bucket-seg { display: flex; gap: 3px; }
@@ -547,7 +612,7 @@
 .flow-bar .fl .k.bad { color: var(--bad); }
 .flow-bar .fl .arrow { color: var(--brand); font-weight: 800; font-size: 13px; }
 .flow-bar .fl b { color: var(--ink); }
-.flow-bar .fl em { font-style: normal; color: var(--muted-fg); font-size: 10.5px; }
+.flow-bar .fl em { font-style: normal; color: var(--muted-fg); font-size: var(--fs-xs); }
 .totals-bar b.neg { color: var(--bad); }
 .totals-bar b.pos { color: var(--ok); }
 
@@ -638,13 +703,37 @@
 .upd-fill::after {
   content: ""; position: absolute; inset: 0;
   background: repeating-linear-gradient(115deg, rgba(255, 255, 255, .32) 0 12px, transparent 12px 24px);
-  animation: stripes 1s linear infinite;
 }
 @keyframes stripes { to { transform: translateX(24px); } }
+/* V7 — the stripes used to run for ever: they were animated in EVERY state,
+   so a failed check left a bar that moved on the screen for good. They now
+   move only while the file is really downloading. */
+.upd-bar-wrap.busy .upd-fill::after { animation: stripes 1s linear infinite; }
+/* while the check runs the bar breathes — it must not pretend to be a
+   percentage it does not have */
+.upd-bar-wrap.checking .upd-fill { width: 100% !important; animation: breathe 1.3s ease-in-out infinite; }
+@keyframes breathe { 0%, 100% { opacity: .16; } 50% { opacity: .42; } }
 .upd-meta { display: flex; justify-content: space-between; margin-top: 9px; font-size: 12px; font-weight: 600; color: var(--muted-fg); font-variant-numeric: tabular-nums; }
 .upd-bar-wrap.done .upd-fill { background: linear-gradient(90deg, var(--ok), #4ade80); }
-.upd-bar-wrap.done .upd-fill::after { animation: none; }
 .upd-bar-wrap.err .upd-fill { background: linear-gradient(90deg, var(--bad), #f87171); }
+
+/* ---------------- V7: drop a data file on the window ---------------- */
+.drop-veil {
+  position: fixed; inset: 0; z-index: 120;
+  display: none; align-items: center; justify-content: center;
+  background: rgba(15, 23, 42, .46);
+  backdrop-filter: blur(2px);
+}
+.drop-veil.on { display: flex; }
+.drop-veil-box {
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+  padding: 30px 38px; border-radius: 18px;
+  background: var(--surface); border: 2px dashed var(--brand);
+  box-shadow: 0 20px 60px rgba(15, 23, 42, .32);
+  text-align: center; max-width: 380px;
+}
+.drop-veil-box b { font-family: var(--font-display); font-size: 18px; color: var(--ink); }
+.drop-veil-box span { font-size: 13px; color: var(--muted-fg); font-weight: 600; line-height: 1.7; }
 
 /* ---------------- status bar ---------------- */
 .statusbar {
@@ -652,14 +741,20 @@
   padding: 0 13px;
   background: var(--surface);
   color: var(--muted-fg);
-  font-size: 10.5px; font-weight: 600;
+  font-size: var(--fs-xs); font-weight: 600;
   border-top: 1px solid var(--line);
   -webkit-app-region: no-drag;
+  /* the bar must never push the page sideways — it gives way instead */
+  overflow: hidden;
 }
-.sb-item { white-space: nowrap; }
+.sb-item { white-space: nowrap; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .sb-item b { color: var(--brand-700); }
 .sb-item.dim { color: var(--muted-fg); }
-.sb-spacer { flex: 1; }
+/* the long phase text is the one that shrinks — the numbers on the right
+   keep their full size, so the bar still reads at a narrow window */
+#sbPhase { flex: 0 1 auto; }
+#sbDb, #sbVer { flex: 0 0 auto; }
+.sb-spacer { flex: 1 1 0; min-width: 0; }
 
 /* =====================================================================
    Print preview — the sheet is shown as REAL PAPER on a desk
@@ -700,6 +795,14 @@
   font-size: 11px; font-weight: 700; color: var(--ink-soft);
 }
 .pv-cap b { color: var(--brand-700); }
+.pv-cap .over { color: var(--bad); }
+/* the badge that tells the user the preview IS the printed sheet */
+.pv-fidelity {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 2px 10px; border-radius: 999px;
+  background: var(--ok-bg); border: 1px solid var(--ok-line);
+  color: var(--ok); font-size: 11px; font-weight: 800;
+}
 .print-page {
   position: relative;
   width: 210mm;
@@ -722,7 +825,7 @@
   transform: translateY(-50%);
   padding: 1px 8px; border-radius: 999px;
   background: #eef2f7; border: 1px solid #cbd5e1;
-  font-size: 9.5px; font-weight: 800; color: #64748b;
+  font-size: 11px; font-weight: 800; color: #64748b;
 }
 .pv-zoom { display: inline-flex; align-items: center; gap: 3px; }
 .pv-zoom button {
@@ -762,7 +865,8 @@
   .sheet.half { width: 210mm !important; height: 148mm !important; min-height: 0 !important; }
   .pv-cut { display: none !important; }
   .pv-cap { display: none !important; }
-  @page { size: A4; margin: 0; }
+  /* no @page rule here — the paper rules live in print.css, which is
+     loaded last, because Chromium takes the LAST matching @page rule */
 }
 
 /* =====================================================================
@@ -960,7 +1064,10 @@
 
 /* the title-bar buttons: update + help — each one is a small 3D plate */
 .tb-act {
-  flex: none; padding: 0; border: 0; background: none;
+  /* the button IS the 3D plate — so only the button chrome is reset here.
+     Writing `background: none` here would kill the plate's gradient and
+     leave a white blank in the title bar. */
+  flex: none; padding: 0; border: 0;
   cursor: pointer;
   transition: transform var(--dur) var(--ease), filter var(--dur) var(--ease);
 }
@@ -1030,3 +1137,59 @@
   .pv-scroll { padding: 12px 10px 18px; }
   .pv-bar { padding: 7px 10px; }
 }
+
+/* =====================================================================
+   V6-7 — THE BOXES: bigger, clearer, and never cut off
+   ---------------------------------------------------------------------
+   Three of the customer's wishes land here, and they apply to EVERY
+   box in the program — the cards, the KPI tiles, the table cells, the
+   form fields and the chips:
+
+   · «ايضاح المربعات بشكل اكبر وجعله مناسب لكل مايكتب بداخله»
+     every box grew a notch and its text grew with it, so what is
+     written inside is read at a glance, not squinted at;
+   · «واريد كل المربعات ظاهره من غير تحريك الصفحة يمين وشمال»
+     nothing scrolls sideways any more — the table header wraps and a
+     long text breaks INSIDE its cell, so the list always fits the
+     screen (the table rules live in theme.css, where the table is
+     drawn);
+   · «واريد كل المربعات مميزه وواضحه»
+     each box is now clearly cut from the next one: a firmer border, a
+     deeper shadow and a coloured rule under the title of the card.
+   ===================================================================== */
+
+/* --- the KPI tiles: the numbers are the first thing the eye lands on --- */
+.kpi { padding: 13px 15px; gap: 3px; }
+.kpi .t3d { inset-inline-end: 13px; top: 12px; }
+.k-top { font-size: var(--fs-md); font-weight: 700; padding-inline-end: 38px; }
+.k-val { font-size: 26px; }
+.k-note { font-size: var(--fs-xs); line-height: 1.5; }
+
+/* --- the card title: a coloured rule that marks the box --- */
+.card-head { position: relative; }
+.card-head::before {
+  content: "";
+  position: absolute;
+  inset-inline-start: 0; inset-block: 0;
+  width: 4px;
+  background: linear-gradient(180deg, var(--brand), color-mix(in srgb, var(--brand) 30%, #ffffff));
+  opacity: .85;
+}
+.card-head h3 { font-weight: 800; letter-spacing: -.1px; }
+.card-body.tight { padding: 0; }
+
+/* --- the form fields: the label and the box both grow --- */
+.field > label, .field > span:first-child { font-size: var(--fs-md); }
+.input, .select, textarea.input { padding: 7px 11px; }
+
+/* --- the chips and the badges carry the same scale --- */
+.chip { font-size: var(--fs-xs); }
+.tip { font-size: var(--fs-sm); }
+
+/* --- the nav: the buttons of the sidebar are boxes too --- */
+.nav-item { font-size: 13.5px; padding: 6px 9px; }
+.nav-cap { font-size: 11px; }
+
+/* --- the launcher tiles of the operations screen --- */
+.kl-name { font-size: 12.5px; }
+.kl-count { font-size: 11px; min-width: 22px; }

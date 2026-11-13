@@ -47,15 +47,18 @@ app.whenReady().then(async () => {
       { item_id: item.id, bucket: 'good', pieces: 20, warehouse_id: B.id }
     ]
   });
-  const saleMoves = db.reportQuery({ dateFrom: past, dateTo: past }).rows.filter((r) => r.docNo === 'EXT-100');
+  /* V6: the number the caller sends is the EXTERNAL one — the document gets
+     an internal number of its own, and that is the one the ledger carries. */
+  const saleMoves = db.reportQuery({ dateFrom: past, dateTo: past }).rows.filter((r) => r.docNo === sale.doc_no);
   check('sale moves carry business move_date', saleMoves.length === 2 && saleMoves.every((r) => r.moveDate === past), saleMoves.map((r) => r.moveDate));
+  check('the typed number survives as the external number', sale.external_no === 'EXT-100', sale.external_no);
   check('per-warehouse balance after sale', db.availableInLocation(item.id, A.id, 'good') === 70 && db.availableInLocation(item.id, B.id, 'good') === 30);
 
   // Task 3: reportQuery filters by move_date (past doc excluded from today)
   const todayRep = db.reportQuery({ dateFrom: today, dateTo: today });
-  check('reportQuery today excludes past-date doc', todayRep.rows.every((r) => r.docNo !== 'EXT-100'), todayRep.rows.length);
+  check('reportQuery today excludes past-date doc', todayRep.rows.every((r) => r.docNo !== sale.doc_no), todayRep.rows.length);
   const pastRep = db.reportQuery({ dateFrom: past, dateTo: past });
-  check('reportQuery past includes the doc', pastRep.rows.some((r) => r.docNo === 'EXT-100'));
+  check('reportQuery past includes the doc', pastRep.rows.some((r) => r.docNo === sale.doc_no));
 
   // Task 4: dailyReport for the past date
   const dr = db.dailyReport({ date: past });

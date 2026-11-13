@@ -212,7 +212,7 @@ app.whenReady().then(async () => {
   /* ---------------- the document editor ---------------- */
   await go('transactions');
   await shot('05-transactions');
-  await js(`SamDocs.openEditor(null); 1`);
+  await js(`SamDocs.openEditor(null, 'sale'); 1`);
   await sleep(1000);
   const editorCols = await js(`(() => {
     const ed = [...document.querySelectorAll('.modal.editor')].pop();

@@ -27,7 +27,18 @@ contextBridge.exposeInMainWorld('sam', {
     openPath: (p) => ipcRenderer.invoke('app:openPath', p),
     saveFile: (opts) => ipcRenderer.invoke('app:saveFile', opts || {}),
     saveXlsx: (spec) => ipcRenderer.invoke('app:saveXlsx', spec || {}),
-    relaunch: () => ipcRenderer.invoke('app:relaunch')
+    relaunch: () => ipcRenderer.invoke('app:relaunch'),
+    /* Electron 32 took File.path away — this is the supported way to learn
+       where a file the user dropped actually lives */
+    pathForFile: (file) => {
+      try { return require('electron').webUtils.getPathForFile(file); }
+      catch (e) { return ''; }
+    }
+  },
+  restore: {
+    describe: (p) => ipcRenderer.invoke('restore:describe', p),
+    pick: () => ipcRenderer.invoke('restore:pick'),
+    fromPath: (p) => ipcRenderer.invoke('restore:fromPath', p)
   },
   datadir: {
     info: () => ipcRenderer.invoke('datadir:info'),

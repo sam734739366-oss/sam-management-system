@@ -50,6 +50,8 @@ const API = {
   getDocument: (id) => d.getDocument(id),
   listDocuments: (filter) => d.listDocuments(filter || {}),
   listProdReceipts: (limit) => d.listProdReceipts(limit),
+  listProdIssues: (limit) => d.listProdIssues(limit),
+  documentKindCounts: () => d.documentKindCounts(),
   documentImpact: (id) => d.documentImpact(id),
   deleteDocument: (id) => d.deleteDocument(id),
 
@@ -122,6 +124,8 @@ const PERMS = {
   getDocument: ['transactions', 'view'],
   listDocuments: ['transactions', 'view'],
   listProdReceipts: ['production', 'view'],
+  listProdIssues: ['production', 'view'],
+  documentKindCounts: ['transactions', 'view'],
   productionGap: ['production', 'view'],
   documentImpact: ['transactions', 'delete'],
   saveDocument: (a) => ['transactions', a[0] && a[0].id ? 'edit' : 'add'],

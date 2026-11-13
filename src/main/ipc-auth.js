@@ -11,6 +11,7 @@ const backup = require('./backup');
 const cloudsync = require('./cloudsync');
 const datadir = require('./datadir');
 const db = require('./db');
+const restore = require('./restore');
 
 const RENDERER = path.resolve(__dirname, '..', 'renderer');
 
@@ -70,6 +71,32 @@ module.exports = function registerAuthIpc(getWindow) {
     if (canceled || !filePath) return { ok: false, canceled: true };
     try { return { ok: true, data: await backup.saveCopyTo(filePath) }; }
     catch (err) { return { ok: false, error: err.message }; }
+  });
+
+  /* ---------------- V7: bring a data file back into the program ---------------- */
+  /* the customer has a file from another machine: he picks it, we look at it
+     first, and only then does he confirm the restore */
+  ipcMain.handle('restore:describe', (_e, file) => wrap(() => restore.describe(file)));
+
+  ipcMain.handle('restore:pick', async (e) => {
+    const w = winOf(e);
+    const res = await dialog.showOpenDialog(w, {
+      title: 'اختر ملف البيانات لاستعادته',
+      properties: ['openFile'],
+      defaultPath: app.getPath('documents'),
+      filters: [
+        { name: 'ملف بيانات SAM', extensions: ['db', 'sqlite', 'sqlite3'] },
+        { name: 'كل الملفات', extensions: ['*'] }
+      ]
+    });
+    if (res.canceled || !res.filePaths.length) return { ok: false, canceled: true };
+    try { return { ok: true, data: restore.describe(res.filePaths[0]) }; }
+    catch (err) { return { ok: false, error: err.message }; }
+  });
+
+  ipcMain.handle('restore:fromPath', async (_e, file) => {
+    try { return { ok: true, data: await restore.restoreFrom(file) }; }
+    catch (err) { return { ok: false, error: (err && err.message) ? err.message : String(err) }; }
   });
 
   /* ---------------- Google Drive sync ---------------- */

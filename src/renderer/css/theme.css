@@ -64,30 +64,34 @@
   --c-produce: #0d9488;
   --c-gin: #0e7490;
   --c-gout: #0369a1;
+  --c-issue: #c2410c;
   --c-adjust: #b91c1c;
   --c-ok: #15803d;
   --c-warn: #b45309;
   --c-info: #0369a1;
 
-  /* V5 — the compact scale. One ladder for every size in the program,
-     so a single change here resizes the whole app consistently. */
-  --fs-2xs: 10px;
-  --fs-xs: 10.5px;
-  --fs-sm: 11.5px;
-  --fs-md: 12.5px;      /* the standard body size */
-  --fs-lg: 13.5px;
-  --fs-xl: 16px;
-  --fs-2xl: 19px;
+  /* V6-7 — the scale. One ladder for every size in the program, so a
+     single change here resizes the whole app consistently. The customer
+     asked for the boxes to be BIGGER and clearer, so every step of the
+     ladder moved up a notch: nothing in the program is written smaller
+     than 11px any more. */
+  --fs-2xs: 11px;
+  --fs-xs: 11.5px;
+  --fs-sm: 12px;
+  --fs-md: 13px;      /* the standard body size */
+  --fs-lg: 14px;
+  --fs-xl: 17px;
+  --fs-2xl: 20px;
 
-  --ctl-h: 31px;        /* the standard control height */
-  --ctl-h-sm: 26px;
-  --ctl-h-lg: 37px;
+  --ctl-h: 33px;        /* the standard control height */
+  --ctl-h-sm: 28px;
+  --ctl-h-lg: 39px;
   --ctl-r: 9px;
 
   --gap: 10px;
   --gap-sm: 7px;
-  --pad-card: 13px;
-  --pad-cell: 6px 9px;
+  --pad-card: 15px;
+  --pad-cell: 7px 10px;
 
   /* legacy aliases (blue / teal) */
   --navy-950: #0f172a;
@@ -127,6 +131,8 @@
 
   --font-body: "Tajawal", "Cairo", "Segoe UI", "Tahoma", sans-serif;
   --font-display: "Cairo", "Tajawal", "Segoe UI", "Tahoma", sans-serif;
+  /* the font of the numbers — the digits must line up in a column */
+  --font-mono: "Cascadia Mono", "Consolas", "SF Mono", "Segoe UI Mono", "Courier New", monospace;
 
   --sidebar-w: 226px;
   --titlebar-h: 48px;
@@ -294,9 +300,11 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--brand); width:
 /* ---------- surfaces ---------- */
 .card {
   background: var(--card-grad);
-  border: 1px solid var(--line);
+  /* V6-7 — the box must be CLEARLY separated from the page and from the
+     box next to it: a firmer border and a deeper shadow. */
+  border: 1px solid color-mix(in srgb, var(--line) 45%, #93a6c0);
   border-radius: var(--radius);
-  box-shadow: var(--shadow-s);
+  box-shadow: var(--shadow);
   overflow: hidden;
 }
 .card-head {
@@ -304,9 +312,9 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--brand); width:
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 10px 13px;
+  padding: 11px 15px;
   border-bottom: 1px solid var(--line);
-  background: linear-gradient(180deg, #fbfcfe, #f5f8fc);
+  background: linear-gradient(180deg, #fbfcfe, #f1f6fc);
 }
 .card-head h3 { font-size: var(--fs-lg); color: var(--ink); }
 .card-body { padding: var(--pad-card); }
@@ -322,7 +330,10 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--brand); width:
 .badge.ok { background: var(--ok-bg); color: var(--ok); }
 .badge.bad { background: var(--bad-bg); color: var(--bad); }
 
-/* ---------- tables ---------- */
+/* ---------- tables ----------
+   V6-7: the table must FIT its box. The header wraps, and a long text
+   breaks inside its cell — so a wide list never pushes the table past
+   the edge of the screen and the user never scrolls sideways. */
 .tbl { width: 100%; border-collapse: separate; border-spacing: 0; font-size: var(--fs-lg); }
 .tbl thead th {
   position: sticky; top: 0; z-index: 2;
@@ -333,9 +344,19 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--brand); width:
   font-size: var(--fs-md);
   padding: 7px 9px;
   border-bottom: 1px solid var(--line-strong);
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
+  vertical-align: bottom;
 }
-.tbl tbody td { padding: 6px 9px; border-bottom: 1px solid var(--line); color: var(--ink); }
+.tbl tbody td {
+  padding: var(--pad-cell);
+  border-bottom: 1px solid var(--line);
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+/* a number is never broken in two — it keeps its own line */
+.tbl tbody td.num, .tbl tbody td.qty { overflow-wrap: normal; white-space: nowrap; }
 .tbl tbody tr { cursor: pointer; transition: background var(--dur); }
 .tbl tbody tr:nth-child(even) { background: #fbfdff; }
 .tbl tbody tr:hover { background: var(--brand-050); }
@@ -477,16 +498,22 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--brand); width:
   font-size: 10.5pt;
   -webkit-print-color-adjust: exact; print-color-adjust: exact;
 }
+/* the watermark is a CLIPPING box: the rotated text inside it is wider
+   than the page, but it can never widen the sheet and push a quarter of
+   the paper off the edge. */
 .sheet .wm {
   position: absolute; inset: 0;
   display: grid; place-items: center;
+  overflow: hidden;
   pointer-events: none;
+  -webkit-print-color-adjust: exact; print-color-adjust: exact;
+}
+.sheet .wm span {
   font-family: var(--font-display);
   font-size: 54pt; font-weight: 900; letter-spacing: .04em;
-  color: rgba(30, 41, 59, .04);
+  color: rgba(30, 41, 59, .05);
   transform: rotate(-24deg);
   white-space: nowrap;
-  -webkit-print-color-adjust: exact; print-color-adjust: exact;
 }
 /* --- masthead: brand on the sides, document identity centred above the table --- */
 .sheet .doc-mast { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
@@ -529,7 +556,8 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--brand); width:
 /* dense mode: many report columns still fit one A4 width */
 .sheet .dense table, .sheet.dense table { width: 100% !important; table-layout: fixed; font-size: 8pt !important; }
 .sheet .dense th, .sheet .dense td, .sheet.dense th, .sheet.dense td { padding: 3px 4px; overflow-wrap: anywhere; word-break: break-word; }
-@page landscapeSheet { size: A4 landscape; margin: 0; }
+/* the named @page rules live in print.css — they must be the LAST rules
+   of the cascade, because Chromium takes the last matching @page rule */
 .sheet.landscape { width: 297mm; min-height: 200mm; page: landscapeSheet; }
 .sheet.landscape .sig-band { margin-inline: 2mm; }
 .print-page.land { page: landscapeSheet; }
@@ -538,9 +566,9 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--brand); width:
 /* ---------- half sheet: one permit on half an A4 (A5 landscape) ----------
    Two of these stacked = exactly one A4 page, so the sheet can be cut
    in half and each half carries a complete permit. */
-@page permitSheet { size: A4; margin: 0; }
-.print-page.perm { page: permitSheet; }
-.sheet.half {
+/* the named @page rules live in print.css — they must be the LAST rules
+   of the cascade, because Chromium takes the last matching @page rule */
+.print-page.perm { page: permitSheet; }.sheet.half {
   width: 210mm;
   height: 148mm;
   min-height: 0;
@@ -596,7 +624,8 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--brand); width:
   .sheet.half { width: 210mm; height: 148mm; overflow: hidden; }
   .sheet table.tbl thead { display: table-header-group; }
   .sheet table.tbl tr { break-inside: avoid; page-break-inside: avoid; }
-  @page { size: A4; margin: 0; }
+  /* no @page rule here — it would come after the named pages in
+     print.css and turn every landscape sheet back into a portrait */
 }
 
 .hidden { display: none !important; }
@@ -660,6 +689,7 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--brand); width:
 .t3d.tone-produce{ --t: var(--c-produce); }
 .t3d.tone-gin    { --t: var(--c-gin); }
 .t3d.tone-gout   { --t: var(--c-gout); }
+.t3d.tone-issue  { --t: var(--c-issue); }
 .t3d.tone-adjust { --t: var(--c-adjust); }
 .t3d.tone-ok     { --t: var(--c-ok); }
 .t3d.tone-warn   { --t: var(--c-warn); }

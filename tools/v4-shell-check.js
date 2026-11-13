@@ -367,7 +367,21 @@ app.whenReady().then(async () => {
   await sleep(600);
   await js(`document.querySelector('.nav-item[data-view=transactions]').click(); 1`);
   await sleep(800);
+  /* V6 — a NEW document asks its kind first: the picker is a page of its own */
   await js(`SamDocs.openEditor(null); 1`);
+  await sleep(1000);
+  const picker = await js(`(() => {
+    const pk = [...document.querySelectorAll('.modal.picker')].pop();
+    if (!pk) return null;
+    const tiles = [...pk.querySelectorAll('.pk-tile, .pk-card, .pk-body .t3d')];
+    return { title: (pk.querySelector('h3') || {}).textContent || '', tiles: tiles.length, kinds: tiles.length };
+  })()`);
+  check('a new document asks its kind on a page of its own',
+    !!picker && picker.title.indexOf('نوع المستند') >= 0, picker);
+  await js(`(() => { const m = [...document.querySelectorAll('.overlay .modal')].pop(); if (m) { const b = [...m.querySelectorAll('.modal-foot .btn')].find(x => /إلغاء|إغلاق/.test(x.textContent)); if (b) b.click(); } return 'ok'; })()`);
+  await sleep(500);
+  /* the editor itself opens on a chosen kind */
+  await js(`SamDocs.openEditor(null, 'sale'); 1`);
   await sleep(1000);
   const edFields = await js(`(() => {
     const ed = [...document.querySelectorAll('.modal.editor')].pop();

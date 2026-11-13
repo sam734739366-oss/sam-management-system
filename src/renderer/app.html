@@ -20,6 +20,9 @@
   <link rel="stylesheet" href="css/theme.css" />
   <link rel="stylesheet" href="css/app.css" />
   <link rel="stylesheet" href="css/reports.css" />
+  <!-- MUST stay last: it carries the @page rules, and Chromium takes the
+       last matching @page rule for the paper size. -->
+  <link rel="stylesheet" href="css/print.css" />
 </head>
 <body class="app-body">
 
@@ -31,6 +34,8 @@
     <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.4"/><path d="M2.6 20a6.4 6.4 0 0 1 12.8 0"/><path d="M17.4 5.7a3 3 0 0 1 0 5.4M18.3 14.4A5.6 5.6 0 0 1 21.5 19"/></symbol>
     <symbol id="i-swap" viewBox="0 0 24 24"><path d="M4 8h13l-3.2-3.2M20 16H7l3.2 3.2"/></symbol>
     <symbol id="i-factory" viewBox="0 0 24 24"><path d="M3 21V10l5 3V10l5 3V7l6 3v11z"/><path d="M3 21h18M7 17h2M12 17h2M17 17h2"/></symbol>
+    <!-- V6 — handing goods over to the factory: the arrows point INTO the plant -->
+    <symbol id="i-issue" viewBox="0 0 24 24"><path d="M2.5 21v-10l4.5 2.8v-2.8l4.5 2.8V8.8l4.5 2.8V21z"/><path d="M2.5 21h13.5M6.5 17.5h1.5M11 17.5h1.5M15.5 17.5h.01"/><path d="M21.5 12.5h-6M18.6 9 15.5 12.5l3.1 3.5"/></symbol>
     <symbol id="i-chart" viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15.5l3.5-4 3 2.5L20 8"/></symbol>
     <symbol id="i-day" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4M8 14h2M14 14h2M8 17.5h2"/></symbol>
     <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.5v2.6M12 18.9v2.6M4.2 7.2l2.2 1.3M17.6 15.5l2.2 1.3M4.2 16.8l2.2-1.3M17.6 8.5l2.2-1.3"/></symbol>
@@ -65,6 +70,8 @@
     <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M7 18.5A4.5 4.5 0 0 1 7.6 9.6a5.5 5.5 0 0 1 10.5 1.4A3.8 3.8 0 0 1 17.5 18.5H7z"/><path d="M12 12.5v6M9.8 14.6 12 12.4l2.2 2.2"/></symbol>
     <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4.2l2 2.4h8.8A1.5 1.5 0 0 1 21 9.9v8.6a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18.5z"/></symbol>
     <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.6-5.9"/><path d="M20 3.5V9h-5.5"/></symbol>
+    <!-- V7 — putting the data back: a database with a turning arrow -->
+    <symbol id="i-restore" viewBox="0 0 24 24"><ellipse cx="9.5" cy="7" rx="6" ry="2.6"/><path d="M3.5 7v4.6c0 1.4 2.7 2.6 6 2.6.8 0 1.6-.1 2.3-.2"/><path d="M3.5 11.6V16c0 1.4 2.7 2.6 6 2.6"/><path d="M20.4 14.6a6.2 6.2 0 1 1-2.6-4.9"/><path d="M20.6 6.6v3.6h-3.6"/></symbol>
     <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H11v16H5.5A1.5 1.5 0 0 1 4 18.5z"/><path d="M20 5.5A1.5 1.5 0 0 0 18.5 4H13v16h5.5a1.5 1.5 0 0 0 1.5-1.5z"/></symbol>
     <symbol id="i-clipboard" viewBox="0 0 24 24"><rect x="4.5" y="4.5" width="15" height="17" rx="2"/><path d="M9 4.5V3h6v1.5"/><path d="M8.5 11h7M8.5 15h4.5"/></symbol>
     <symbol id="i-calendar" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="16" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/></symbol>
@@ -98,8 +105,10 @@
         <strong>SAM</strong>
         <span>Management System</span>
       </div>
-      <span class="tb-ver" id="tbVer">v0.5.0</span>
+      <span class="tb-ver" id="tbVer">v0.6.0</span>
       <div class="tb-acts">
+        <button class="tb-act t3d tone-info sm" id="btnPrintScreen" title="طباعة الشاشة الحالية — كل صفحة في البرنامج قابلة للطباعة"><svg class="ic"><use href="#i-print"/></svg></button>
+        <button class="tb-act t3d tone-info sm" id="btnRestoreData" title="استعادة البيانات — اختر ملف بياناتك، أو اسحبه على نافذة البرنامج"><svg class="ic"><use href="#i-restore"/></svg></button>
         <button class="tb-act t3d tone-ok sm" id="btnUpdate" title="تحديث البرنامج — فحص الإصدارات المتاحة"><svg class="ic"><use href="#i-update"/></svg></button>
         <button class="tb-act t3d tone-info sm" id="btnHelp" title="دليل الاستخدام — كل شيء عن البرنامج داخله"><svg class="ic"><use href="#i-help"/></svg></button>
       </div>
@@ -150,8 +159,8 @@
       <div class="side-foot">
         <div class="phase-card">
           <span class="pc-label">إصدار النظام</span>
-          <span class="pc-num">V5</span>
-          <span class="pc-txt">تصميم مضغوط · أيقونات 3D ملوّنة · معاينة طباعة · مزامنة Google Drive</span>
+          <span class="pc-num">V6</span>
+          <span class="pc-txt">استعادة البيانات · فحص تحديث لا يعلّق · شريط يتوقّف دائماً · طباعة A4 كاملة</span>
         </div>
         <div class="shortcut-hint"><b>Ctrl+S</b> حفظ · <b>Ctrl+N</b> جديد · <b>Esc</b> إغلاق</div>
         <div class="wm-tag">SAM 775158678</div>
@@ -213,7 +222,7 @@
         </div>
 
         <div class="card" style="margin-top:16px">
-          <div class="card-head"><h3>ما الذي تغيّر في V5</h3><span class="badge">تحديث شامل</span></div>
+          <div class="card-head"><h3>ما الذي تغيّر في V6</h3><span class="badge">تحديث شامل</span></div>
           <div class="card-body"><ol class="roadmap" id="roadmap"></ol></div>
         </div>
       </section>
@@ -304,7 +313,7 @@
         <div class="view-head">
           <div>
             <h2>العمليات</h2>
-            <p class="sub">مشتريات · مبيعات · مرتجع مبيعات · مرتجع مشتريات · نقل بين المخازن</p>
+            <p class="sub">مشتريات · مبيعات · مرتجع مبيعات · مرتجع مشتريات · نقل بين المخازن · استلام وتوريد الإنتاج · إذن دخول وإذن خروج · تسوية جرد</p>
           </div>
           <div class="view-actions">
             <label class="search"><svg class="ic"><use href="#i-search"/></svg><input id="docSearch" class="input" placeholder="بحث برقم المستند أو الطرف…" /></label>
@@ -312,17 +321,32 @@
           </div>
         </div>
 
+        <!-- ---------- the launcher: one page per document kind ----------
+             Every tile wears the colour of its own kind and opens THAT
+             kind's own page — no shared grey editor, no grid of ten
+             cards inside the form. -->
+        <div class="card launcher-card">
+          <div class="card-head">
+            <h3>صفحات المستندات — اضغط على النوع لتفتح صفحته</h3>
+            <span class="sub">كل نوع بلون أيقونته ولون خلفيته</span>
+          </div>
+          <div class="card-body tight">
+            <div class="kind-launcher" id="docKinds"></div>
+          </div>
+        </div>
+
         <div class="tabs" id="docTabs">
           <button class="tab active" data-kind="">الكل</button>
           <button class="tab" data-kind="purchase"><span class="t3d xs tone-buy"><svg class="ic"><use href="#i-cart"/></svg></span><span class="btn-txt">مشتريات</span></button>
-          <button class="tab" data-kind="sale"><span class="t3d xs tone-move"><svg class="ic"><use href="#i-box"/></svg></span><span class="btn-txt">مبيعات</span></button>
+          <button class="tab" data-kind="sale"><span class="t3d xs tone-sell"><svg class="ic"><use href="#i-box"/></svg></span><span class="btn-txt">مبيعات</span></button>
           <button class="tab" data-kind="sale_return"><span class="t3d xs tone-sreturn"><svg class="ic"><use href="#i-return"/></svg></span><span class="btn-txt">مرتجع مبيعات</span></button>
-          <button class="tab" data-kind="purchase_return"><span class="t3d xs tone-sreturn"><svg class="ic"><use href="#i-return"/></svg></span><span class="btn-txt">مرتجع مشتريات</span></button>
+          <button class="tab" data-kind="purchase_return"><span class="t3d xs tone-pretn"><svg class="ic"><use href="#i-return"/></svg></span><span class="btn-txt">مرتجع مشتريات</span></button>
           <button class="tab" data-kind="transfer"><span class="t3d xs tone-move"><svg class="ic"><use href="#i-truck"/></svg></span><span class="btn-txt">نقل بين المخازن</span></button>
           <button class="tab" data-kind="prod_receipt"><span class="t3d xs tone-produce"><svg class="ic"><use href="#i-factory"/></svg></span><span class="btn-txt">سند استلام الإنتاج</span></button>
+          <button class="tab" data-kind="prod_issue"><span class="t3d xs tone-issue"><svg class="ic"><use href="#i-issue"/></svg></span><span class="btn-txt">سند توريد الإنتاج</span></button>
           <button class="tab" data-kind="gate_in"><span class="t3d xs tone-gin"><svg class="ic"><use href="#i-gate-in"/></svg></span><span class="btn-txt">إذن إدخال</span></button>
           <button class="tab" data-kind="gate_out"><span class="t3d xs tone-gout"><svg class="ic"><use href="#i-gate-out"/></svg></span><span class="btn-txt">إذن خروج</span></button>
-          <button class="tab" data-kind="adjustment"><span class="t3d xs tone-sell"><svg class="ic"><use href="#i-scale"/></svg></span><span class="btn-txt">تسوية جرد</span></button>
+          <button class="tab" data-kind="adjustment"><span class="t3d xs tone-adjust"><svg class="ic"><use href="#i-scale"/></svg></span><span class="btn-txt">تسوية جرد</span></button>
         </div>
 
         <div class="card">
@@ -347,10 +371,11 @@
         <div class="view-head">
           <div>
             <h2>الإنتاج</h2>
-            <p class="sub">سند استلام الإنتاج يزيد الرصيد · التقرير اليومي توثيقي بلا أثر · العجز والتالف قسم مستقل</p>
+            <p class="sub">سند استلام الإنتاج يزيد الرصيد · سند توريد الإنتاج يخفضه (البضاعة تخرج من المخزن) · التقرير اليومي توثيقي بلا أثر · العجز والتالف قسم مستقل</p>
           </div>
           <div class="view-actions">
             <button class="btn btn-primary" id="btnNewProdReceipt"><span class="t3d xs tone-produce"><svg class="ic"><use href="#i-factory"/></svg></span><span class="btn-txt">سند استلام الإنتاج</span></button>
+            <button class="btn btn-primary" id="btnNewProdIssue"><span class="t3d xs tone-issue"><svg class="ic"><use href="#i-issue"/></svg></span><span class="btn-txt">سند توريد الإنتاج</span></button>
             <button class="btn btn-ghost" id="btnNewIssue"><span class="t3d xs tone-gout"><svg class="ic"><use href="#i-swap"/></svg></span><span class="btn-txt">صرف خام جديد</span></button>
             <button class="btn btn-ghost" id="btnNewTolling"><span class="t3d xs tone-produce"><svg class="ic"><use href="#i-tolling"/></svg></span><span class="btn-txt">نفخ للغير</span></button>
             <button class="btn btn-ghost" id="btnNewReceipt"><span class="t3d xs tone-produce"><svg class="ic"><use href="#i-factory"/></svg></span><span class="btn-txt">تقرير إنتاج يومي</span></button>
@@ -394,6 +419,7 @@
         <div class="tabs" id="prodTabs">
           <button class="tab active" data-tab="issues">صرف المواد الخام</button>
           <button class="tab" data-tab="prodreceipts"><span class="t3d xs tone-produce"><svg class="ic"><use href="#i-factory"/></svg></span><span class="btn-txt">سند استلام الإنتاج</span></button>
+          <button class="tab" data-tab="prodissues"><span class="t3d xs tone-issue"><svg class="ic"><use href="#i-issue"/></svg></span><span class="btn-txt">سند توريد الإنتاج</span></button>
           <button class="tab" data-tab="receipts">تقارير الإنتاج</button>
           <button class="tab" data-tab="gap"><span class="t3d xs tone-sell"><svg class="ic"><use href="#i-scale"/></svg></span><span class="btn-txt">العجز والتالف</span></button>
           <button class="tab" data-tab="tolling">النفخ للغير</button>
@@ -416,6 +442,24 @@
               </table>
             </div>
             <div class="empty" id="prodDocsEmpty"></div>
+          </div>
+        </div>
+
+        <div class="card hidden" id="prodissuesPanel">
+          <div class="card-head">
+            <h3>سندات توريد الإنتاج — ما خرج من المخزون فعلياً</h3>
+            <button class="btn btn-sm btn-primary" id="btnNewProdIssue2"><span class="t3d xs tone-issue"><svg class="ic"><use href="#i-issue"/></svg></span><span class="btn-txt">سند توريد جديد</span></button>
+          </div>
+          <div class="card-body tight">
+            <div class="tbl-wrap tall">
+              <table class="tbl" id="prodIssueDocsTbl">
+                <thead><tr>
+                  <th>#</th><th>الرقم الداخلي</th><th>الرقم الخارجي</th><th>التاريخ</th><th>المخازن</th><th>الأسطر</th><th>إجمالي الحبة</th>
+                </tr></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+            <div class="empty" id="prodIssueDocsEmpty"></div>
           </div>
         </div>
 
@@ -593,7 +637,7 @@
         <div class="card" style="margin-top:14px">
           <div class="card-head">
             <h3>الصنف × المخزن</h3>
-            <span class="badge accent">دخل اليوم · المتبقي</span>
+            <span class="badge accent">وارد · صادر · المتبقي</span>
           </div>
           <div class="card-body tight">
             <div class="tbl-wrap tall"><table class="tbl" id="dailyTbl"></table></div>
@@ -608,7 +652,7 @@
             <div class="tbl-wrap"><table class="tbl" id="dailySumTbl"></table></div>
           </div>
         </div>
-        <p class="foot-note">«دخل اليوم» من حركات تاريخ اليوم فقط، و«المتبقي» رصيد الصنف في المخزن بعد كل الحركات. المجموع في أسفل كل مخزن، والصف الأخير هو إجمالي كل المخازن.</p>
+        <p class="foot-note">«وارد اليوم» و«صادر اليوم» من حركات تاريخ اليوم فقط، و«المتبقي» رصيد الصنف في المخزن بعد كل الحركات. المجموع في أسفل كل مخزن، والصف الأخير هو إجمالي كل المخازن.</p>
       </section>
 
       <!-- ---------- settings ---------- -->
@@ -684,13 +728,15 @@
                   <button class="btn btn-gold" id="btnBackupNow"><span class="t3d xs tone-info"><svg class="ic"><use href="#i-db"/></svg></span><span class="btn-txt">حفظ نسخة الآن</span></button>
                   <button class="btn btn-ghost" id="btnBackupSaveAs">حفظ نسخة في مكان آخر…</button>
                   <button class="btn btn-ghost" id="btnBackupFolder">فتح مجلد النسخ</button>
+                  <button class="btn btn-primary" id="btnRestoreFile"><span class="t3d xs tone-ok"><svg class="ic"><use href="#i-restore"/></svg></span><span class="btn-txt">استعادة من ملف…</span></button>
                 </div>
                 <div class="tbl-wrap" style="margin-top:14px;max-height:220px">
                   <table class="tbl" id="backupsTbl">
-                    <thead><tr><th>الملف</th><th>الحجم</th><th>التاريخ</th></tr></thead>
+                    <thead><tr><th>الملف</th><th>الحجم</th><th>التاريخ</th><th></th></tr></thead>
                     <tbody></tbody>
                   </table>
                 </div>
+                <p class="foot-note">«استعادة من ملف…» تُعيد ملف بيانات إلى البرنامج: تُؤخذ نسخة من بياناتك الحالية أولاً فلا شيء يضيع. ويمكنك أيضاً سحب الملف على نافذة البرنامج.</p>
               </div>
             </div>
             <div class="card">
@@ -716,8 +762,10 @@
                   <button class="btn btn-ghost" id="btnOpenDataDir"><span class="t3d xs tone-gout"><svg class="ic"><use href="#i-out"/></svg></span><span class="btn-txt">فتح المجلد</span></button>
                   <button class="btn btn-ghost" id="btnResetDataDir"><span class="t3d xs tone-info"><svg class="ic"><use href="#i-refresh"/></svg></span><span class="btn-txt">العودة للمجلد الافتراضي</span></button>
                   <button class="btn btn-ghost" id="btnExportDataDir"><span class="t3d xs tone-plain"><svg class="ic"><use href="#i-archive"/></svg></span><span class="btn-txt">حفظ نسخة في مكان آخر</span></button>
+                  <button class="btn btn-primary" id="btnRestoreDataDir"><span class="t3d xs tone-ok"><svg class="ic"><use href="#i-restore"/></svg></span><span class="btn-txt">استعادة بيانات من ملف…</span></button>
                 </div>
                 <p class="foot-note">تُنسخ قاعدة البيانات إلى المجلد الجديد فوراً، وتبقى النسخة القديمة سليمة كنسخة احتياطية. التغيير يُطبَّق بالكامل عند إعادة تشغيل البرنامج — بياناتك لا تُفقد أبداً.</p>
+                <p class="foot-note">«استعادة بيانات من ملف…» تضع ملف بيانات جديداً مكان الحالي: تُؤخذ نسخة احتياطية من بياناتك أولاً، ثم يُعاد تشغيل البرنامج على البيانات المستعادة.</p>
               </div>
             </div>
             <div class="card">
@@ -782,7 +830,7 @@
   <!-- ===================== status bar ===================== -->
   <footer class="statusbar">
     <span class="sb-item"><b>SAM</b> 775158678</span>
-    <span class="sb-item dim" id="sbPhase">V5 — تصميم مضغوط · أيقونات 3D · معاينة طباعة · مزامنة Google Drive</span>
+    <span class="sb-item dim" id="sbPhase">V6 — استعادة البيانات · فحص تحديث لا يعلّق · شريط يتوقّف دائماً · طباعة A4 كاملة</span>
     <span class="sb-spacer"></span>
     <span class="sb-item dim" id="sbDb">—</span>
     <span class="sb-item dim" id="sbVer">Electron —</span>
@@ -791,11 +839,21 @@
   <div class="toasts" id="toasts"></div>
   <div class="busy" id="busyPill"><span class="spin"></span><span>جارٍ التحميل…</span></div>
 
+  <!-- V7 — the customer drops his data file on the window -->
+  <div id="dropRestore" class="drop-veil">
+    <div class="drop-veil-box">
+      <span class="t3d lg tone-ok"><svg class="ic"><use href="#i-restore"/></svg></span>
+      <b>أفلت ملف البيانات هنا</b>
+      <span>ستُؤخذ نسخة احتياطية من بياناتك الحالية، ثم تُستعاد البيانات من الملف.</span>
+    </div>
+  </div>
+
   <!-- print host: only visible while printing -->
   <div id="printHost" class="print-host"></div>
 
   <script src="js/db.js"></script>
   <script src="js/ui.js"></script>
+  <script src="js/restore.js"></script>
   <script src="js/combobox.js"></script>
   <script src="js/suggest.js"></script>
   <script src="js/particles.js"></script>
@@ -811,6 +869,7 @@
   <script src="js/settings.js"></script>
   <script src="js/guide.js"></script>
   <script src="js/updatewin.js"></script>
+  <script src="js/printscreen.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

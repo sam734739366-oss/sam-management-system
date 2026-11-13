@@ -14,7 +14,7 @@
     confirmHardDelete, confirmWarning, emptyState, toggleEmpty, tableHtml, printPreview
   } = SamUI;
 
-  const state = { items: [], warehouses: [], parties: [], issues: [], receipts: [], tolling: [], scrap: [], archive: [], routing: {}, prodDocs: [], gap: null, tab: 'issues' };
+  const state = { items: [], warehouses: [], parties: [], issues: [], receipts: [], tolling: [], scrap: [], archive: [], routing: {}, prodDocs: [], prodIssueDocs: [], gap: null, tab: 'issues' };
   let rt = null;
 
   /* An edit carries today's date, never the date the record was first made.
@@ -36,7 +36,7 @@
   /* ---------------- load ---------------- */
   async function load() {
     try {
-      const [items, whs, parties, issues, receipts, routing, tolling, scrap, archive, prodDocs] = await Promise.all([
+      const [items, whs, parties, issues, receipts, routing, tolling, scrap, archive, prodDocs, prodIssueDocs] = await Promise.all([
         SamDB.call('listItems', ''),
         SamDB.call('listWarehouses'),
         SamDB.call('listParties', ''),
@@ -46,9 +46,10 @@
         SamDB.call('listTolling', 200),
         SamDB.call('listScrap', { limit: 300 }),
         SamDB.call('listArchive', 300),
-        SamDB.call('listProdReceipts', 200)
+        SamDB.call('listProdReceipts', 200),
+        SamDB.call('listProdIssues', 200)
       ]);
-      Object.assign(state, { items, warehouses: whs, parties, issues, receipts, routing, tolling, scrap, archive, prodDocs });
+      Object.assign(state, { items, warehouses: whs, parties, issues, receipts, routing, tolling, scrap, archive, prodDocs, prodIssueDocs });
       initRoutingUI();
       renderIssues();
       renderReceipts();
@@ -56,6 +57,7 @@
       renderScrap();
       renderArchive();
       renderProdDocs();
+      renderProdIssueDocs();
       await loadGap();
     } catch (e) { toast(e.message, 'bad'); }
   }
@@ -1196,6 +1198,42 @@
     toggleEmpty('prodDocsEmpty', state.prodDocs.length > 0);
   }
 
+  /* ---------------- سندات توريد الإنتاج ----------------
+     The mirror of «سند استلام الإنتاج»: here the pieces LEAVE the
+     warehouse for the factory, so the voucher lowers the balance. The
+     list shows the internal number, the number of the paper it came
+     from, and the warehouses it emptied. */
+  function renderProdIssueDocs() {
+    const tb = document.querySelector('#prodIssueDocsTbl tbody');
+    if (!tb) return;
+    tb.innerHTML = '';
+    state.prodIssueDocs.forEach((d, idx) => {
+      const tr = el('tr');
+      tr.innerHTML = `
+        <td class="num">${idx + 1}</td>
+        <td class="mono"><b>${esc(d.doc_no)}</b></td>
+        <td class="mono sub">${esc(d.external_no || '—')}</td>
+        <td>${esc(d.doc_date)}</td>
+        <td>${esc(d.warehouseNames || '—')}</td>
+        <td class="num">${SamDB.fmt(d.lineCount)}</td>
+        <td class="num qty minus">${SamDB.fmt(d.totalPieces)}</td>`;
+      bindRow(tr, {
+        view: () => SamDocs.viewDoc(d.id),
+        edit: () => SamDocs.openEditor(d.id),
+        del: () => SamDocs.removeDoc(d)
+      });
+      tb.appendChild(tr);
+    });
+    emptyState('prodIssueDocsEmpty', {
+      icon: 'i-issue',
+      title: 'لا توجد سندات توريد إنتاج',
+      hint: 'السند هو المستند الذي يخفض رصيد المخزن حين تخرج البضاعة إلى الإنتاج — اختر المخزن لكل سطر، وبعد الحفظ اطبع تصريح التوريد.',
+      actionLabel: 'سند توريد جديد',
+      onAction: () => SamDocs.openEditor(null, 'prod_issue')
+    });
+    toggleEmpty('prodIssueDocsEmpty', state.prodIssueDocs.length > 0);
+  }
+
   /* ---------------- العجز والتالف — the documentation section ----------------
      Its own section, its own table, its own printed report and its own
      Excel export — exactly like a separate department inside the program,
@@ -1368,7 +1406,7 @@
   }
 
   /* ---------------- tabs + wiring ---------------- */
-  const PANELS = ['issues', 'receipts', 'tolling', 'scrap', 'archive', 'prodreceipts', 'gap'];
+  const PANELS = ['issues', 'receipts', 'tolling', 'scrap', 'archive', 'prodreceipts', 'prodissues', 'gap'];
   function showTab(tab) {
     state.tab = tab;
     document.querySelectorAll('#prodTabs .tab').forEach((x) => x.classList.toggle('active', x.dataset.tab === tab));
@@ -1384,6 +1422,7 @@
     if (state.tab === 'tolling') return openTollingForm(null);
     if (state.tab === 'archive') return openArchiveForm(null);
     if (state.tab === 'prodreceipts') return SamDocs.openEditor(null, 'prod_receipt');
+    if (state.tab === 'prodissues') return SamDocs.openEditor(null, 'prod_issue');
     if (state.tab === 'gap') return loadGap();
     return openIssueForm(null);
   }
@@ -1396,6 +1435,10 @@
   if (btnNewProdReceipt) btnNewProdReceipt.addEventListener('click', () => SamDocs.openEditor(null, 'prod_receipt'));
   const btnNewProdReceipt2 = document.getElementById('btnNewProdReceipt2');
   if (btnNewProdReceipt2) btnNewProdReceipt2.addEventListener('click', () => SamDocs.openEditor(null, 'prod_receipt'));
+  const btnNewProdIssue = document.getElementById('btnNewProdIssue');
+  if (btnNewProdIssue) btnNewProdIssue.addEventListener('click', () => SamDocs.openEditor(null, 'prod_issue'));
+  const btnNewProdIssue2 = document.getElementById('btnNewProdIssue2');
+  if (btnNewProdIssue2) btnNewProdIssue2.addEventListener('click', () => SamDocs.openEditor(null, 'prod_issue'));
   const btnPrintGap = document.getElementById('btnPrintGap');
   if (btnPrintGap) btnPrintGap.addEventListener('click', printGap);
   const btnExcelGap = document.getElementById('btnExcelGap');

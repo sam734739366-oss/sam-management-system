@@ -56,7 +56,7 @@ module.exports = function registerIpc(getWindow) {
   ipcMain.handle('win:print', async (e, opts = {}) => {
     const w = fromEvent(e);
     if (!w) return { ok: false, error: 'لا توجد نافذة للطباعة' };
-    const { landscape, deviceName, copies, silent, pageSize, margins, ...rest } = opts || {};
+    const { landscape, deviceName, copies, silent, pageSize, margins, preferCSSPageSize, ...rest } = opts || {};
     const printOptions = {
       silent: silent === true,
       printBackground: true,
@@ -66,12 +66,15 @@ module.exports = function registerIpc(getWindow) {
       ...(margins ? { margins } : {}),
       ...rest
     };
-    /* When the document drives the paper (preferCSSPageSize), Chromium must
-       not be told "portrait" as well — the CSS named pages decide whether
-       the sheet is portrait, landscape or a half permit. */
-    if (printOptions.preferCSSPageSize !== true) {
-      printOptions.landscape = !!landscape;
-    }
+    /* The PRINTER path never reads the CSS page size — Chromium takes the
+       paper from these settings. The orientation must therefore always be
+       passed here: without it a landscape sheet is printed on a portrait
+       page and a quarter of it is cut off (the document is RTL, so the
+       overflow is clipped on the left).
+       `preferCSSPageSize` is a printToPDF-only option and is dropped here
+       on purpose. */
+    printOptions.landscape = !!landscape;
+    printOptions.pageSize = pageSize || 'A4';
     return new Promise((resolve) => {
       let settled = false;
       const done = (payload) => { if (!settled) { settled = true; resolve(payload); } };
@@ -129,10 +132,14 @@ module.exports = function registerIpc(getWindow) {
          named pages `landscapeSheet` / `permitSheet`), so the PDF is
          exactly the sheet the user previewed. The margins must be zero,
          otherwise the printed area shrinks and a half-permit no longer
-         fits its half of the A4 page. */
+         fits its half of the A4 page.
+         `preferCSSPageSize` makes Chromium read that CSS — without it the
+         PDF falls back to a portrait A4 and the landscape sheets lose a
+         quarter of the page. */
       const data = await w.webContents.printToPDF({
         printBackground: true,
         preferCSSPageSize: opts.preferCSSPageSize !== false,
+        landscape: !!opts.landscape,
         marginType: 'none'
       });
       fs.writeFileSync(filePath, data);

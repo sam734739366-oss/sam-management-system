@@ -375,8 +375,14 @@ app.whenReady().then(async () => {
     return pdfBoxes(data);
   })();
   log('   report PDF boxes: ' + JSON.stringify(reportPdf));
-  check('the report of their data prints on A4 paper', reportPdf.length >= 1
-    && Math.abs(reportPdf[0][0] - 595) <= 3, reportPdf);
+  /* the movement report is WIDE — it prints on a full A4 page turned on its
+     side (842×595). What must never happen is a cut page: a quarter of the
+     sheet (595×421) is the old bug. */
+  const isFullA4 = (b) => (Math.abs(b[0] - 595) <= 3 && Math.abs(b[1] - 842) <= 3)
+    || (Math.abs(b[0] - 842) <= 3 && Math.abs(b[1] - 595) <= 3);
+  check('the report of their data prints on a full A4 page', reportPdf.length >= 1
+    && isFullA4(reportPdf[0]), reportPdf);
+  check('no page of the report is cut', reportPdf.every((b) => b[0] * b[1] > 595 * 842 * 0.9), reportPdf);
 
   /* ================= 8. the pages stay flexible ================= */
   const widths = [1440, 1180, 940, 760];
@@ -389,7 +395,27 @@ app.whenReady().then(async () => {
       const wide = [...document.querySelectorAll('.view')].filter((v) => v.offsetParent !== null)
         .map((v) => ({ id: v.id, sw: v.scrollWidth, cw: v.clientWidth }))
         .filter((v) => v.sw > v.cw + 2);
-      return { w: window.innerWidth, pageOverflow: doc.scrollWidth > window.innerWidth + 2, wide };
+      /* WHO sticks out of the window? the page must never scroll sideways */
+      const over = [...document.querySelectorAll('body *')].map((n) => {
+        if (!n.getClientRects().length) return null;
+        const b = n.getBoundingClientRect();
+        const cs = getComputedStyle(n);
+        return {
+          tag: n.tagName, id: n.id || null,
+          cls: (n.className || '').toString().slice(0, 46),
+          pos: cs.position, disp: cs.display,
+          right: Math.round(b.right), w: Math.round(b.width),
+          sw: n.scrollWidth, cw: n.clientWidth
+        };
+      }).filter(Boolean).filter((x) => x.right > window.innerWidth + 2 || x.sw > x.cw + 2)
+        .sort((a, b) => (b.right - b.right) || (b.sw - b.cw) - (a.sw - a.cw))
+        .slice(0, 10);
+      return {
+        w: window.innerWidth, docSW: doc.scrollWidth, docCW: doc.clientWidth,
+        bodyW: Math.round(document.body.getBoundingClientRect().width),
+        bodySW: document.body.scrollWidth,
+        pageOverflow: doc.scrollWidth > window.innerWidth + 2, wide, over
+      };
     })()`);
     flex.push(r);
     await shot(`10-flex-${w}-real`, 400);

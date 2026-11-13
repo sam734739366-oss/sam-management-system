@@ -210,13 +210,13 @@ app.whenReady().then(async () => {
     db.availableInLocation(IT.id, A.id, 'good') === 100 && db.availableInLocation(IT.id, B.id, 'good') === 50,
     { A: db.availableInLocation(IT.id, A.id, 'good'), B: db.availableInLocation(IT.id, B.id, 'good') });
 
-  /* ---- (a) the nine document kinds ---- */
+  /* ---- (a) the ten document kinds ---- */
   const KINDS = ['purchase', 'sale', 'sale_return', 'purchase_return', 'transfer',
-    'prod_receipt', 'gate_in', 'gate_out', 'adjustment'];
-  check('DOC_KINDS exposes 9 kinds', Object.keys(db.DOC_KINDS || {}).length === 9, Object.keys(db.DOC_KINDS || {}));
+    'prod_receipt', 'prod_issue', 'gate_in', 'gate_out', 'adjustment'];
+  check('DOC_KINDS exposes 10 kinds', Object.keys(db.DOC_KINDS || {}).length === 10, Object.keys(db.DOC_KINDS || {}));
   const docSql = rawGet(file, "SELECT sql FROM sqlite_master WHERE type='table' AND name='documents'").sql;
-  check('documents CHECK allows the 4 new kinds',
-    ['prod_receipt', 'gate_in', 'gate_out', 'adjustment'].every((k) => docSql.includes(`'${k}'`)), null);
+  check('documents CHECK allows the 5 new kinds',
+    ['prod_receipt', 'prod_issue', 'gate_in', 'gate_out', 'adjustment'].every((k) => docSql.includes(`'${k}'`)), null);
 
   const saved = {};
   for (const kind of KINDS) {

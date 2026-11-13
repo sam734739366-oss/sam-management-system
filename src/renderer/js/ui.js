@@ -32,6 +32,7 @@
     'i-user': 'tone-sreturn',
     'i-swap': 'tone-gout',
     'i-factory': 'tone-produce',
+    'i-issue': 'tone-issue',
     'i-day': 'tone-gin',
     'i-chart': 'tone-pretn',
     'i-gear': 'tone-plain',
@@ -419,7 +420,7 @@
     const now = new Date().toLocaleString('ar-EG-u-nu-latn');
     const meta = o.head || [];
     s.innerHTML = `
-      <div class="wm">${esc(WATERMARK)}</div>
+      <div class="wm"><span>${esc(WATERMARK)}</span></div>
       <header class="doc-mast">
         <div class="m-side">
           <div><b>SAM</b> — 775158678</div>
@@ -516,7 +517,8 @@
       const ov = el('div', 'pv no-print');
       const bar = el('div', 'pv-bar');
       bar.innerHTML = `<span class="t">معاينة قبل الطباعة</span>
-        <span class="pv-note">${esc(opts.title || '')} — ${land ? 'A4 عرضي' : 'A4'}${pageCount > 1 ? ` — ${pageCount} صفحات` : ''}</span>`;
+        <span class="pv-note">${esc(opts.title || '')} — ${land ? 'A4 عرضي' : 'A4'}${pageCount > 1 ? ` — ${pageCount} صفحات` : ''}</span>
+        <span class="pv-fidelity" title="المعاينة بمقاس الورقة الحقيقي — ما تراه هنا هو ما سيُطبع">مطابق للمطبوع</span>`;
 
       /* zoom: the preview is scaled to fit the window, and the user can
          zoom in/out to check every detail before printing */
@@ -548,6 +550,25 @@
         });
       };
       fitHalves();
+
+      /* The preview must be honest: it shows the REAL paper, so the user
+         sees exactly what the printer will deliver. When the content does
+         not fit the sheet, the preview says so instead of quietly cutting
+         a corner off. */
+      const MM = 96 / 25.4;
+      const overflowing = [];
+      built.querySelectorAll('.print-page').forEach((p, i) => {
+        const paperMm = p.classList.contains('land') ? 210 : 297;
+        const used = [...p.querySelectorAll('.sheet')].reduce((a, s) => a + s.offsetHeight, 0);
+        if (used > paperMm * MM + 2) overflowing.push(i + 1);
+      });
+      if (overflowing.length) {
+        built.querySelectorAll('.pv-frame').forEach((f, i) => {
+          if (!overflowing.includes(i + 1)) return;
+          const cap = f.querySelector('.pv-cap');
+          if (cap) cap.insertAdjacentHTML('beforeend', ' — <b class="over">⚠ المحتوى يتجاوز الورقة</b>');
+        });
+      }
 
       let zoomPct = 100;
       let fitMode = true;
@@ -638,12 +659,14 @@
     const release = stageForPrint(node);
     if (!release) return { ok: false };
     try {
-      /* The paper size comes from the CSS itself (@page + the named pages
-         `landscapeSheet` / `permitSheet`), and Chromium is told to prefer
-         it. The old code forced a custom pageSize of 29700×21000 — those
-         numbers are microns, so the sheet came out 100× too small and the
-         printer refused the job. */
-      const printOpts = { preferCSSPageSize: true };
+      /* The paper comes from TWO places and both must agree:
+         · the PDF path (printToPDF) reads the CSS page — print.css owns
+           the @page rules, so the sheet comes out at the right size;
+         · the printer path (webContents.print) does NOT read the CSS page
+           at all — Chromium takes the paper from the print settings, so
+           the orientation has to be passed here or a landscape sheet is
+           printed on a portrait page and a quarter of it is cut off. */
+      const printOpts = { landscape: !!opts.landscape, pageSize: 'A4' };
       if (opts.deviceName) printOpts.deviceName = opts.deviceName;
       if (opts.copies) printOpts.copies = opts.copies;
       const r = await global.sam.win.print(printOpts);
