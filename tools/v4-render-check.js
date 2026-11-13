@@ -225,7 +225,7 @@ app.whenReady().then(async () => {
   check('every card owns its own colour', grid && new Set(grid.tones).size === 10, grid && grid.tones);
   check('the names are the ten document kinds',
     grid && JSON.stringify(grid.names) === JSON.stringify(['مشتريات', 'مبيعات', 'مرتجع مبيعات', 'مرتجع مشتريات',
-      'نقل بين المخازن', 'سند استلام الإنتاج', 'سند توريد الإنتاج', 'إذن إدخال', 'إذن خروج', 'تسوية جرد']), grid && grid.names);
+      'نقل بين المخازن', 'استلام المنتج التام', 'صرف خام إلى الإنتاج', 'إذن إدخال', 'إذن خروج', 'تسوية جرد']), grid && grid.names);
   check('a brand-new document selects nothing yet', grid && grid.on === 0, grid && grid.on);
   await shot('01-kind-grid');
 
@@ -262,9 +262,9 @@ app.whenReady().then(async () => {
   await js(`(() => { const pk = [...document.querySelectorAll('.modal.picker')].pop(); if (pk) { const b = [...pk.querySelectorAll('.modal-foot .btn')].find(x => /إلغاء/.test(x.textContent)); if (b) b.click(); } return 1; })()`);
   await sleep(400);
 
-  await pickKind('سند استلام الإنتاج');
+  await pickKind('استلام المنتج التام');
   const h2 = await headOf();
-  check('choosing another kind changes the header title', h2 && h2.chip === 'سند استلام الإنتاج', h2);
+  check('choosing another kind changes the header title', h2 && h2.chip === 'استلام المنتج التام', h2);
   check('the header badge follows the kind icon', h2 && h2.badge === '#i-factory' && h2.chipIcon === '#i-factory', h2);
   check('the header colour follows the kind', h2 && h2.tone === 'tone-produce' && h2.chipTone === 'tone-produce', h2);
   check('the header of one kind differs from another', h1 && h2 && h1.badge !== h2.badge && h1.tone !== h2.tone, { h1, h2 });
@@ -389,7 +389,7 @@ app.whenReady().then(async () => {
   await js(`document.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })); 1`);
 
   /* ================= 7. saving a production receipt ================= */
-  await pickKind('سند استلام الإنتاج');
+  await pickKind('استلام المنتج التام');
   const before = dbMod.availableInLocation(item1.id, whA.id, 'good', null);
   await pickCombo('.modal.editor .lines-tbl tbody tr:first-child .item-c .combo', '0001');
   await pickCombo('.modal.editor .lines-tbl tbody tr:first-child .wh-c .combo', 'W-A');
@@ -497,7 +497,7 @@ app.whenReady().then(async () => {
     const tabs = [...document.querySelectorAll('#prodTabs .tab')].map(t => t.dataset.tab);
     return { label: b ? b.textContent.trim() : null, tabs, primary: b ? b.classList.contains('btn-primary') : false };
   })()`);
-  check('the production screen offers the production receipt', prodBtns && /سند استلام الإنتاج/.test(prodBtns.label || ''), prodBtns && prodBtns.label);
+  check('the production screen offers the production receipt', prodBtns && /استلام المنتج التام/.test(prodBtns.label || ''), prodBtns && prodBtns.label);
   check('the production screen has its own tabs', prodBtns && prodBtns.tabs.includes('prodreceipts') && prodBtns.tabs.includes('gap'), prodBtns && prodBtns.tabs);
 
   /* the button opens the document editor already on the production kind */
@@ -513,7 +513,7 @@ app.whenReady().then(async () => {
       routeVisible: route ? getComputedStyle(route).display !== 'none' : false
     };
   })()`);
-  check('the button opens the editor on the production kind', opened && opened.chip === 'سند استلام الإنتاج', opened);
+  check('the button opens the editor on the production kind', opened && opened.chip === 'استلام المنتج التام', opened);
   check('the production receipt offers the routing quick-fill', opened && opened.routeVisible === true, opened);
 
   /* the quick-fill takes the warehouses from the production routing */

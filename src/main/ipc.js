@@ -198,18 +198,41 @@ module.exports = function registerIpc(getWindow) {
   /* Real .xlsx export — exceljs builds the workbook in this process. */
   ipcMain.handle('app:saveXlsx', async (e, spec = {}) => {
     const w = fromEvent(e);
-    const name = spec.fileName || `SAM-Report-${new Date().toISOString().slice(0, 10)}.xlsx`;
-    const { canceled, filePath } = await dialog.showSaveDialog(w, {
-      title: spec.title || 'تصدير Excel',
-      defaultPath: /\.xlsx$/i.test(name) ? name : name.replace(/\.[a-z0-9]+$/i, '') + '.xlsx',
+    const s = (spec && typeof spec === 'object') ? spec : {};
+
+    /* a name Windows accepts, and always with the .xlsx extension */
+    const cleanName = (raw) => {
+      let name = String(raw == null || raw === '' ? '' : raw).trim();
+      name = name.replace(/[<>:"/\\|?*\x00-\x1F]/g, ' ').replace(/\s+/g, ' ').trim();
+      if (!name) name = `SAM-Report-${new Date().toISOString().slice(0, 10)}`;
+      if (!/\.xlsx$/i.test(name)) name = name.replace(/\.(xlsx|xlsm|xls|csv|txt|ods)$/i, '') + '.xlsx';
+      return name;
+    };
+    /* the path the file really gets — the customer must be able to open it */
+    const withXlsx = (p) => {
+      const dir = path.dirname(String(p || ''));
+      return path.join(dir, cleanName(path.basename(String(p || ''))));
+    };
+
+    const opts = {
+      title: s.title ? `تصدير Excel - ${s.title}` : 'تصدير Excel',
+      defaultPath: cleanName(s.fileName),
       filters: [{ name: 'Excel Workbook', extensions: ['xlsx'] }]
-    });
+    };
+    /* without a window the dialog has to be opened with the options ALONE:
+       the two-argument form throws the options away and the customer gets
+       an unnamed file with no .xlsx filter */
+    const { canceled, filePath } = w
+      ? await dialog.showSaveDialog(w, opts)
+      : await dialog.showSaveDialog(opts);
     if (canceled || !filePath) return { ok: false, canceled: true };
     try {
-      const info = await require('./xlsx').writeWorkbook({ ...spec, filePath });
+      const info = await require('./xlsx').writeWorkbook({ ...s, filePath: withXlsx(filePath) });
       return { ok: true, data: info };
     } catch (err) {
-      return { ok: false, error: (err && err.message) || String(err) };
+      const reason = (err && err.message) ? err.message : String(err);
+      /* the customer reads Arabic — a raw English stack is no help */
+      return { ok: false, error: /[؀-ۿ]/.test(reason) ? reason : `تعذّر حفظ ملف Excel: ${reason}` };
     }
   });
   ipcMain.handle('app:relaunch', () => {

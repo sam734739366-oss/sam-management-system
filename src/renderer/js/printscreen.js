@@ -219,6 +219,7 @@
           docRef: title,
           head: pageNo === 1 ? kpis.map((k) => ({ k: k.k, v: k.v })) : [],
           bodyHtml: body.join(''),
+          kind: 'report',
           signatures: [],
           footer: `SAM Management System — ${title}`
         });
@@ -238,6 +239,7 @@
         docRef: title,
         head: kpis.map((k) => ({ k: k.k, v: k.v })),
         bodyHtml: body.join(''),
+        kind: 'report',
         signatures: [],
         footer: `SAM Management System — ${title}`
       });
@@ -257,7 +259,8 @@
     printPreview({
       title: built.title,
       pages: built.pages,
-      landscape: built.land
+      landscape: built.land,
+      kind: 'report'
     });
     return true;
   }

@@ -219,8 +219,8 @@ app.whenReady().then(async () => {
     };
   })()`);
   check('the launcher carries ten kinds', launcher.count === 10, launcher.count);
-  const lIssue = launcher.names.indexOf('سند توريد الإنتاج');
-  check('«سند توريد الإنتاج» is in the launcher', lIssue >= 0, launcher.names);
+  const lIssue = launcher.names.indexOf('صرف خام إلى الإنتاج');
+  check('«صرف خام إلى الإنتاج» is in the launcher', lIssue >= 0, launcher.names);
   check('the launcher tile of «توريد الإنتاج» has its own icon', launcher.icons[lIssue] === '#i-issue', launcher.icons[lIssue]);
   check('the launcher tile of «توريد الإنتاج» has its own colour', launcher.tones[lIssue] === 'tone-issue', launcher.tones[lIssue]);
   check('every launcher tile carries a colour', launcher.tones.filter(Boolean).length === launcher.count, launcher.tones);
@@ -242,8 +242,8 @@ app.whenReady().then(async () => {
     };
   })()`);
   check('the chooser carries ten kinds', !!grid && grid.count === 10, grid && grid.count);
-  const issueIdx = grid ? grid.names.indexOf('سند توريد الإنتاج') : -1;
-  check('«سند توريد الإنتاج» is in the chooser', issueIdx >= 0, grid && grid.names);
+  const issueIdx = grid ? grid.names.indexOf('صرف خام إلى الإنتاج') : -1;
+  check('«صرف خام إلى الإنتاج» is in the chooser', issueIdx >= 0, grid && grid.names);
   check('«توريد الإنتاج» has its own icon', grid && grid.icons[issueIdx] === '#i-issue', grid && grid.icons[issueIdx]);
   check('«توريد الإنتاج» has its own colour', grid && grid.tones[issueIdx] === 'tone-issue', grid && grid.tones[issueIdx]);
   const tones = grid ? grid.tones.filter(Boolean) : [];
@@ -285,7 +285,7 @@ app.whenReady().then(async () => {
   check('the page wears the colour of its kind', !!edTheme && edTheme.bg === 'rgb(255, 247, 237)', edTheme && edTheme.bg);
   check('the page carries no grid of cards inside', !!edTheme && edTheme.gridInside === 0, edTheme && edTheme.gridInside);
   check('the page can change its kind', !!edTheme && edTheme.swap === true, edTheme);
-  check('the page shows the name of its kind', !!edTheme && /توريد الإنتاج/.test(edTheme.chip || ''), edTheme && edTheme.chip);
+  check('the page shows the name of its kind', !!edTheme && /صرف خام إلى الإنتاج/.test(edTheme.chip || ''), edTheme && edTheme.chip);
   await shot('01c-kind-page');
 
   /* «تغيير النوع» reopens the chooser and the page recolours itself */
@@ -398,7 +398,7 @@ app.whenReady().then(async () => {
   }))()`);
   check('the operations list has a «توريد الإنتاج» tab', !!tabInfo, tabInfo);
   check('the tab carries the kind colour', tabInfo && tabInfo.tone === 'tone-issue', tabInfo && tabInfo.tone);
-  check('the tab filters to the new kind', filtered.rows === 1 && filtered.kinds.join('').includes('توريد الإنتاج'), filtered);
+  check('the tab filters to the new kind', filtered.rows === 1 && filtered.kinds.join('').indexOf('صرف خام إلى الإنتاج') >= 0, filtered);
   await shot('04-tab-filter');
 
   /* ================= 5. the production screen ================= */
@@ -441,7 +441,7 @@ app.whenReady().then(async () => {
     const pages = pv.querySelectorAll('.print-page').length;
     return { opened: true, pages, hasInternal: text.includes(d.doc_no), hasExternal: text.includes('EXT-2026-77'), title: (pv.querySelector('.doc-title h1')||{}).textContent };
   })()`);
-  check('the «سند توريد الإنتاج» prints', print.opened === true, print);
+  check('the «صرف خام إلى الإنتاج» prints', print.opened === true, print);
   check('the printed sheet carries the internal number', print.hasInternal === true, print);
   check('the printed sheet carries the external number', print.hasExternal === true, print);
   await shot('06-print-sheet');

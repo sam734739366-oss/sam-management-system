@@ -2,11 +2,21 @@
 
 /* =====================================================================
    Production — V2
-     صرف الخام        : deducts raw material (base units)
+     صرف الخام القديم  : the legacy table — history only, nothing new is written
      التقرير اليومي   : auto-routed output + bag fractions (bags × units − breaks)
-     النفخ للغير      : the customer's own material; defects → scrap_movements
+     دفعات العميل     : the customer's own material — the batch (دفعة) and
+                        its progress through the four steps
      سجل الهدر         : every customer-owned scrap row
      أرشيف الإنتاج    : a written record with zero stock effect
+
+   V7 — the tolling service became FOUR real steps, and the batch (دفعة)
+   is what ties them together:
+     1. استلام خام العميل   → this screen (the batch is born here)
+     2. صرف خام إلى الإنتاج → a «prod_issue» document
+     3. استلام المنتج التام → a «prod_receipt» document
+     4. فاتورة مبيعات       → a «sale» document
+   The ONE document that issues raw material to the production line is
+   now «صرف خام إلى الإنتاج» — the legacy «صرف إنتاج» table is read-only.
    ===================================================================== */
 (function () {
   const {
@@ -194,18 +204,20 @@
         <td class="num">${i.cartons ? SamDB.fmt(i.cartons) : '—'}</td>
         <td class="num qty minus">−${SamDB.fmt(i.pieces)}</td>
         <td>${esc(i.note || '—')}</td>`;
+      /* the legacy rows are HISTORY: they are read, and they can be
+         deleted, but nothing new is written here any more — the ONE
+         document for issuing raw material is «صرف خام إلى الإنتاج» */
       bindRow(tr, {
         view: () => viewIssue(i),
-        edit: () => openIssueForm(i),
         del: () => removeIssue(i)
       });
       tb.appendChild(tr);
     });
     emptyState('issuesEmpty', {
-      title: 'لا توجد مصروفات خام',
-      hint: 'اصرف الكراتين من المخزن إلى خط الإنتاج لتبدأ الدورة.',
-      actionLabel: 'صرف خام جديد',
-      onAction: () => openIssueForm(null)
+      title: 'لا توجد مصروفات خام قديمة',
+      hint: 'هذا السجل قديم ولا يُكتب فيه جديد — الصرف يتم الآن بسند «صرف خام إلى الإنتاج» من شاشة العمليات.',
+      actionLabel: 'صرف خام إلى الإنتاج',
+      onAction: () => SamDocs.openEditor(null, 'prod_issue')
     });
     toggleEmpty('issuesEmpty', state.issues.length > 0);
   }
@@ -220,12 +232,12 @@
         <dt>الكراتين (معلوماتي)</dt><dd>${i.cartons ? SamDB.fmt(i.cartons) : '—'}</dd>
         <dt>الكمية المصروفة</dt><dd>${SamDB.fmt(i.pieces)} حبة</dd>
         <dt>ملاحظة</dt><dd>${esc(i.note || '—')}</dd>
-      </dl>`,
+      </dl>
+      <p class="foot-note">سجل قديم — الصرف الجديد بسند «صرف خام إلى الإنتاج».</p>`,
       actions: [
-        { label: 'تعديل', value: 'edit', kind: 'btn-ghost', icon: 'i-edit' },
         { label: 'إغلاق', value: 'close', kind: 'btn-ghost' }
       ]
-    }).then((v) => { if (v === 'edit') openIssueForm(i); });
+    });
   }
 
   async function removeIssue(i) {
@@ -617,7 +629,8 @@
           ${r.note ? `<div style="margin-top:2mm"><b>ملاحظات:</b> ${esc(r.note)}</div>` : ''}
         </div>`,
       footer: 'SAM Management System — تقرير الإنتاج اليومي (الكميات بالوحدة الأساسية)',
-      signatures: ['مشرف المناوبة', 'أمين المخزن', 'المدير']
+      /* a report is not a document — nobody signs a report */
+      kind: 'report'
     });
   }
 
@@ -638,16 +651,78 @@
     } catch (e) { toast(e.message, 'bad'); }
   }
 
-  /* ---------------- tolling — النفخ للغير ---------------- */
+  /* ---------------- tolling — the batches (استلام خام عميل) ----------------
+     The customer's material walks through FOUR steps, and every one of
+     them points at the SAME batch («دفعة»):
+       1. استلام خام العميل   → this screen — the batch is born here
+       2. صرف خام إلى الإنتاج → a «prod_issue» document
+       3. استلام المنتج التام → a «prod_receipt» document
+       4. فاتورة مبيعات       → a «sale» document
+     The batch is the thread that ties them together, and it carries the
+     customer's name into every one of them. */
+  const TOLLING_STATUS = {
+    received: { ar: 'مستلم', tone: 'tone-info', icon: 'i-inbox' },
+    'in-production': { ar: 'قيد الإنتاج', tone: 'tone-warn', icon: 'i-issue' },
+    ready: { ar: 'جاهز للتسليم', tone: 'tone-produce', icon: 'i-check' },
+    delivered: { ar: 'مُسلَّم', tone: 'tone-ok', icon: 'i-check' }
+  };
+
+  /* the name of every document kind — the same words the documents engine
+     writes on the papers themselves */
+  const DOC_KIND_AR = {
+    prod_issue: 'صرف خام إلى الإنتاج',
+    prod_receipt: 'استلام المنتج التام',
+    sale: 'فاتورة مبيعات',
+    sale_return: 'مرتجع مبيعات',
+    purchase: 'مشتريات'
+  };
+
+  /** the batch a document belongs to — the customer's own thread through
+      the four steps. A document without a batch says so, plainly. */
+  function batchCell(batchId) {
+    if (!batchId) return '—';
+    const b = state.tolling.find((x) => x.id === Number(batchId));
+    if (!b) return `<span class="mono">${esc(batchId)}</span>`;
+    return `<span class="chip accent" title="${esc(b.rawName || '')}">${esc(b.doc_no)} — ${esc(b.partyName)}</span>`;
+  }
+
+  /** the number the next batch will carry — a PREVIEW only; the database
+      hands out the real number when it saves, so the box can never
+      promise a number another batch took in the meantime. */
+  function nextBatchNo() {
+    let max = 0;
+    state.tolling.forEach((t) => {
+      const m = /(\d+)\s*$/.exec(String(t.doc_no || ''));
+      if (m) max = Math.max(max, Number(m[1]) || 0);
+    });
+    return `TOL-${String(max + 1).padStart(4, '0')}`;
+  }
+
+  /** the one line that tells the whole story of a batch */
+  function progressLine(t) {
+    const n = (v, cls) => `<b class="qty ${v > 0 ? (cls || 'plus') : ''}">${SamDB.fmt(v)}</b>`;
+    return `مستلم ${n(t.pieces_in)} · صُرف ${n(t.issued, 'minus')} · مُنتج ${n(t.producedGood)}`
+      + ` · مُسلَّم ${n(t.delivered)} · متبقٍّ ${n(t.remaining, t.remaining > 0 ? 'minus' : '')}`;
+  }
+
+  /* ---------------- the form: استلام خام عميل ---------------- */
   async function openTollingForm(id) {
     const doc = id ? await SamDB.call('getTolling', id) : null;
-    let parties = [];
-    try { parties = state.parties.length ? state.parties : await SamDB.call('listParties', ''); } catch (e) { parties = []; }
+    if (id && !doc) { toast('الدفعة غير موجودة', 'bad'); return; }
+    let parties = state.parties;
+    if (!parties.length) {
+      try { parties = await SamDB.call('listParties', ''); } catch (e) { parties = []; }
+    }
 
     const body = el('div');
     const grid = el('div', 'form-grid');
 
-    const docNo = input({ value: doc ? doc.doc_no : '', placeholder: 'يُولَّد تلقائياً' });
+    const docNo = input({
+      class: 'input mono readonly',
+      value: doc ? doc.doc_no : nextBatchNo(),
+      readonly: true,
+      placeholder: 'يُولَّد تلقائياً'
+    });
     const docDate = input({ type: 'date', value: SamUI.today() });
     const piecesIn = numInput({ value: doc ? doc.pieces_in : 0, placeholder: '0' });
     const bagsIn = numInput({ value: doc ? doc.bags_in : 0, placeholder: '0' });
@@ -678,7 +753,7 @@
     whCombo.setValue(doc ? doc.warehouse_id : (state.warehouses[0] || {}).id || null, false);
 
     grid.append(
-      field('رقم المستند', docNo, '', 'i-hash'),
+      field('رقم الدفعة', docNo, doc ? 'رقم ثابت لا يتغير' : 'يُولَّد عند الحفظ', 'i-hash'),
       field('التاريخ', docDate, doc ? dateHint(doc.doc_date) : '', 'i-calendar'),
       field('العميل (صاحب المادة)', partyHost, '', 'i-user'),
       field('المادة الخام', rawHost, '', 'i-box'),
@@ -688,105 +763,29 @@
       (() => { const f = field('ملاحظات', note, '', 'i-clipboard'); f.classList.add('full'); return f; })()
     );
     body.appendChild(grid);
-
-    body.appendChild(el('div', 'form-sec', `${SamUI.iconTile('i-tolling', 'tone-produce', 'xs')}<span>ما سُلِّم للعميل وما هدر</span>`));
-    const tbl = el('table', 'tbl lines-tbl');
-    tbl.innerHTML = `<thead><tr>
-      <th style="width:36%">المنتج المنفوخ</th><th style="width:80px">الوحدة</th>
-      <th style="width:110px">جيد (يُسلَّم)</th><th style="width:110px">تالف (هدر)</th>
-      <th style="width:100px">أكياس</th><th style="width:40px"></th></tr></thead><tbody></tbody>`;
-    const tb = tbl.querySelector('tbody');
-    body.appendChild(tbl);
-
-    const out = el('div', 'totals-bar');
-    body.appendChild(out);
-    const addBtn = el('button', 'btn btn-sm btn-ghost', `${SamUI.iconTile('i-plus', 'tone-ok', 'xs')}<span class="btn-txt">إضافة سطر</span>`);
-    addBtn.type = 'button';
-    addBtn.addEventListener('click', () => addLine());
-    body.appendChild(el('div', 'row-add').appendChild(addBtn).parentNode);
-    body.appendChild(el('p', 'foot-note', 'المادة ملك العميل: الجيد يخرج له، والتالف يُسجَّل في «سجل الهدر» معلَّماً كمادة العميل (is_customer = 1) ويبقى في المخزن بحالة تالف.'));
-
-    const lines = [];
-    function paintUnit(l) {
-      const it = itemById(l.itemCombo.getValue());
-      l.unitEl.innerHTML = it ? `<span class="unit-chip">${esc(it.base_unit)}</span>` : '<span class="muted">—</span>';
-    }
-    function recompute() {
-      const good = lines.reduce((a, l) => a + SamDB.n(l.good.value), 0);
-      const defect = lines.reduce((a, l) => a + SamDB.n(l.defect.value), 0);
-      const inQty = SamDB.n(piecesIn.value);
-      out.innerHTML = `<span>مستلم: <b>${SamDB.fmt(inQty)}</b></span>
-        <span>مُسلَّم للعميل: <b class="big">${SamDB.fmt(good)}</b></span>
-        <span>هدر: <b class="neg">${SamDB.fmt(defect)}</b></span>
-        <span>باقٍ داخل المخزن: <b class="${inQty - good - defect < 0 ? 'neg' : ''}">${SamDB.fmt(inQty - good - defect)}</b></span>`;
-    }
-    function addLine(data) {
-      const tr = el('tr');
-      const host = el('div');
-      const unitBox = el('div');
-      const good = numInput({ value: data ? data.good : 0, placeholder: '0' });
-      const defect = numInput({ value: data ? data.defect : 0, placeholder: '0' });
-      const bags = numInput({ value: data ? data.bags : 0, placeholder: '0' });
-      const del = el('button', 'row-del', '×');
-      del.type = 'button';
-      const l = { itemCombo: null, good, defect, bags, unitEl: unitBox };
-      l.itemCombo = combo(host, {
-        placeholder: 'اكتب اسم المنتج…',
-        emptyText: 'لا يوجد صنف مطابق',
-        items: itemOptions(false),
-        onChange: () => { paintUnit(l); recompute(); }
-      });
-      if (data) l.itemCombo.setValue(data.item_id, false);
-      [good, defect, bags].forEach((n) => n.addEventListener('input', recompute));
-      del.addEventListener('click', () => {
-        const i = lines.indexOf(l);
-        if (i >= 0) lines.splice(i, 1);
-        tr.remove();
-        recompute();
-      });
-      tr.append(el('td').appendChild(host).parentNode,
-        el('td', 'unit-c').appendChild(unitBox).parentNode,
-        el('td').appendChild(good).parentNode,
-        el('td').appendChild(defect).parentNode,
-        el('td').appendChild(bags).parentNode,
-        el('td').appendChild(del).parentNode);
-      tb.appendChild(tr);
-      lines.push(l);
-      paintUnit(l);
-      return l;
-    }
-    piecesIn.addEventListener('input', recompute);
-    if (doc) doc.lines.forEach((l) => addLine(l));
-    else addLine();
-    recompute();
+    body.appendChild(el('p', 'foot-note',
+      'هذه هي الخطوة الأولى فقط: تُستلم خامة العميل وتدخل مخزنه وبملكيته. الخروج إلى الإنتاج بسند «صرف خام إلى الإنتاج»، والعودة بسند «استلام المنتج التام»، والتسليم بفاتورة مبيعات — وكلها تشير إلى رقم هذه الدفعة.'));
 
     const ok = await form({
-      title: doc ? `تعديل نفخ للغير ${doc.doc_no}` : 'مستند نفخ للغير',
+      title: doc ? `تعديل الدفعة ${doc.doc_no}` : 'استلام خام عميل',
       body,
-      wide: true,
-      submitLabel: 'حفظ المستند',
+      submitLabel: doc ? 'حفظ التعديلات' : 'حفظ الدفعة',
       async onSubmit() {
         const payload = {
           id: doc ? doc.id : null,
-          doc_no: docNo.value.trim(),
+          /* an existing batch keeps its number — a new one gets one from
+             the database, so two batches can never share a number */
+          doc_no: doc ? doc.doc_no : '',
           doc_date: docDate.value,
           party_id: partyCombo.getValue(),
           raw_item_id: rawCombo.getValue(),
           warehouse_id: whCombo.getValue(),
           pieces_in: SamDB.n(piecesIn.value),
           bags_in: SamDB.n(bagsIn.value),
-          note: note.value,
-          lines: lines.map((l) => ({
-            item_id: l.itemCombo.getValue(),
-            good: SamDB.n(l.good.value),
-            defect: SamDB.n(l.defect.value),
-            bags: SamDB.n(l.bags.value)
-          })).filter((l) => l.item_id || l.good || l.defect)
+          note: note.value
         };
-        if (!payload.lines.length) throw new Error('أضف سطراً واحداً على الأقل');
         const saved = await SamDB.call('saveTolling', payload);
-        toast(`تم حفظ ${saved.doc_no} — مُسلَّم ${SamDB.fmt(saved.totalGood)} وهدر ${SamDB.fmt(saved.totalDefect)}`, 'ok');
-        if (saved.warnings && saved.warnings.length) toast(saved.warnings[0], 'warn', 5600);
+        toast(`تم حفظ الدفعة ${saved.doc_no} — مستلم ${SamDB.fmt(saved.pieces_in)} ${saved.rawUnit || ''}`, 'ok');
         SamUI.bus.emit();
         return saved;
       }
@@ -794,72 +793,106 @@
     if (ok) await load();
   }
 
+  /* ---------------- the list: every batch and its progress ---------------- */
   function renderTolling() {
-    const tb = document.querySelector('#tollingTbl tbody');
+    const tbl = document.querySelector('#tollingTbl');
+    if (!tbl) return;
+    /* the columns follow the new meaning of the tab: a batch and where it
+       stands — the old columns of «what was delivered» are gone */
+    tbl.querySelector('thead').innerHTML = `<tr>
+      <th style="width:44px">#</th>
+      <th style="width:104px">رقم الدفعة</th>
+      <th style="width:92px">التاريخ</th>
+      <th>العميل</th>
+      <th>المادة الخام</th>
+      <th style="width:84px">المستلم</th>
+      <th style="width:300px">التقدّم</th>
+      <th style="width:118px">الحالة</th>
+      <th style="width:110px">الموقع</th>
+      <th>ملاحظة</th></tr>`;
+    const tb = tbl.querySelector('tbody');
     tb.innerHTML = '';
     state.tolling.forEach((t, idx) => {
-      const good = t.lines.reduce((a, l) => a + SamDB.n(l.good), 0);
-      const defect = t.lines.reduce((a, l) => a + SamDB.n(l.defect), 0);
+      const st = TOLLING_STATUS[t.status] || TOLLING_STATUS.received;
       const tr = el('tr');
       tr.innerHTML = `
         <td class="num">${idx + 1}</td>
         <td class="mono">${esc(t.doc_no)}</td>
         <td>${esc(t.doc_date)}</td>
         <td>${esc(t.partyName)}</td>
-        <td>${esc(t.rawCode)} — ${esc(t.rawName)}</td>
+        <td>${esc(t.rawName)}</td>
         <td class="num qty plus">${SamDB.fmt(t.pieces_in)}</td>
-        <td class="num qty">${SamDB.fmt(good)}</td>
-        <td class="num qty ${defect ? 'minus' : ''}">${SamDB.fmt(defect)}</td>
+        <td class="progress-cell">${progressLine(t)}</td>
+        <td><span class="chip kind-chip tone-${st.tone}"><span class="t3d tiny tone-${st.tone}">${SamUI.icon(st.icon)}</span>${esc(st.ar)}</span></td>
         <td>${esc(t.warehouseName || '—')}</td>
         <td>${esc(t.note || '—')}</td>`;
       bindRow(tr, {
         view: () => viewTolling(t.id),
         edit: () => openTollingForm(t.id),
-        del: () => removeTolling(t)
+        del: () => removeTolling(t),
+        extra: [{ label: 'طباعة تصريح دخول', icon: 'i-print', onClick: () => printTolling(t.id) }]
       });
       tb.appendChild(tr);
     });
     emptyState('tollingEmpty', {
       icon: 'i-tolling',
-      title: 'لا توجد عمليات نفخ للغير',
-      hint: 'استلم مادة العميل، نفخها، ثم سلّمه الجيد وسجّل التالف في سجل الهدر.',
-      actionLabel: 'مستند نفخ للغير',
+      title: 'لا توجد دفعات',
+      hint: 'استلم خامة العميل أول مرة — العنصر الأول من دورة النفخ. بعدها يشير كل مستند إلى رقم الدفعة.',
+      actionLabel: 'استلام خام عميل',
       onAction: () => openTollingForm(null)
     });
     toggleEmpty('tollingEmpty', state.tolling.length > 0);
+    /* the row carries its own actions — the hint says how to reach them */
+    const panel = document.getElementById('tollingPanel');
+    if (panel) {
+      let hint = panel.querySelector('[data-tolling-hint]');
+      if (!hint) {
+        hint = el('p', 'foot-note');
+        hint.setAttribute('data-tolling-hint', '1');
+        panel.querySelector('.card-body').appendChild(hint);
+      }
+      hint.textContent = 'كليك يمين على الدفعة: عرض · تعديل · طباعة تصريح دخول · حذف نهائي.';
+    }
   }
 
+  /* ---------------- the details of one batch ---------------- */
   async function viewTolling(id) {
     const t = await SamDB.call('getTolling', id);
-    const html = tableHtml(
-      [
-        { key: 'no', label: 'م', align: 'center' },
-        { key: 'item', label: 'المنتج المنفوخ' },
-        { key: 'unit', label: 'الوحدة', align: 'center' },
-        { key: 'good', label: 'جيد (مُسلَّم)', align: 'end' },
-        { key: 'defect', label: 'تالف (هدر)', align: 'end' },
-        { key: 'bags', label: 'أكياس', align: 'center' }
-      ],
-      t.lines.map((l, i) => ({
-        no: i + 1, item: `${l.itemCode} — ${l.itemName}`, unit: l.baseUnit,
-        good: SamDB.fmt(l.good), defect: SamDB.fmt(l.defect), bags: SamDB.fmt(l.bags)
-      })),
-      SamDB.fmt(t.totalGood)
-    );
+    if (!t) return toast('الدفعة غير موجودة', 'bad');
+    let impact = null;
+    try { impact = await SamDB.call('tollingImpact', id); } catch (e) { impact = null; }
+    const docs = (impact && impact.docs) || [];
+    const st = TOLLING_STATUS[t.status] || TOLLING_STATUS.received;
     const v = await modal({
-      title: `نفخ للغير — ${t.doc_no}`,
-      width: 'min(820px, 95vw)',
-      body: `<dl class="info">
+      title: `دفعة العميل — ${t.doc_no}`,
+      width: 'min(860px, 95vw)',
+      body: `<div class="doc-view-head tone-${st.tone}">
+          <span class="ed-badge t3d">${SamUI.icon(st.icon)}</span>
+          <div><b>${esc(t.partyName)}</b><span class="ed-sub">${esc(st.ar)} — ${esc(t.rawName)}</span></div>
+        </div>
+        <dl class="info">
+          <dt>رقم الدفعة</dt><dd class="mono">${esc(t.doc_no)}</dd>
           <dt>التاريخ</dt><dd>${esc(t.doc_date)}</dd>
           <dt>العميل</dt><dd>${esc(t.partyName)}${t.partyPhone ? ` — ${esc(t.partyPhone)}` : ''}</dd>
           <dt>المادة الخام</dt><dd>${esc(t.rawCode)} — ${esc(t.rawName)}</dd>
           <dt>المخزن</dt><dd>${esc(t.warehouseName || '—')}</dd>
-          <dt>المستلم</dt><dd>${SamDB.fmt(t.pieces_in)} ${esc(t.rawUnit)}</dd>
-          <dt>المُسلَّم للعميل</dt><dd>${SamDB.fmt(t.totalGood)}</dd>
-          <dt>الهدر (مادة العميل)</dt><dd>${SamDB.fmt(t.totalDefect)}</dd>
-        </dl><div style="margin-top:14px">${html}</div>`,
+          <dt>المستلم</dt><dd>${SamDB.fmt(t.pieces_in)} ${esc(t.rawUnit || '')}</dd>
+          <dt>الأكياس</dt><dd>${SamDB.fmt(t.bags_in)}</dd>
+          <dt>صُرف إلى الإنتاج</dt><dd>${SamDB.fmt(t.issued)}</dd>
+          <dt>المنتج التام</dt><dd>${SamDB.fmt(t.producedGood)}</dd>
+          <dt>المُسلَّم للعميل</dt><dd>${SamDB.fmt(t.delivered)}</dd>
+          <dt>المتبقّي في الدفعة</dt><dd>${SamDB.fmt(t.remaining)}</dd>
+          <dt>بانتظار التسليم</dt><dd>${SamDB.fmt(t.toDeliver)}</dd>
+          <dt>ملاحظة</dt><dd>${esc(t.note || '—')}</dd>
+        </dl>
+        <div class="form-sec" style="margin-top:14px"><span>المستندات التي تشير إلى هذه الدفعة</span></div>
+        ${docs.length
+          ? `<table class="tbl"><thead><tr><th>النوع</th><th>الرقم</th><th>التاريخ</th></tr></thead><tbody>
+              ${docs.map((d) => `<tr><td>${esc(DOC_KIND_AR[d.kind] || d.kind)}</td><td class="mono">${esc(d.doc_no)}</td><td>${esc(d.doc_date)}</td></tr>`).join('')}
+            </tbody></table>`
+          : '<p class="foot-note">لا يوجد مستند بعد — الخطوة التالية هي «صرف خام إلى الإنتاج».</p>'}`,
       actions: [
-        { label: 'طباعة المستند', value: 'print', kind: 'btn-primary', icon: 'i-print' },
+        { label: 'طباعة تصريح دخول', value: 'print', kind: 'btn-primary', icon: 'i-print' },
         { label: 'تعديل', value: 'edit', kind: 'btn-ghost', icon: 'i-edit' },
         { label: 'إغلاق', value: 'close', kind: 'btn-ghost' }
       ]
@@ -868,56 +901,74 @@
     if (v === 'print') printTolling(id);
   }
 
+  /* ---------------- تصريح الدخول — half an A5 sheet ---------------- */
   async function printTolling(id) {
     const t = await SamDB.call('getTolling', id);
+    if (!t) return toast('الدفعة غير موجودة', 'bad');
+    const rows = [{
+      item: `${t.rawCode || ''} — ${t.rawName}`,
+      qty: SamDB.fmt(t.pieces_in),
+      unit: t.rawUnit || '',
+      bags: SamDB.fmt(t.bags_in)
+    }];
     const html = tableHtml(
       [
-        { key: 'no', label: 'م', align: 'center' },
-        { key: 'item', label: 'المنتج' },
+        { key: 'item', label: 'المادة الخام المستلمة' },
+        { key: 'qty', label: 'الكمية', align: 'end' },
         { key: 'unit', label: 'الوحدة', align: 'center' },
-        { key: 'good', label: 'جيد', align: 'end' },
-        { key: 'defect', label: 'تالف', align: 'end' }
+        { key: 'bags', label: 'أكياس', align: 'center' }
       ],
-      t.lines.map((l, i) => ({
-        no: i + 1, item: `${l.itemCode} — ${l.itemName}`, unit: l.baseUnit,
-        good: SamDB.fmt(l.good), defect: SamDB.fmt(l.defect)
-      })),
-      SamDB.fmt(t.totalGood)
+      rows,
+      SamDB.fmt(t.pieces_in)
     );
     printPreview({
-      title: 'مستند نفخ للغير',
-      subtitle: 'مادة العميل — الكميات فقط',
+      kind: 'tolling_in',
+      /* one permit = half an A4 sheet (A5 landscape) */
+      half: true,
+      title: 'تصريح دخول خامة عميل',
+      subtitle: 'خامة العميل — الكميات فقط',
       docRef: t.doc_no,
-      docRefLabel: 'رقم المستند',
+      docRefLabel: 'رقم الدفعة',
       head: [
+        { k: 'رقم الدفعة', v: t.doc_no },
+        { k: 'التاريخ', v: t.doc_date },
         { k: 'العميل', v: t.partyName },
-        { k: 'رقم المستند', v: t.doc_no },
-        { k: 'التاريخ', v: t.doc_date }
+        { k: 'المخزن', v: t.warehouseName || '—' }
       ],
       bodyHtml: `${html}
         <p class="doc-note" style="margin-top:4mm">
-          <b>المستلم:</b> ${SamDB.fmt(t.pieces_in)} ${esc(t.rawUnit)} &nbsp;·&nbsp;
-          <b>المُسلَّم:</b> ${SamDB.fmt(t.totalGood)} &nbsp;·&nbsp;
-          <b>الهدر (يبقى بملكية العميل):</b> ${SamDB.fmt(t.totalDefect)}
+          <b>المادة ملك العميل</b> — تدخل المخزن ولا تُصرف إلا بسند «صرف خام إلى الإنتاج».
           ${t.note ? `<br><b>ملاحظات:</b> ${esc(t.note)}` : ''}
         </p>`,
-      footer: 'SAM Management System — نفخ للغير',
-      signatures: ['السائق', 'أمين المخزن', 'المدير']
+      footer: 'SAM Management System — تصريح دخول خامة عميل',
+      /* the gate guard and the warehouse keeper — the driver never signs here */
+      kind: 'tolling_in'
     });
   }
 
   async function removeTolling(t) {
     const impact = await SamDB.call('tollingImpact', t.id);
+    const docs = (impact && impact.docs) || [];
     const yes = await confirmHardDelete({
       docNo: t.doc_no,
-      docType: 'نفخ للغير',
-      lines: impact.lines,
-      extra: `<p style="margin-top:10px;font-size:13px">مُسلَّم ${SamDB.fmt(impact.totalGood)} — هدر ${SamDB.fmt(impact.scrap)} حبة من مادة العميل. الحذف يعكس الحركات ويسجل الهدر المرتبط.</p>`
+      docType: 'دفعة عميل',
+      lines: (impact && impact.lines) || [],
+      extra: `<p style="margin-top:10px;font-size:13px">مُنتَج ${SamDB.fmt(impact ? impact.totalGood : 0)} — تالف ${SamDB.fmt(impact ? impact.totalDefect : 0)} حبة من مادة العميل.`
+        + (docs.length
+          ? ` ويشير إلى هذه الدفعة ${docs.length} مستند (${docs.map((d) => esc(d.doc_no)).join('، ')}) — لا تُحذف دفعة ما دامت مستنداتها قائمة.`
+          : '')
+        + '</p>'
     });
     if (yes !== 'yes') return;
+    /* a batch that the papers still use cannot just vanish — the ledger
+       would show a balance for a material that never came in */
+    if (docs.length) {
+      toast(`لا تُحذف دفعة تشير إليها ${docs.length} مستند — احذف المستندات أولاً`, 'warn', 5200);
+      return;
+    }
     try {
       await SamDB.call('deleteTolling', t.id);
-      toast(`تم حذف مستند ${t.doc_no} نهائياً`, 'bad', 4400);
+      toast(`تم حذف الدفعة ${t.doc_no} نهائياً`, 'bad', 4400);
       SamUI.bus.emit();
       await load();
     } catch (e) { toast(e.message, 'bad'); }
@@ -1141,7 +1192,7 @@
         ]
       ),
       footer: 'SAM Management System — أرشيف الإنتاج',
-      signatures: ['مشرف المناوبة', 'أمين المخزن', 'المدير']
+      kind: 'production_receipt'
     });
   }
 
@@ -1169,8 +1220,13 @@
      This list is the other half: the document that really put the pieces
      into the warehouse — one row per document, with its warehouses. */
   function renderProdDocs() {
-    const tb = document.querySelector('#prodDocsTbl tbody');
-    if (!tb) return;
+    const tbl = document.querySelector('#prodDocsTbl');
+    if (!tbl) return;
+    tbl.querySelector('thead').innerHTML = `<tr>
+      <th style="width:44px">#</th><th style="width:110px">الرقم</th><th style="width:92px">التاريخ</th>
+      <th style="width:180px">الدفعة (العميل)</th><th>المخازن</th><th style="width:70px">الأسطر</th>
+      <th style="width:100px">إجمالي الحبة</th></tr>`;
+    const tb = tbl.querySelector('tbody');
     tb.innerHTML = '';
     state.prodDocs.forEach((d, idx) => {
       const tr = el('tr');
@@ -1178,6 +1234,7 @@
         <td class="num">${idx + 1}</td>
         <td class="mono">${esc(d.doc_no)}</td>
         <td>${esc(d.doc_date)}</td>
+        <td>${batchCell(d.batch_id)}</td>
         <td>${esc(d.warehouseNames || '—')}</td>
         <td class="num">${SamDB.fmt(d.lineCount)}</td>
         <td class="num qty plus">${SamDB.fmt(d.totalPieces)}</td>`;
@@ -1190,7 +1247,7 @@
     });
     emptyState('prodDocsEmpty', {
       icon: 'i-factory',
-      title: 'لا توجد سندات استلام إنتاج',
+      title: 'لا توجد سندات استلام المنتج التام',
       hint: 'السند هو المستند الذي يزيد رصيد المخزن — اختر المخزن لكل سطر، وبعد الحفظ اطبع تصريح الخروج.',
       actionLabel: 'سند استلام جديد',
       onAction: () => SamDocs.openEditor(null, 'prod_receipt')
@@ -1198,14 +1255,19 @@
     toggleEmpty('prodDocsEmpty', state.prodDocs.length > 0);
   }
 
-  /* ---------------- سندات توريد الإنتاج ----------------
-     The mirror of «سند استلام الإنتاج»: here the pieces LEAVE the
-     warehouse for the factory, so the voucher lowers the balance. The
-     list shows the internal number, the number of the paper it came
-     from, and the warehouses it emptied. */
+  /* ---------------- صرف خام إلى الإنتاج ----------------
+     The ONE document that issues raw material to the production line: the
+     goods LEAVE the warehouse, so the voucher lowers the balance. The list
+     shows the internal number, the number of the paper it came from, the
+     batch it belongs to — and the warehouses it emptied. */
   function renderProdIssueDocs() {
-    const tb = document.querySelector('#prodIssueDocsTbl tbody');
-    if (!tb) return;
+    const tbl = document.querySelector('#prodIssueDocsTbl');
+    if (!tbl) return;
+    tbl.querySelector('thead').innerHTML = `<tr>
+      <th style="width:44px">#</th><th style="width:110px">الرقم الداخلي</th><th style="width:110px">الرقم الخارجي</th>
+      <th style="width:92px">التاريخ</th><th style="width:180px">الدفعة (العميل)</th>
+      <th>المخازن</th><th style="width:70px">الأسطر</th><th style="width:100px">إجمالي الحبة</th></tr>`;
+    const tb = tbl.querySelector('tbody');
     tb.innerHTML = '';
     state.prodIssueDocs.forEach((d, idx) => {
       const tr = el('tr');
@@ -1214,6 +1276,7 @@
         <td class="mono"><b>${esc(d.doc_no)}</b></td>
         <td class="mono sub">${esc(d.external_no || '—')}</td>
         <td>${esc(d.doc_date)}</td>
+        <td>${batchCell(d.batch_id)}</td>
         <td>${esc(d.warehouseNames || '—')}</td>
         <td class="num">${SamDB.fmt(d.lineCount)}</td>
         <td class="num qty minus">${SamDB.fmt(d.totalPieces)}</td>`;
@@ -1226,9 +1289,9 @@
     });
     emptyState('prodIssueDocsEmpty', {
       icon: 'i-issue',
-      title: 'لا توجد سندات توريد إنتاج',
-      hint: 'السند هو المستند الذي يخفض رصيد المخزن حين تخرج البضاعة إلى الإنتاج — اختر المخزن لكل سطر، وبعد الحفظ اطبع تصريح التوريد.',
-      actionLabel: 'سند توريد جديد',
+      title: 'لا توجد سندات صرف خام إلى الإنتاج',
+      hint: 'السند هو المستند الوحيد الذي يخفض رصيد المخزن حين تخرج البضاعة إلى الإنتاج — اختر المخزن لكل سطر، وبعد الحفظ اطبع تصريح التوريد.',
+      actionLabel: 'صرف خام إلى الإنتاج',
       onAction: () => SamDocs.openEditor(null, 'prod_issue')
     });
     toggleEmpty('prodIssueDocsEmpty', state.prodIssueDocs.length > 0);
@@ -1345,7 +1408,7 @@
       dense: true,
       landscape: true,
       footer: 'SAM Management System — تقرير عجز وتالف الإنتاج (الكميات بالوحدة الأساسية)',
-      signatures: ['مشرف المناوبة', 'أمين المخزن', 'المدير']
+      kind: 'report'
     });
   }
 
@@ -1424,21 +1487,70 @@
     if (state.tab === 'prodreceipts') return SamDocs.openEditor(null, 'prod_receipt');
     if (state.tab === 'prodissues') return SamDocs.openEditor(null, 'prod_issue');
     if (state.tab === 'gap') return loadGap();
-    return openIssueForm(null);
+    /* the legacy tab writes nothing new — the ONE document for issuing
+       raw material to the production line is «صرف خام إلى الإنتاج» */
+    return SamDocs.openEditor(null, 'prod_issue');
   }
 
-  document.getElementById('btnNewIssue').addEventListener('click', () => openIssueForm(null));
+  /* ---- the words of the screen follow the new flow ------------------
+     The legacy «صرف إنتاج» documents stay visible as history, but the
+     ONE document that issues raw material to the production line is
+     «صرف خام إلى الإنتاج» — and the tab that lists it says so. */
+  const setBtnText = (btn, text) => {
+    const n = btn && btn.querySelector('.btn-txt');
+    if (n) n.textContent = text;
+  };
+  const setTabText = (tab, text) => {
+    const n = tab && tab.querySelector('.btn-txt');
+    if (n) n.textContent = text; else if (tab) tab.textContent = text;
+  };
+
+  /* the legacy create button is closed — the old table is read-only now */
+  const btnNewIssue = document.getElementById('btnNewIssue');
+  if (btnNewIssue) {
+    btnNewIssue.setAttribute('hidden', 'hidden');
+    btnNewIssue.setAttribute('aria-hidden', 'true');
+    setBtnText(btnNewIssue, 'صرف خام إلى الإنتاج');
+  }
+
   document.getElementById('btnNewReceipt').addEventListener('click', () => openReceiptForm(null));
-  document.getElementById('btnNewTolling').addEventListener('click', () => openTollingForm(null));
+  const btnNewTolling = document.getElementById('btnNewTolling');
+  if (btnNewTolling) {
+    setBtnText(btnNewTolling, 'استلام خام عميل');
+    btnNewTolling.addEventListener('click', () => openTollingForm(null));
+  }
   document.getElementById('btnNewArchive').addEventListener('click', () => openArchiveForm(null));
   const btnNewProdReceipt = document.getElementById('btnNewProdReceipt');
-  if (btnNewProdReceipt) btnNewProdReceipt.addEventListener('click', () => SamDocs.openEditor(null, 'prod_receipt'));
+  if (btnNewProdReceipt) {
+    setBtnText(btnNewProdReceipt, 'استلام المنتج التام');
+    btnNewProdReceipt.addEventListener('click', () => SamDocs.openEditor(null, 'prod_receipt'));
+  }
   const btnNewProdReceipt2 = document.getElementById('btnNewProdReceipt2');
-  if (btnNewProdReceipt2) btnNewProdReceipt2.addEventListener('click', () => SamDocs.openEditor(null, 'prod_receipt'));
+  if (btnNewProdReceipt2) {
+    setBtnText(btnNewProdReceipt2, 'سند استلام جديد');
+    btnNewProdReceipt2.addEventListener('click', () => SamDocs.openEditor(null, 'prod_receipt'));
+  }
   const btnNewProdIssue = document.getElementById('btnNewProdIssue');
-  if (btnNewProdIssue) btnNewProdIssue.addEventListener('click', () => SamDocs.openEditor(null, 'prod_issue'));
+  if (btnNewProdIssue) {
+    setBtnText(btnNewProdIssue, 'صرف خام إلى الإنتاج');
+    btnNewProdIssue.addEventListener('click', () => SamDocs.openEditor(null, 'prod_issue'));
+  }
   const btnNewProdIssue2 = document.getElementById('btnNewProdIssue2');
-  if (btnNewProdIssue2) btnNewProdIssue2.addEventListener('click', () => SamDocs.openEditor(null, 'prod_issue'));
+  if (btnNewProdIssue2) {
+    setBtnText(btnNewProdIssue2, 'صرف خام إلى الإنتاج');
+    btnNewProdIssue2.addEventListener('click', () => SamDocs.openEditor(null, 'prod_issue'));
+  }
+  setTabText(document.querySelector('#prodTabs .tab[data-tab="prodissues"]'), 'صرف خام إلى الإنتاج');
+  setTabText(document.querySelector('#prodTabs .tab[data-tab="prodreceipts"]'), 'استلام المنتج التام');
+  setTabText(document.querySelector('#prodTabs .tab[data-tab="tolling"]'), 'دفعات العميل');
+  setTabText(document.querySelector('#prodTabs .tab[data-tab="issues"]'), 'صرف الخام القديم');
+  /* the title of the two cards says the same thing */
+  const setHeadText = (panel, text) => {
+    const h = document.querySelector(`#${panel} .card-head h3`);
+    if (h) h.textContent = text;
+  };
+  setHeadText('prodissuesPanel', 'سندات صرف خام إلى الإنتاج — ما خرج من المخزون فعلياً');
+  setHeadText('prodreceiptsPanel', 'سندات استلام المنتج التام — ما دخل المخزون فعلياً');
   const btnPrintGap = document.getElementById('btnPrintGap');
   if (btnPrintGap) btnPrintGap.addEventListener('click', printGap);
   const btnExcelGap = document.getElementById('btnExcelGap');

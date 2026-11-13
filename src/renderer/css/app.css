@@ -1193,3 +1193,30 @@
 /* --- the launcher tiles of the operations screen --- */
 .kl-name { font-size: 12.5px; }
 .kl-count { font-size: 11px; min-width: 22px; }
+
+/* =====================================================================
+   V7 — the tolling batches (دفعات العميل)
+   The batch list shows the whole story of a batch in ONE line: what
+   came in, what went to the plant, what came back, what went out and
+   what is still left. The line never wraps — the table scrolls inside
+   its own frame (.tbl-wrap) instead of stretching the page.
+   ===================================================================== */
+.tbl .progress-cell {
+  white-space: nowrap;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+.tbl .progress-cell b { font-weight: 800; font-variant-numeric: tabular-nums; }
+/* the batch chip of a document that belongs to the customer's material */
+.tbl .chip.accent { max-width: 190px; overflow: hidden; text-overflow: ellipsis; }
+
+/* ---------------- the lines table of a document ----------------
+   A column that does not belong to this kind of document must not appear
+   in ANY row — the rows the user adds LATER included. When the rule was an
+   inline style on the rows that existed when the editor opened, a new row
+   kept that column, the row became one cell wider than the header, and
+   every column after it slid one step to the left. */
+.lines-tbl:not(.kind-transfer) .dest-col { display: none !important; }
+.lines-tbl:not(.kind-adjustment) .sign-h,
+.lines-tbl:not(.kind-adjustment) .sign-c { display: none !important; }

@@ -46,19 +46,22 @@
     sale_return: { ar: 'مرتجع مبيعات', icon: 'i-return', tone: 'sreturn', hint: 'ما يعود من العميل إلى المخزن — يزيد الرصيد' },
     purchase_return: { ar: 'مرتجع مشتريات', icon: 'i-return', tone: 'pretn', hint: 'ما يعود إلى المورد — يخفض الرصيد' },
     transfer: { ar: 'نقل بين المخازن', icon: 'i-truck', tone: 'move', hint: 'انتقال داخلي — يخرج من مخزن ويدخل آخر' },
-    prod_receipt: { ar: 'سند استلام الإنتاج', icon: 'i-factory', tone: 'produce', hint: 'إنتاج المستودع الداخل — يزيد الرصيد ويصدر تصريح خروج' },
-    prod_issue: { ar: 'سند توريد الإنتاج', icon: 'i-issue', tone: 'issue', hint: 'توريد البضاعة من المخزن إلى الإنتاج — يخفض الرصيد ويصدر تصريح خروج' },
+    prod_receipt: { ar: 'استلام المنتج التام', icon: 'i-factory', tone: 'produce', hint: 'إنتاج المستودع الداخل — يزيد الرصيد ويصدر تصريح خروج' },
+    prod_issue: { ar: 'صرف خام إلى الإنتاج', icon: 'i-issue', tone: 'issue', hint: 'صرف خام العميل أو خامنا إلى خط الإنتاج — يخفض الرصيد ويصدر تصريح توريد' },
     gate_in: { ar: 'إذن إدخال', icon: 'i-gate-in', tone: 'gin', hint: 'دخول بضاعة من خارج المصنع — يزيد الرصيد' },
     gate_out: { ar: 'إذن خروج', icon: 'i-gate-out', tone: 'gout', hint: 'خروج بضاعة من المصنع — يخفض الرصيد' },
     adjustment: { ar: 'تسوية جرد', icon: 'i-scale', tone: 'adjust', hint: 'فرق الجرد — كل سطر يزيد أو ينقص بمقداره' }
   };
 
   const state = {
-    docs: [], items: [], warehouses: [], parties: [],
+    docs: [], items: [], warehouses: [], parties: [], batches: [],
     kinds: Object.fromEntries(Object.entries(KIND_STYLE).map(([k, v]) => [k, v.ar])),
     kindCounts: {},
     filter: { kind: '', search: '' }
   };
+  /** the kinds that carry the customer's batch (دفعة) — the thread that
+      ties the four steps of the tolling service together */
+  const BATCH_KINDS = ['prod_issue', 'prod_receipt', 'sale'];
   const BUCKETS = [['good', 'سليم'], ['defect', 'تالف']];
   const bucketAr = (b) => ({ good: 'سليم', defect: 'تالف' }[b] || b);
   /** kinds that ADD stock — a shortage warning makes no sense for them */
@@ -81,7 +84,7 @@
     purchase_return: 'رقم إرجاع المورد',
     transfer: 'رقم مستند النقل (اختياري)',
     prod_receipt: 'رقم سند الاستلام (اختياري)',
-    prod_issue: 'رقم سند التوريد (اختياري)',
+    prod_issue: 'رقم سند الصرف (اختياري)',
     gate_in: 'رقم إذن الإدخال (اختياري)',
     gate_out: 'رقم إذن الخروج (اختياري)',
     adjustment: 'رقم محضر الجرد (اختياري)'
@@ -97,12 +100,12 @@
   /** the guidance shown under the lines table — it changes with the kind */
   const KIND_HINT = {
     purchase: 'المستند يعكس فاتورة مورد من نظام آخر — الرقم واسم المورد مطلوبان. لكل سطر مخزنه، والكمية بالوحدة الأساسية. إذا تجاوزت الكمية المتاح يظهر تحذير ويمكن الحفظ برصيد سالب.',
-    sale: 'المستند يعكس فاتورة عميل — الرقم واسم العميل مطلوبان. بعد الحفظ اطبع تصاريح الخروج، فكل مخزن يحتاج تصريحاً مستقلاً، والتصريح لا يحمل أسعاراً.',
+    sale: 'المستند يعكس فاتورة عميل — الرقم واسم العميل مطلوبان. «دفعة العميل» تربط الفاتورة بخامة العميل، و«أجور نفخ» ما يدين به العميل للنفخ. بعد الحفظ اطبع تصاريح الخروج، فكل مخزن يحتاج تصريحاً مستقلاً، والتصريح لا يحمل أسعاراً.',
     sale_return: 'مرتجع من العميل — يزيد رصيد المخزن. الرقم واسم العميل مطلوبان، لكل سطر مخزنه.',
     purchase_return: 'مرتجع إلى المورد — يخفض رصيد المخزن. الرقم واسم المورد مطلوبان، لكل سطر مخزنه.',
     transfer: 'نقل داخلي: كل سطر يخرج من مخزنه ويدخل إلى وجهته، ويجب أن تكون الوجهة مختلفة عن المصدر. بعد الحفظ اطبع تصريح الانتقال لكل مخزن.',
-    prod_receipt: 'استلام إنتاج داخل المستودع — يزيد الرصيد، ولكل سطر مخزنه. بعد الحفظ اطبع تصريح خروج الإنتاج، لأن المخزن خارج المصنع.',
-    prod_issue: 'توريد إنتاج: البضاعة تخرج من المخزن إلى الإنتاج — يخفض الرصيد، ولكل سطر مخزنه. بعد الحفظ اطبع تصريح التوريد، فالكميات تخرج من المخزن.',
+    prod_receipt: 'استلام المنتج التام داخل المستودع — يزيد الرصيد، ولكل سطر مخزنه. «دفعة العميل» تربط الاستلام بدفعة العميل التي خرجت إلى الإنتاج. بعد الحفظ اطبع تصريح خروج الإنتاج، لأن المخزن خارج المصنع.',
+    prod_issue: 'صرف خام إلى الإنتاج: البضاعة تخرج من المخزن إلى خط الإنتاج — يخفض الرصيد، ولكل سطر مخزنه. «دفعة العميل» تربط الصرف بخامة عميل، وتُملي سطراً بالمادة المتبقية. بعد الحفظ اطبع تصريح التوريد، فالكميات تخرج من المخزن.',
     gate_in: 'إذن دخول بضاعة من خارج المصنع — يزيد الرصيد. لكل سطر مخزنه المستقبِل.',
     gate_out: 'إذن خروج بضاعة من المصنع — يخفض الرصيد. لكل سطر مخزنه المُرسل، وبعد الحفظ يُطبع تصريح الخروج.',
     adjustment: 'تسوية جرد: كل سطر يحدّد اتجاهه — زيادة أو عجز — ويؤثر على رصيد مخزنه. تعديل السطر أو حذف المستند يعيد الرصيد كما كان.'
@@ -125,6 +128,20 @@
       state.warehouses = whs;
       state.parties = parties;
       state.docs = docs;
+      /* the batches live on the production screen — the documents screen
+         only reads them, and it must still work without that permission */
+      try { state.batches = (await SamDB.call('listTolling', 200)) || []; } catch (e) { state.batches = []; }
+      /* the name of every kind comes from the database — one truth, so the
+         picker, the launcher and the papers always say the same words */
+      try {
+        const kinds = await SamDB.call('DOC_KINDS') || {};
+        Object.keys(KIND_STYLE).forEach((k) => {
+          if (kinds[k] && kinds[k].ar) {
+            KIND_STYLE[k].ar = kinds[k].ar;
+            state.kinds[k] = kinds[k].ar;
+          }
+        });
+      } catch (e) { /* the local names stay */ }
       /* the launcher shows how many documents each kind already has */
       try { state.kindCounts = await SamDB.call('documentKindCounts') || {}; } catch (e) { state.kindCounts = {}; }
       render();
@@ -143,6 +160,31 @@
       .filter((p) => p.is_active)
       .filter((p) => (wantCustomers ? p.type === 'customer' || p.type === 'both' : p.type === 'supplier' || p.type === 'both'))
       .map((p) => ({ id: p.id, label: p.name, code: p.phone || '', sub: SamParties.TYPE_AR[p.type] }));
+  }
+
+  /* ---------------- the batches (دفعات العميل) ----------------
+     A batch is born when the customer's raw material arrives, and every
+     later document points at it: the issue to the production line, the
+     receipt of the finished boxes and the invoice that delivers them. */
+  const batchById = (id) => state.batches.find((b) => b.id === Number(id)) || null;
+  const batchOptions = () => state.batches.map((b) => ({
+    id: b.id,
+    /* the combo writes «code — label», so the whole thing reads:
+       TOL-0001 — اسم العميل — اسم الصنف */
+    code: b.doc_no,
+    label: `${b.partyName} — ${b.rawName}`,
+    sub: `مستلم ${SamDB.fmt(b.pieces_in)} · متبقٍّ ${SamDB.fmt(b.remaining)}`
+  }));
+  /** the one line that tells the user what this batch holds right now */
+  function batchHintText(b, kind) {
+    if (!b) return '';
+    if (kind === 'sale') {
+      return `العلب المنتجة لهذه الدفعة: ${SamDB.fmt(b.producedGood)} · المسلَّم: ${SamDB.fmt(b.delivered)} · العميل: ${b.partyName}`;
+    }
+    if (kind === 'prod_issue') {
+      return `متبقٍّ في الدفعة: ${SamDB.fmt(b.remaining)} ${b.rawUnit || ''} — سطر جاهز بالكمية المتبقية (عدّلها كما تشاء) · العميل: ${b.partyName}`;
+    }
+    return `العميل: ${b.partyName} — منتَج: ${SamDB.fmt(b.producedGood)} · مسلَّم: ${SamDB.fmt(b.delivered)}`;
   }
 
   function render() {
@@ -342,11 +384,15 @@
     const docDate = input({ class: 'input', type: 'date', value: SamUI.today() });
     // empty by default, grouped with commas, currency spelled out beside it
     const invoiceValue = numInput({ value: doc ? doc.invoice_value : '', placeholder: '0' });
+    /* «أجور نفخ» — what the customer owes for the blowing; it is typed by
+       hand, exactly like the value of the invoice */
+    const blowingFee = numInput({ value: doc ? doc.blowing_fee : '', placeholder: '0' });
     const notes = textarea({ rows: 2, value: doc ? doc.notes || '' : '', placeholder: 'ملاحظات المستند' });
 
     const partyHost = el('div');
     const whHost = el('div');
     const destHost = el('div');
+    const batchHost = el('div');
 
     const partyCombo = combo(partyHost, {
       placeholder: 'ابحث بالاسم أو الهاتف…',
@@ -389,6 +435,19 @@
     });
     destCombo.setValue(doc ? doc.dest_warehouse_id : null, false);
 
+    /* --- the batch (دفعة العميل) --------------------------------------
+       It sits at the top of the form because it is the thread of the
+       customer's own material: the issue, the receipt and the invoice
+       all point at it. It is optional — a document may have no batch. */
+    const batchCombo = combo(batchHost, {
+      placeholder: 'دفعة العميل (اختياري)…',
+      emptyText: 'لا توجد دفعات',
+      items: batchOptions(),
+      onChange: (v) => onBatchChanged(v)
+    });
+    batchCombo.setValue(doc ? doc.batch_id : null, false);
+    const batchHint = el('em', 'hint-txt');
+
     const cell = (label, node, cls, iconId) => {
       const c = el('div', `ed-cell ${cls || ''}`);
       const lab = el('label', 'ed-label');
@@ -417,19 +476,25 @@
     };
 
     const grid = el('div', 'ed-grid');
+    /* the batch sits at the TOP of the form — it is the thread of the
+       customer's own material, and everything below it points at it */
+    const batchCell = cell('دفعة العميل', batchHost, 'batch-cell', 'i-tolling');
+    batchCell.appendChild(batchHint);
     grid.append(
+      batchCell,
       cell('الرقم الداخلي', internalNo, 'docno-cell', 'i-hash'),
       cell('الرقم الخارجي', externalNo, 'extno-cell', 'i-tag'),
-      cell('التاريخ', docDate, '', 'i-calendar'),
+      cell('التاريخ', docDate, 'date-cell', 'i-calendar'),
       cell('العميل / المورد', partyHost, 'party-cell', 'i-user'),
       defaultCell('المخزن (للسطور الجديدة)', whHost, 'wh-default', () => whCombo.getValue(), 'المخزن', 'i-warehouse'),
       defaultCell('الوجهة (للسطور الجديدة)', destHost, 'dest-cell', () => destCombo.getValue(), 'الوجهة', 'i-out'),
       cell(`قيمة الفاتورة (${CURRENCY})`, affixInput(invoiceValue, CURRENCY), 'value-cell', 'i-money'),
+      cell(`أجور نفخ (${CURRENCY})`, affixInput(blowingFee, CURRENCY), 'fee-cell', 'i-money'),
       cell('ملاحظات', notes, 'full', 'i-clipboard')
     );
     /* the original creation date stays visible under the date box */
     if (doc && doc.doc_date && doc.doc_date !== SamUI.today()) {
-      const dateCell = grid.querySelector('.ed-cell:nth-child(3)');
+      const dateCell = grid.querySelector('.date-cell');
       if (dateCell) {
         dateCell.appendChild(el('em', 'hint-txt', `تاريخ الإنشاء الأصلي: ${esc(doc.doc_date)} — التعديل يُسجَّل بتاريخ اليوم`));
       }
@@ -645,6 +710,28 @@
       return l;
     }
 
+    /* --- the batch ----------------------------------------------------
+       Picking a batch on «صرف خام إلى الإنتاج» opens a line with the
+       batch's own raw material and the quantity that is still in it —
+       the user may change either one. On a sale the batch only tells
+       the user what the batch holds and who owns it. */
+    function onBatchChanged(v) {
+      const b = batchById(v);
+      batchHint.textContent = batchHintText(b, kind);
+      if (b && kind === 'prod_issue') prefillFromBatch(b);
+    }
+
+    function prefillFromBatch(b) {
+      /* the empty line the editor opens with takes the batch's material;
+         a document that already carries lines gets a NEW line */
+      const empty = lines.find((l) => !l.itemCombo.getValue() && !SamDB.n(l.piecesEl.value));
+      const l = empty || addLine();
+      l.itemCombo.setValue(b.raw_item_id, true);
+      l.piecesEl.value = SamDB.fmt(b.remaining);
+      if (l.whCombo && b.warehouse_id) l.whCombo.setValue(b.warehouse_id, true);
+      recomputeTotals();
+    }
+
     /** the direction buttons of an adjustment line (.visible only for تسوية جرد) */
     function renderSign(l) {
       const active = isAdjustment(kind);
@@ -677,18 +764,31 @@
       const isTransfer = kind === 'transfer';
       const perLineWh = PER_LINE_WH.includes(kind);
 
-      /* the party only exists on a commercial document */
-      grid.querySelector('.party-cell').style.display = commercial ? '' : 'none';
+      /* the party exists on a commercial document — and on the permits,
+         where the goods of a named customer enter or leave the gate */
+      const withParty = commercial || kind === 'gate_in' || kind === 'gate_out';
+      grid.querySelector('.party-cell').style.display = withParty ? '' : 'none';
+      const partyLabel = grid.querySelector('.party-cell .field-txt');
+      if (partyLabel) partyLabel.textContent = withParty && !commercial ? 'العميل / الجهة المستفيدة' : 'العميل / المورد';
       grid.querySelector('.value-cell').style.display = commercial ? '' : 'none';
+      /* the batch belongs to the three kinds that walk the customer's
+         material through the plant — and the blowing fee to the invoice */
+      grid.querySelector('.batch-cell').style.display = BATCH_KINDS.includes(kind) ? '' : 'none';
+      grid.querySelector('.fee-cell').style.display = kind === 'sale' ? '' : 'none';
+      /* the hint under the batch always tells the truth about the batch */
+      batchHint.textContent = batchHintText(batchById(batchCombo.getValue()), kind);
       /* the destination only exists on a transfer */
       grid.querySelector('.dest-cell').style.display = isTransfer ? '' : 'none';
       /* the movement documents have NO default warehouse — every line must
          name its own, so the default box is hidden to avoid a second choice */
       grid.querySelector('.wh-default').style.display = perLineWh ? 'none' : '';
-      /* the destination column of the lines table exists only for transfers */
-      linesTbl.querySelectorAll('.dest-col').forEach((n) => { n.style.display = isTransfer ? '' : 'none'; });
-      /* the direction column exists only for a stock adjustment */
-      linesTbl.querySelectorAll('.sign-h').forEach((n) => { n.style.display = isAdjustment(kind) ? '' : 'none'; });
+      /* the destination column of the lines table exists only for transfers,
+         and the direction column only for a stock adjustment — the CLASS on
+         the table decides it, so a row the user adds LATER is hidden exactly
+         like the first one. An inline style would leave the new row one cell
+         wider, and the whole row would slide one column to the left. */
+      linesTbl.classList.toggle('kind-transfer', isTransfer);
+      linesTbl.classList.toggle('kind-adjustment', isAdjustment(kind));
       /* the routing quick-fill belongs to the production receipt only */
       routeBtn.classList.toggle('hidden', kind !== 'prod_receipt');
 
@@ -828,6 +928,10 @@
         warehouse_id: lines[0] ? lines[0].whCombo.getValue() : null,
         dest_warehouse_id: kind === 'transfer' && lines[0] ? lines[0].destCombo.getValue() : null,
         invoice_value: SamDB.n(invoiceValue.value) ? SamDB.money(invoiceValue.value) : '',
+        /* the batch this document belongs to — null when there is none */
+        batch_id: batchCombo.getValue() || null,
+        /* «أجور نفخ» — what the customer owes for the blowing */
+        blowing_fee: kind === 'sale' ? String(blowingFee.value || '').trim() : '',
         notes: notes.value,
         lines: lines.map((l) => ({
           item_id: l.itemCombo.getValue(),
@@ -922,6 +1026,16 @@
   }
 
   /* ---------------- view ---------------- */
+  /** the batch a document points at — its number, its customer and its
+      material. The list is read first; the database answers when the
+      documents screen was opened without the production permission. */
+  async function batchOf(doc) {
+    if (!doc || !doc.batch_id) return null;
+    const known = batchById(doc.batch_id);
+    if (known) return known;
+    try { return await SamDB.call('getTollingBatch', doc.batch_id); } catch (e) { return null; }
+  }
+
   async function viewDoc(id) {
     const d = await SamDB.call('getDocument', id);
     const st = KIND_STYLE[d.kind] || { ar: d.kindAr, icon: 'i-clipboard', tone: 'plain' };
@@ -953,6 +1067,7 @@
       SamDB.fmt(d.totalPieces)
     );
     const whSummary = [...new Set(d.lines.map((l) => l.warehouseName).filter(Boolean))].join(' · ');
+    const batch = await batchOf(d);
     const v = await modal({
       title: `${d.kindAr} — ${d.doc_no}`,
       width: 'min(900px, 95vw)',
@@ -968,6 +1083,8 @@
           <dt>العميل / المورد</dt><dd>${esc(d.partyName || '—')}</dd>
           <dt>المخازن</dt><dd>${esc(whSummary || '—')}</dd>
           <dt>قيمة الفاتورة</dt><dd>${d.invoice_value ? `${esc(d.invoice_value)} ${esc(CURRENCY)}` : '—'}</dd>
+          ${d.blowing_fee ? `<dt>أجور نفخ</dt><dd>${esc(d.blowing_fee)} ${esc(CURRENCY)}</dd>` : ''}
+          ${batch ? `<dt>دفعة العميل</dt><dd class="mono">${esc(batch.doc_no)} — ${esc(batch.partyName)}${batch.rawName ? ` — ${esc(batch.rawName)}` : ''}</dd>` : ''}
           <dt>ملاحظات</dt><dd>${esc(d.notes || '—')}</dd>
         </dl><div style="margin-top:14px">${html}</div>`,
       actions: [
@@ -1027,6 +1144,7 @@
       { key: 'pieces', label: 'الكمية', align: 'end' }
     ];
     const refLabel = isExternal(d.kind) ? 'رقم الفاتورة' : 'رقم المستند';
+    const batch = await batchOf(d);
     printPreview({
       title: d.kindAr,
       subtitle: `مستند رقم ${d.doc_no}`,
@@ -1037,15 +1155,18 @@
         ...(d.partyName ? [{ k: partyLabel(d), v: d.partyName }] : []),
         { k: 'الرقم الداخلي', v: d.doc_no },
         ...(d.external_no ? [{ k: refLabel, v: d.external_no }] : []),
+        ...(batch ? [{ k: 'دفعة العميل', v: `${batch.doc_no} — ${batch.partyName}` }] : []),
         { k: 'التاريخ', v: d.doc_date }
       ],
       bodyHtml: `${tableHtml(cols, rows, SamDB.fmt(d.totalPieces))}
         <p class="doc-note" style="margin-top:4mm">
           <b>قيمة الفاتورة:</b> ${d.invoice_value ? `${esc(d.invoice_value)} ${esc(CURRENCY)}` : '—'}
+          ${d.blowing_fee ? `<br><b>أجور نفخ:</b> ${esc(d.blowing_fee)} ${esc(CURRENCY)}` : ''}
           ${d.notes ? `<br><b>ملاحظات:</b> ${esc(d.notes)}` : ''}
         </p>`,
       footer: 'SAM Management System — جميع الكميات بالوحدة الأساسية',
-      signatures: ['السائق', 'أمين المخزن', 'المدير']
+      /* the footer comes from the one signature system */
+      kind: 'invoice'
     });
   }
 
@@ -1064,6 +1185,7 @@
     const isProd = d.kind === 'prod_receipt';
     const isProdIssue = d.kind === 'prod_issue';
     const isGateOut = d.kind === 'gate_out';
+    const isGateIn = d.kind === 'gate_in';
     const groups = new Map();
     d.lines.forEach((l) => {
       const key = l.warehouse_id || 0;
@@ -1112,6 +1234,7 @@
         : (isProd || isProdIssue || isGateOut)
           ? [
             { k: 'المخزن', v: `${g.name}${g.location ? ' — ' + g.location : ''}` },
+            ...(d.partyName ? [{ k: 'العميل / الجهة', v: d.partyName }] : []),
             { k: 'الرقم الداخلي', v: d.doc_no },
             ...(d.external_no ? [{ k: 'الرقم الخارجي', v: d.external_no }] : []),
             { k: 'التاريخ', v: d.doc_date },
@@ -1132,13 +1255,16 @@
             ? 'صرح بخروج الكميات المذكورة من هذا المخزن إلى الإنتاج، ويمنع الخروج بأي كمية غير مذكورة.'
             : isGateOut
               ? 'صرح بخروج الكميات المذكورة من هذا المخزن عبر البوابة، ويمنع الخروج بأي بضاعة غير مذكورة.'
-              : 'صرح بخروج الكميات المذكورة من هذا المخزن فقط إلى العميل أعلاه، ويمنع الخروج بأي بضاعة غير مذكورة.';
+              : isGateIn
+                ? 'صرح بدخول الكميات المذكورة من هذا المورّد إلى المخزن أعلاه، ويمنع إدخال أي بضاعة غير مذكورة.'
+                : 'صرح بخروج الكميات المذكورة من هذا المخزن فقط إلى العميل أعلاه، ويمنع الخروج بأي بضاعة غير مذكورة.';
       return {
         title: isTransfer ? 'تصريح انتقال بين المخازن'
           : isProd ? 'تصريح خروج إنتاج'
             : isProdIssue ? 'تصريح توريد إنتاج'
               : isGateOut ? 'تصريح خروج من المصنع'
-                : 'تصريح خروج للبوابة',
+                : isGateIn ? 'تصريح دخول من البوابة'
+                  : 'تصريح خروج للبوابة',
         subtitle: `مرفق بمستند ${d.kindAr || ''} رقم ${d.doc_no} — تصريح ${gi + 1} من ${count}`,
         docRef: `GP-${d.doc_no}-${gi + 1}`,
         docRefLabel: 'رقم التصريح',
@@ -1146,11 +1272,20 @@
         bodyHtml: `
           <p class="doc-note">${note}
             <b>لا تظهر الأسعار في هذا التصريح.</b></p>
-          <p class="doc-note">وسيلة النقل: .......................... &nbsp;&nbsp; اسم السائق: .......................... &nbsp;&nbsp; رقم اللوحة: .................</p>
+          <p class="doc-note">${isGateIn
+            ? 'وسيلة النقل: .......................... &nbsp;&nbsp; رقم اللوحة: .................'
+            : 'وسيلة النقل: .......................... &nbsp;&nbsp; اسم السائق: .......................... &nbsp;&nbsp; رقم اللوحة: .................'}</p>
           ${tableHtml(cols, rows, SamDB.fmt(total))}
           <p class="doc-note" style="margin-top:3mm"><b>إجمالي هذا التصريح:</b> ${SamDB.fmt(total)} · <b>إجمالي المستند:</b> ${SamDB.fmt(d.totalPieces)}</p>`,
         footer: 'SAM Management System — تصريح (كميات فقط)',
-        signatures: ['أمين المخازن', 'السائق', 'حارس البوابة']
+        /* the footer of a permit comes from the one system — the driver
+           signs an EXIT permit, and only an exit permit */
+        kind: isTransfer ? 'transfer'
+          : isProd ? 'production_receipt'
+            : isProdIssue ? 'production_issue'
+              : isGateOut ? 'exit_permit'
+                : isGateIn ? 'gate_in'
+                  : 'invoice'
       };
     });
 

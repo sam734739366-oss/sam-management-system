@@ -414,6 +414,69 @@
     });
   }
 
+  /* ---------------- the signature footer (SamSignatures) ----------------
+     Every printed document gets its signature footer from ONE system:
+     the presets of the document kind (SamSignatures.SIGN_PRESETS) and
+     the user's own choice for that kind. A print call may still pass
+     an explicit array — that array is then the STARTING set of the
+     print, and the user can change it in the preview.
+
+     The module is loaded from here when the page does not include it,
+     so the system works even before the <script> line is added to
+     app.html. Everything below reads it lazily, never at load time. */
+  function ensureSignatures() {
+    if (global.SamSignatures || global.__samSignaturesLoading) return;
+    global.__samSignaturesLoading = true;
+    try {
+      const s = document.createElement('script');
+      s.src = 'js/signatures.js';
+      s.onload = () => { global.__samSignaturesLoading = false; };
+      s.onerror = () => { global.__samSignaturesLoading = false; };
+      (document.head || document.documentElement).appendChild(s);
+    } catch (e) {
+      global.__samSignaturesLoading = false;
+    }
+  }
+  ensureSignatures();
+
+  /** the names of the signature footer of a sheet (a plain array) */
+  function sigNamesFor(o) {
+    if (o && Array.isArray(o.__sigs)) return o.__sigs;
+    const S = global.SamSignatures;
+    const fallback = (o && Array.isArray(o.signatures)) ? o.signatures : [];
+    if (!S) return fallback;
+    try { return S.namesFor(o) || []; } catch (e) { return fallback; }
+  }
+  const sigLabel = (sig) => (typeof sig === 'string' ? sig : (sig && sig.label) || '');
+
+  /** the kind of a print — the caller's `kind`, else what the pages say */
+  function primarySigKind(opts, pages) {
+    const S = global.SamSignatures;
+    if (!S) return 'default';
+    let k = '';
+    try { k = S.resolveKind(opts) || ''; } catch (e) { k = ''; }
+    if (k && k !== 'default') return k;
+    const list = Array.isArray(pages) ? pages : [];
+    for (let i = 0; i < list.length; i++) {
+      let pk = '';
+      try { pk = S.resolveKind(list[i]) || ''; } catch (e) { pk = ''; }
+      if (pk && pk !== 'default') return pk;
+    }
+    return k || 'default';
+  }
+
+  /* the signature band — the markup never changes, only the names in it */
+  function sigBandHtml(o) {
+    const list = sigNamesFor(o);
+    if (!list || !list.length) return '';
+    return `<div class="sig-band">
+      ${list.map((sig) => {
+        const label = sigLabel(sig);
+        return `<div class="sig"><div class="line"></div><div class="nm">${esc(label)}</div><div class="sp">التوقيع</div><div class="line" style="height:6mm;border-bottom-style:dotted"></div></div>`;
+      }).join('')}
+    </div>`;
+  }
+
   /* ---------------- print sheet (premium A4 layout) ---------------- */
   function sheet(o) {
     const s = el('section', `sheet${o.landscape ? ' landscape' : ''}${o.half ? ' half' : ''}`);
@@ -447,12 +510,7 @@
 
       <div class="doc-body ${o.dense ? 'dense' : ''}">${o.bodyHtml || ''}</div>
 
-      ${o.signatures && o.signatures.length ? `<div class="sig-band">
-        ${o.signatures.map((sig) => {
-          const label = typeof sig === 'string' ? sig : sig.label;
-          return `<div class="sig"><div class="line"></div><div class="nm">${esc(label)}</div><div class="sp">التوقيع</div><div class="line" style="height:6mm;border-bottom-style:dotted"></div></div>`;
-        }).join('')}
-      </div>` : ''}
+      ${sigBandHtml(o)}
 
       <footer class="doc-foot">
         <span>${esc(o.footer || `${APP_NAME} — ${WATERMARK}`)}</span>
@@ -480,39 +538,80 @@
        half still carries a complete permit.
        The preview shows the real paper: a white sheet on a desk, with the
        page number and the paper size, exactly as it will be printed. */
+    opts = opts || {};
     const pages = (Array.isArray(opts.pages) && opts.pages.length) ? opts.pages : [opts];
     const half = !!opts.half;
     const land = !!opts.landscape;
 
-    /* group the sheets into physical A4 pages */
-    const groups = [];
-    if (half) {
-      for (let i = 0; i < pages.length; i += 2) groups.push(pages.slice(i, i + 2));
-    } else {
-      pages.forEach((p) => groups.push([p]));
+    /* ---- the signature footer of THIS print ----------------------------
+       The names come from the system: the user's own choice for the kind
+       of the document, else the array the caller passed (that array is
+       the starting set), else the preset of the kind. The user can
+       change the set in the row of chips under the toolbar — the change
+       shows in the paper at once and is remembered for the next print
+       of the same kind. */
+    const S = global.SamSignatures;
+    const sigKind = primarySigKind(opts, pages);
+    const explicitSigs = Array.isArray(opts.signatures) ? opts.signatures
+      : (pages[0] && Array.isArray(pages[0].signatures) ? pages[0].signatures : null);
+    let sigSet = [];
+    let sigPool = [];
+    try {
+      if (S) {
+        sigSet = S.hasSignatureChoice(sigKind) ? S.signaturesFor(sigKind)
+          : (explicitSigs || S.presetFor(sigKind));
+        sigPool = Array.from(new Set([...S.presetFor(sigKind), ...sigSet]));
+      } else {
+        sigSet = explicitSigs || [];
+        sigPool = sigSet.slice();
+      }
+      sigSet = (sigSet || []).map(sigLabel).filter(Boolean);
+    } catch (e) {
+      sigSet = (explicitSigs || []).map(sigLabel).filter(Boolean);
+      sigPool = sigSet.slice();
     }
 
-    const built = el('div', 'pv-pages');
-    groups.forEach((grp, gi) => {
-      const frame = el('div', `pv-frame${land ? ' land' : ''}`);
-      const cap = el('div', 'pv-cap');
-      cap.innerHTML = `<b>صفحة ${gi + 1}</b> من ${groups.length} — ${land ? 'A4 عرضي' : 'A4'}` +
-        (half ? ' — تصريحان بنصف ورقة' : '');
-      frame.appendChild(cap);
+    /* group the sheets into physical A4 pages */
+    const groupCount = half ? Math.ceil(pages.length / 2) : pages.length;
 
-      const page = el('div', `print-page${half ? ' perm' : ''}${land ? ' land' : ''}`);
-      grp.forEach((p, i) => {
-        if (half && i > 0) {
-          const cut = el('div', 'pv-cut', '<span>خط القص</span>');
-          page.appendChild(cut);
-        }
-        page.appendChild(sheet({ ...p, half: half || !!p.half, landscape: land || !!p.landscape }));
+    const buildPreview = () => {
+      const groups = [];
+      if (half) {
+        for (let i = 0; i < pages.length; i += 2) groups.push(pages.slice(i, i + 2));
+      } else {
+        pages.forEach((p) => groups.push([p]));
+      }
+
+      const built = el('div', 'pv-pages');
+      groups.forEach((grp, gi) => {
+        const frame = el('div', `pv-frame${land ? ' land' : ''}`);
+        const cap = el('div', 'pv-cap');
+        cap.innerHTML = `<b>صفحة ${gi + 1}</b> من ${groups.length} — ${land ? 'A4 عرضي' : 'A4'}` +
+          (half ? ' — تصريحان بنصف ورقة' : '');
+        frame.appendChild(cap);
+
+        const page = el('div', `print-page${half ? ' perm' : ''}${land ? ' land' : ''}`);
+        grp.forEach((p, i) => {
+          if (half && i > 0) {
+            const cut = el('div', 'pv-cut', '<span>خط القص</span>');
+            page.appendChild(cut);
+          }
+          page.appendChild(sheet({
+            ...p,
+            half: half || !!p.half,
+            landscape: land || !!p.landscape,
+            __sigs: sigSet
+          }));
+        });
+        frame.appendChild(page);
+        built.appendChild(frame);
       });
-      frame.appendChild(page);
-      built.appendChild(frame);
-    });
+      return built;
+    };
 
-    const pageCount = groups.length;
+    let built = buildPreview();
+
+    const pageCount = groupCount;
     return new Promise((resolve) => {
       const ov = el('div', 'pv no-print');
       const bar = el('div', 'pv-bar');
@@ -536,9 +635,39 @@
       const bClose = el('button', 'btn btn-sm btn-ghost', `${iconTile('i-x', 'tone-plain', 'xs')}<span class="btn-txt">إغلاق</span>`);
       bar.append(zoom, bPrint, bPdf, bClose);
 
+      /* ---- the signature controls ------------------------------------
+         One chip per name of the footer: tap it to take the name out of
+         the paper, tap it again to put it back. The «+» takes a name of
+         its own, and «رجوع للافتراضي» brings the preset of the kind
+         back. Every change shows in the paper at once. */
+      const sigRow = el('div', 'pv-sigs no-print');
+      sigRow.setAttribute('style', 'display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:7px 13px;background:var(--surface);border-bottom:1px solid var(--line);');
+      const sigTitle = el('span', 'pv-sigs-title', 'تذييل التوقيع:');
+      sigTitle.setAttribute('style', 'font-weight:800;font-size:12px;color:var(--ink);white-space:nowrap;');
+      const sigChips = el('span', 'pv-sig-chips');
+      sigChips.setAttribute('style', 'display:flex;gap:6px;flex-wrap:wrap;align-items:center;');
+      const sigEmpty = el('span', 'pv-sigs-empty', 'لا يوجد تذييل توقيع — التقارير لا تُوقّع');
+      sigEmpty.setAttribute('style', 'font-size:11px;color:var(--muted-fg);');
+      sigEmpty.style.display = 'none';
+
+      const sigAddBtn = el('button', 'pv-sig-add', '+');
+      sigAddBtn.type = 'button';
+      sigAddBtn.title = 'إضافة اسم توقيع';
+      sigAddBtn.setAttribute('style', 'width:26px;height:26px;min-width:26px;border-radius:999px;border:1px solid var(--line);background:var(--surface);color:var(--ink);font-size:15px;font-weight:900;line-height:1;cursor:pointer;');
+      const sigAddInput = el('input', 'pv-sig-input');
+      sigAddInput.type = 'text';
+      sigAddInput.placeholder = 'اسم التوقيع';
+      sigAddInput.setAttribute('style', 'display:none;width:140px;padding:4px 9px;border:1px solid var(--brand-300);border-radius:8px;background:var(--surface);color:var(--ink);font-size:12px;');
+      const sigReset = el('button', 'btn btn-sm btn-ghost pv-sig-reset', '<span class="btn-txt">رجوع للافتراضي</span>');
+      sigReset.type = 'button';
+      const sigHint = el('span', 'pv-sigs-hint', 'اضغط على الاسم لإزالته من التذييل — واضغط مرة أخرى لإعادته');
+      sigHint.setAttribute('style', 'margin-inline-start:auto;font-size:11px;color:var(--muted-fg);');
+
+      sigRow.append(sigTitle, sigChips, sigEmpty, sigAddBtn, sigAddInput, sigReset, sigHint);
+
       const scroll = el('div', 'pv-scroll');
       scroll.appendChild(built);
-      ov.append(bar, scroll);
+      ov.append(bar, sigRow, scroll);
       document.body.appendChild(ov);
 
       /* A half sheet has a fixed height — if the permit has many lines the
@@ -556,19 +685,22 @@
          not fit the sheet, the preview says so instead of quietly cutting
          a corner off. */
       const MM = 96 / 25.4;
-      const overflowing = [];
-      built.querySelectorAll('.print-page').forEach((p, i) => {
-        const paperMm = p.classList.contains('land') ? 210 : 297;
-        const used = [...p.querySelectorAll('.sheet')].reduce((a, s) => a + s.offsetHeight, 0);
-        if (used > paperMm * MM + 2) overflowing.push(i + 1);
-      });
-      if (overflowing.length) {
-        built.querySelectorAll('.pv-frame').forEach((f, i) => {
-          if (!overflowing.includes(i + 1)) return;
-          const cap = f.querySelector('.pv-cap');
-          if (cap) cap.insertAdjacentHTML('beforeend', ' — <b class="over">⚠ المحتوى يتجاوز الورقة</b>');
+      const markOverflow = () => {
+        const overflowing = [];
+        built.querySelectorAll('.print-page').forEach((p, i) => {
+          const paperMm = p.classList.contains('land') ? 210 : 297;
+          const used = [...p.querySelectorAll('.sheet')].reduce((a, s) => a + s.offsetHeight, 0);
+          if (used > paperMm * MM + 2) overflowing.push(i + 1);
         });
-      }
+        if (overflowing.length) {
+          built.querySelectorAll('.pv-frame').forEach((f, i) => {
+            if (!overflowing.includes(i + 1)) return;
+            const cap = f.querySelector('.pv-cap');
+            if (cap) cap.insertAdjacentHTML('beforeend', ' — <b class="over">⚠ المحتوى يتجاوز الورقة</b>');
+          });
+        }
+      };
+      markOverflow();
 
       let zoomPct = 100;
       let fitMode = true;
@@ -586,6 +718,93 @@
       };
       fit();
       global.addEventListener('resize', fit);
+
+      /* the paper is rebuilt when the signature footer changes */
+      function rebuild() {
+        const next = buildPreview();
+        scroll.innerHTML = '';
+        scroll.appendChild(next);
+        built = next;
+        fitHalves();
+        markOverflow();
+        applyZoom();
+        fit();
+      }
+
+      /* ---- the chips of the signature footer ---- */
+      const chipOn = 'display:inline-flex;align-items:center;gap:5px;padding:3px 11px;border-radius:999px;border:1px solid var(--brand-700);background:var(--brand-700);color:#fff;font-size:12px;font-weight:800;cursor:pointer;';
+      const chipOff = 'display:inline-flex;align-items:center;gap:5px;padding:3px 11px;border-radius:999px;border:1px solid var(--line);background:var(--surface);color:var(--muted-fg);font-size:12px;font-weight:700;cursor:pointer;text-decoration:line-through;';
+
+      const remember = () => {
+        if (!S) return;
+        try { S.setSignatureChoice(sigKind, sigSet); } catch (e) { /* the print must not break */ }
+      };
+
+      const renderChips = () => {
+        sigChips.innerHTML = '';
+        sigPool.forEach((name) => {
+          const on = sigSet.indexOf(name) >= 0;
+          const b = el('button', 'pv-sig-chip');
+          b.type = 'button';
+          b.dataset.name = name;
+          b.setAttribute('aria-pressed', on ? 'true' : 'false');
+          b.title = on ? 'اضغط لإزالة هذا التوقيع من التذييل' : 'اضغط لإضافة هذا التوقيع إلى التذييل';
+          b.style.cssText = on ? chipOn : chipOff;
+          b.innerHTML = `<span>${esc(name)}</span>`;
+          b.addEventListener('click', () => {
+            const i = sigSet.indexOf(name);
+            if (i >= 0) sigSet.splice(i, 1); else sigSet.push(name);
+            remember();
+            renderChips();
+            rebuild();
+          });
+          sigChips.appendChild(b);
+        });
+        sigEmpty.style.display = sigPool.length ? 'none' : 'inline';
+      };
+
+      const closeAdd = () => { sigAddInput.value = ''; sigAddInput.style.display = 'none'; };
+      const commitAdd = () => {
+        const name = (sigAddInput.value || '').trim();
+        closeAdd();
+        if (!name) return;
+        if (sigPool.indexOf(name) < 0) sigPool.push(name);
+        if (sigSet.indexOf(name) < 0) sigSet.push(name);
+        remember();
+        renderChips();
+        rebuild();
+      };
+
+      sigAddBtn.addEventListener('click', () => {
+        sigAddInput.style.display = 'inline-block';
+        sigAddInput.focus();
+      });
+      sigAddInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); commitAdd(); }
+        if (e.key === 'Escape') { e.preventDefault(); closeAdd(); }
+      });
+      sigAddInput.addEventListener('blur', () => {
+        if ((sigAddInput.value || '').trim()) commitAdd(); else closeAdd();
+      });
+
+      sigReset.addEventListener('click', () => {
+        const preset = S ? S.presetFor(sigKind) : [];
+        if (S) {
+          try {
+            /* the choice of the user is forgotten, and the default of the
+               kind is pinned — so the next print of this kind shows it
+               too, whatever the old print call passed */
+            S.resetSignatureChoice(sigKind);
+            S.setSignatureChoice(sigKind, preset);
+          } catch (e) { /* the print must not break */ }
+        }
+        sigSet = preset.slice();
+        sigPool = Array.from(new Set([...preset, ...sigPool]));
+        renderChips();
+        rebuild();
+      });
+
+      renderChips();
 
       zIn.addEventListener('click', () => { fitMode = false; zoomPct = Math.min(150, zoomPct + 10); applyZoom(); });
       zOut.addEventListener('click', () => { fitMode = false; zoomPct = Math.max(30, zoomPct - 10); applyZoom(); });
@@ -618,7 +837,12 @@
           release();
         }
       });
-      document.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); }, true);
+      document.addEventListener('keydown', (e) => {
+        if (e.key !== 'Escape') return;
+        /* the name being typed has the first right on the Escape key */
+        if (sigAddInput.style.display !== 'none') { closeAdd(); return; }
+        close();
+      }, true);
     });
   }
 
