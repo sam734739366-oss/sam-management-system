@@ -1,6 +1,6 @@
 {
   "name": "sam-management-system",
-  "version": "0.7.2",
+  "version": "0.7.3",
   "description": "SAM Management System — نظام إدارة الأصناف والمخازن والإنتاج",
   "author": "SAM",
   "license": "UNLICENSED",
@@ -23,7 +23,6 @@
     "@electron/rebuild": "^4.2.1",
     "electron": "^33.2.0",
     "electron-builder": "^26.18.0",
-    "electron-updater": "^6.8.11",
     "png-to-ico": "^3.0.1",
     "pngjs": "^7.0.0"
   },
@@ -31,6 +30,7 @@
     "@fontsource/cairo": "^5.1.1",
     "@fontsource/tajawal": "^5.1.1",
     "better-sqlite3": "^12.10.1",
+    "electron-updater": "^6.8.11",
     "exceljs": "^4.4.0"
   },
   "build": {
