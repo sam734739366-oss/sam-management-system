@@ -146,7 +146,7 @@ module.exports = function registerAuthIpc(getWindow) {
     try {
       /* the copy is immediate so the customer sees his data in the new
          folder at once — and the ORIGINAL file is never touched */
-      const copy = datadir.exportTo(app, picked, db.dbFile());
+      const copy = await datadir.exportTo(app, picked, db.dbFile());
       /* the live database path is remembered too: on the next launch the
          program copies the FRESH database over, so anything typed between
          the pick and the restart is not lost */
@@ -167,7 +167,7 @@ module.exports = function registerAuthIpc(getWindow) {
       defaultPath: app.getPath('documents')
     });
     if (res.canceled || !res.filePaths.length) return { ok: false, canceled: true };
-    try { return { ok: true, data: datadir.exportTo(app, res.filePaths[0], db.dbFile()) }; }
+    try { return { ok: true, data: await datadir.exportTo(app, res.filePaths[0], db.dbFile()) }; }
     catch (err) { return { ok: false, error: err.message }; }
   });
 };

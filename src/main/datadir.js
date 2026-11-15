@@ -172,21 +172,29 @@ function forget(app) {
  * Copy the live database into a folder the user picked.
  * The source is NEVER removed — the copy is additive.
  */
-function exportTo(app, target, liveDbFile) {
+/**
+ * The export is ONE file, and it is a consistent one.
+ *
+ * The live database works in WAL mode, so the folder holds three files:
+ * sam.db (the database), sam.db-wal (the newest rows, not yet folded in)
+ * and sam.db-shm (its index). Copying them by hand filled the customer's
+ * folder with three files that only mean something together — and a copy
+ * of sam.db alone could be missing the newest rows.
+ *
+ * The backup API of SQLite writes the whole database, folded and complete,
+ * into ONE file: that is the copy the customer takes away.
+ */
+async function exportTo(app, target, liveDbFile) {
   const clean = String(target || '').trim();
   if (!clean) throw new Error('لم يتم اختيار مجلد');
   fs.mkdirSync(clean, { recursive: true });
   const dest = path.join(clean, 'sam.db');
   const src = liveDbFile || path.join(resolveDir(app), 'sam.db');
   if (!fs.existsSync(src)) throw new Error('لا توجد قاعدة بيانات جاهزة للنسخ');
-  // copy the -wal / -shm siblings too when they exist, so the copy is complete
-  for (const suffix of ['-wal', '-shm']) {
-    const from = src + suffix;
-    if (fs.existsSync(from)) { try { fs.copyFileSync(from, dest + suffix); } catch (e) { /* optional */ } }
-  }
-  fs.copyFileSync(src, dest);
+  const db = require('./db');
+  const res = await db.backupTo(dest);
   const size = fs.statSync(dest).size;
-  return { dir: clean, path: dest, size };
+  return { dir: clean, path: dest, size, files: 1 };
 }
 
 /** simple guard: is the path writable? */
