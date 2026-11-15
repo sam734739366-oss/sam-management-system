@@ -905,18 +905,32 @@
   async function printTolling(id) {
     const t = await SamDB.call('getTolling', id);
     if (!t) return toast('الدفعة غير موجودة', 'bad');
+    /* the boxes of the item — the SAME as «صرف خام إلى الإنتاج»: the
+       pieces, the bags, the cartons and the part of an incomplete one */
+    const rawItem = { code: t.rawCode, name: t.rawName, base_unit: t.rawUnit,
+      pieces_per_bag: t.perBag || 0, pieces_per_carton: t.perCarton || 0,
+      unit_label: t.unitLabel || '', unit_pieces: t.perUnit || 0 };
+    const units = (window.SamUnits ? SamUnits.unitsOf(rawItem) : []);
     const rows = [{
       item: `${t.rawCode || ''} — ${t.rawName}`,
       qty: SamDB.fmt(t.pieces_in),
       unit: t.rawUnit || '',
-      bags: SamDB.fmt(t.bags_in)
+      bags: SamDB.fmt(t.bags_in),
+      ...units.reduce((acc, u) => {
+        const sp = window.SamUnits ? SamUnits.split(rawItem, u.key, t.pieces_in) : { count: 0, part: 0 };
+        acc[`p_${u.key}`] = SamDB.fmt(sp.count);
+        acc[`pp_${u.key}`] = sp.part ? SamDB.fmt(sp.part) : '—';
+        return acc;
+      }, {})
     }];
     const html = tableHtml(
       [
         { key: 'item', label: 'المادة الخام المستلمة' },
         { key: 'qty', label: 'الكمية', align: 'end' },
         { key: 'unit', label: 'الوحدة', align: 'center' },
-        { key: 'bags', label: 'أكياس', align: 'center' }
+        { key: 'bags', label: 'أكياس', align: 'center' },
+        ...units.map((u) => ({ key: `p_${u.key}`, label: u.label, align: 'center' })),
+        ...units.map((u) => ({ key: `pp_${u.key}`, label: `كسور ${u.short}`, align: 'center' }))
       ],
       rows,
       SamDB.fmt(t.pieces_in)

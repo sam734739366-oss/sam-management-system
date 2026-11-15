@@ -2005,6 +2005,8 @@ function getTollingBatch(id) {
   const r = db.prepare(
     `SELECT t.*, p.name AS partyName, p.phone AS partyPhone,
             raw.code AS rawCode, raw.name AS rawName, raw.base_unit AS rawUnit,
+            raw.pieces_per_carton AS perCarton, raw.pieces_per_bag AS perBag,
+            raw.unit_label AS unitLabel, raw.unit_pieces AS perUnit,
             w.name AS warehouseName
      FROM tolling_orders t
      JOIN parties p ON p.id = t.party_id
@@ -2313,7 +2315,7 @@ function reportQuery(filters = {}) {
            i.pieces_per_carton AS perCarton, i.pieces_per_bag AS perBag,
            w.name AS warehouseName, w.kind AS warehouseKind,
            p.name AS partyName,
-           d.invoice_value AS invoiceValue
+           d.invoice_value AS invoiceValue, d.batch_id AS batchId
     FROM stock_moves m
     JOIN items i ON i.id = m.item_id
     JOIN warehouses w ON w.id = m.warehouse_id
@@ -2388,7 +2390,7 @@ function reportQuery(filters = {}) {
     rows: inRange.map((r) => ({
       ...r,
       bucketAr: AR_BUCKET[r.bucket],
-      docTypeAr: DOC_LABELS_ALL[r.docType] || r.docType,
+      docTypeAr: (DOC_LABELS_ALL[r.docType] || r.docType) + (r.batchId ? ' — خامة عميل' : ''),
       locationName: (filters.byLocation && locationTotals[r.warehouseId]) ? locationTotals[r.warehouseId].name : null,
       mainBalance: mainBal[r.itemId] ? mainBal[r.itemId].total : 0,
       mainGood: mainBal[r.itemId] ? mainBal[r.itemId].good : 0,

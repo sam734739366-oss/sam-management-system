@@ -43,6 +43,8 @@
     showAll: false,      // show items with no movement and no balance
     includeCustomer: false,
     packs: readPacks(),  // show the cartons/bags columns (remembered)
+    showGrand: true,     // the total of ALL the warehouses beside them
+    itemTotalOnly: false, // the item with the total of all the warehouses only
     from: SamUI.today(),
     to: SamUI.today(),
     win: null
@@ -227,6 +229,19 @@
     });
   }
 
+  /** a plain switch row with a remembered choice */
+  function optionRow(id, label, get, set) {
+    const row = el('div', 'check-row');
+    row.style.marginTop = '6px';
+    const cb = el('input');
+    cb.type = 'checkbox';
+    cb.id = id;
+    cb.checked = !!get();
+    cb.addEventListener('change', () => { set(cb.checked); paint(); });
+    row.append(cb, el('span', '', label));
+    return row;
+  }
+
   /** the switch row — «إظهار الكراتين والأكياس» */
   function packsRow(id) {
     const row = el('div', 'check-row');
@@ -296,11 +311,19 @@
        is built here in the app's own look (the same check-row) */
     if (!document.getElementById('dPacks')) {
       const row = packsRow('dPacks');
+      const opt = el('div');
+      opt.append(
+        optionRow('dGrand', 'إظهار إجمالي كل المخازن (حتى عند اختيار مخزن واحد)',
+          () => state.showGrand, (v) => { state.showGrand = !!v; }),
+        optionRow('dItemTotal', 'الصنف مع إجمالي المتبقي لكل المخازن فقط',
+          () => state.itemTotalOnly, (v) => { state.itemTotalOnly = !!v; })
+      );
       const cust = document.getElementById('dIncludeCustomer');
-      if (cust && cust.parentElement) cust.parentElement.insertAdjacentElement('afterend', row);
+      const anchor = (cust && cust.parentElement) ? cust.parentElement : null;
+      if (anchor) { anchor.insertAdjacentElement('afterend', row); row.insertAdjacentElement('afterend', opt); }
       else {
         const host = document.getElementById('dBuckets');
-        if (host && host.parentElement) host.parentElement.appendChild(row);
+        if (host && host.parentElement) { host.parentElement.appendChild(row); host.parentElement.appendChild(opt); }
       }
     }
     syncPacksInputs();
@@ -420,25 +443,40 @@
     const kinds = packKinds();
     const packsOn = state.packs && kinds.length > 0;
 
+    /* the mode: every warehouse beside the item, OR the item with the
+       total of all the warehouses only */
+    const perWarehouse = !state.itemTotalOnly;
+    const withGrand = perWarehouse && state.showGrand;
+    const packCols = packsOn ? kinds.length : 0;
+    const whSpan = 3 + packCols;
     const head1 = `<th rowspan="2" style="min-width:170px">الصنف</th>
       <th rowspan="2" style="width:74px">الوحدة</th>
-      ${whs.map((w) => `<th colspan="3" class="grp">${esc(w.name)}${w.location ? ` — ${esc(w.location)}` : ''}</th>`).join('')}
-      <th colspan="3" class="grp">إجمالي كل المخازن</th>
+      ${perWarehouse ? whs.map((w) => `<th colspan="${whSpan}" class="grp">${esc(w.name)}${w.location ? ` — ${esc(w.location)}` : ''}</th>`).join('') : ''}
+      ${withGrand ? `<th colspan="3" class="grp">إجمالي كل المخازن</th>` : ''}
       ${packsOn ? `<th colspan="${kinds.length}" class="grp">الكراتين والأكياس</th>` : ''}`;
-    const head2 = whs.map(() => '<th style="width:96px">وارد الفترة</th><th style="width:96px">صادر الفترة</th><th style="width:96px">المتبقي</th>').join('')
-      + '<th style="width:104px">وارد</th><th style="width:104px">صادر</th><th style="width:104px">المتبقي</th>'
+    const head2 = (perWarehouse
+      ? whs.map(() => '<th style="width:96px">وارد الفترة</th><th style="width:96px">صادر الفترة</th><th style="width:96px">المتبقي</th>'
+        + (packsOn ? kinds.map((k) => `<th style="width:118px">${esc(k.label)}</th>`).join('') : '')).join('')
+      : '')
+      + (withGrand ? '<th style="width:104px">وارد</th><th style="width:104px">صادر</th><th style="width:104px">المتبقي</th>' : '')
       + (packsOn ? kinds.map((k) => `<th style="width:118px">${esc(k.label)}</th>`).join('') : '');
 
     const body = rows.map((r) => {
-      const cells = whs.map((w) => {
+      const cells = perWarehouse ? whs.map((w) => {
         const c = r.cells[w.id] || { inQty: 0, outQty: 0, balance: 0 };
         const inQ = SamDB.n(c.inQty);
         const outQ = SamDB.n(c.outQty);
         const bal = SamDB.n(c.balance);
+        /* the packs of THIS warehouse — the customer counts the bags and the
+           cartons of every hangar, not only of the total */
+        const whPacks = packsOn ? kinds.map((k) => {
+          const txt = packText(itemOf(r.itemId), k.key, bal);
+          return `<td class="pack">${txt ? esc(txt) : '—'}</td>`;
+        }).join('') : '';
         return `<td class="num ${inQ ? 'qty plus' : 'dim'}">${inQ ? SamDB.fmt(inQ) : '—'}</td>
           <td class="num ${outQ ? 'qty minus' : 'dim'}">${outQ ? SamDB.fmt(outQ) : '—'}</td>
-          <td class="num qty ${bal < 0 ? 'minus' : ''}">${SamDB.fmt(bal)}</td>`;
-      }).join('');
+          <td class="num qty ${bal < 0 ? 'minus' : ''}">${SamDB.fmt(bal)}</td>${whPacks}`;
+      }).join('') : '';
       /* the totals of every warehouse of this item — the column the user
          asked for: one number that gathers them all */
       const totalIn = SamDB.n(r.totalIn);
@@ -454,9 +492,9 @@
         <td class="sam-item-cell">${itemCellHtml(r, PIC_SCREEN, false)}</td>
         <td class="center"><span class="unit-chip">${esc(r.baseUnit)}</span></td>
         ${cells}
-        <td class="num ${totalIn ? 'qty plus' : 'dim'}">${totalIn ? SamDB.fmt(totalIn) : '—'}</td>
+        ${withGrand ? `<td class="num ${totalIn ? 'qty plus' : 'dim'}">${totalIn ? SamDB.fmt(totalIn) : '—'}</td>
         <td class="num ${totalOut ? 'qty minus' : 'dim'}">${totalOut ? SamDB.fmt(totalOut) : '—'}</td>
-        <td class="num qty"><b>${SamDB.fmt(total)}</b></td>
+        <td class="num qty"><b>${SamDB.fmt(total)}</b></td>` : ''}
         ${packs}
       </tr>`;
     }).join('');

@@ -260,6 +260,14 @@
         <span class="raw-date">${esc(d.doc_date || '')}</span>
         <span class="raw-qty">${SamDB.fmt(d.totalPieces || 0)} حبة</span>
       </button>`).join('');
+    let batches = [];
+    try { batches = await SamDB.call('listTolling', 50); } catch (e) { batches = []; }
+    const batchCards = (batches || []).slice(0, 4).map((b) => `
+      <button class="raw-card" type="button" data-batch="${b.id}">
+        <span class="raw-no">${esc(b.doc_no || '')}</span>
+        <span class="raw-date">${esc(b.partyName || '')}</span>
+        <span class="raw-qty">${SamDB.fmt(b.pieces_in || 0)} حبة</span>
+      </button>`).join('');
     host.innerHTML = `
       <div class="raw-head">
         <span class="t3d tone-issue"><svg class="ic"><use href="#i-issue"/></svg></span>
@@ -267,8 +275,22 @@
         <span class="dim">${SamDB.fmt(pieces)} حبة في ${SamDB.fmt(rows.length)} سند</span>
         <button class="btn btn-sm btn-ghost" type="button" id="rawGoProduction">شاشة الإنتاج</button>
       </div>
-      <div class="raw-cards">${cards}</div>`;
+      <div class="raw-cards">${cards}</div>
+      ${batchCards ? `<div class="raw-head" style="margin-top:10px">
+        <span class="t3d tone-produce"><svg class="ic"><use href="#i-tolling"/></svg></span>
+        <b>تصاريح دخول خام العميل</b>
+        <span class="dim">${SamDB.fmt((batches || []).length)} دفعة</span>
+      </div>
+      <div class="raw-cards">${batchCards}</div>` : ''}`;
     host.querySelectorAll('.raw-card').forEach((b) => {
+      if (b.getAttribute('data-batch')) {
+        b.addEventListener('click', () => {
+          const id = Number(b.getAttribute('data-batch'));
+          if (window.SamProduction && SamProduction.printTolling) SamProduction.printTolling(id);
+          else toast('افتح شاشة الإنتاج لطباعة تصريح الدخول', 'warn');
+        });
+        return;
+      }
       b.addEventListener('click', () => viewDoc(Number(b.getAttribute('data-doc'))));
     });
     const go = host.querySelector('#rawGoProduction');
@@ -295,7 +317,7 @@
       tr.innerHTML = `
         <td class="num">${idx + 1}</td>
         <td class="mono no-cell">${noCell}</td>
-        <td><span class="chip kind-chip tone-${st.tone}"><span class="t3d tiny tone-${st.tone}">${SamUI.icon(st.icon)}</span>${esc(d.kindAr)}</span></td>
+        <td><span class="chip kind-chip tone-${st.tone}"><span class="t3d tiny tone-${st.tone}">${SamUI.icon(st.icon)}</span>${esc(d.kindAr)}</span>${d.batch_id ? ' <span class="chip accent">خامة عميل</span>' : ''}</td>
         <td>${esc(d.doc_date)}</td>
         <td>${esc(d.partyName || '—')}</td>
         <td>${whCell}</td>
