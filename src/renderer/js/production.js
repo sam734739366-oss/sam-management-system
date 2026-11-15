@@ -1551,6 +1551,26 @@
   };
   setHeadText('prodissuesPanel', 'سندات صرف خام إلى الإنتاج — ما خرج من المخزون فعلياً');
   setHeadText('prodreceiptsPanel', 'سندات استلام المنتج التام — ما دخل المخزون فعلياً');
+
+  /* ONE place for each kind: the old records (before the documents were
+     unified) now live UNDER the new tab, and the duplicate tab is gone —
+     the customer should not see two tabs for the same thing. */
+  const legacyIssues = document.getElementById('issuesPanel');
+  const legacyReceipts = document.getElementById('receiptsPanel');
+  const newIssues = document.getElementById('prodissuesPanel');
+  const newReceipts = document.getElementById('prodreceiptsPanel');
+  if (legacyIssues && newIssues) {
+    setHeadText('issuesPanel', 'السجل القديم — صرف المواد الخام (قبل توحيد المستندات)');
+    newIssues.appendChild(legacyIssues);
+  }
+  if (legacyReceipts && newReceipts) {
+    setHeadText('receiptsPanel', 'السجل القديم — استلام الإنتاج (قبل توحيد المستندات)');
+    newReceipts.appendChild(legacyReceipts);
+  }
+  ['issues', 'receipts'].forEach((t) => {
+    const b = document.querySelector(`#prodTabs .tab[data-tab="${t}"]`);
+    if (b) b.remove();
+  });
   const btnPrintGap = document.getElementById('btnPrintGap');
   if (btnPrintGap) btnPrintGap.addEventListener('click', printGap);
   const btnExcelGap = document.getElementById('btnExcelGap');

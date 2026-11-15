@@ -159,8 +159,8 @@
       <div class="side-foot">
         <div class="phase-card">
           <span class="pc-label">إصدار النظام</span>
-          <span class="pc-num">V7</span>
-          <span class="pc-txt">النفخ للغير بأربع خطوات · دفعة العميل · فترة في التقارير · توقيع مناسب لكل مستند</span>
+          <span class="pc-num">V8</span>
+          <span class="pc-txt">تقارير جديدة · تبويب واحد لكل نوع · أسهم بين المستندات · ترتيب بالرقم الخارجي</span>
         </div>
         <div class="shortcut-hint"><b>Ctrl+S</b> حفظ · <b>Ctrl+N</b> جديد · <b>Esc</b> إغلاق</div>
         <div class="wm-tag">SAM 775158678</div>
@@ -222,7 +222,7 @@
         </div>
 
         <div class="card" style="margin-top:16px">
-          <div class="card-head"><h3>ما الذي تغيّر في V7</h3><span class="badge">تحديث شامل</span></div>
+          <div class="card-head"><h3>ما الذي تغيّر في V8</h3><span class="badge">تحديث شامل</span></div>
           <div class="card-body"><ol class="roadmap" id="roadmap"></ol></div>
         </div>
       </section>
@@ -331,6 +331,7 @@
             <span class="sub">كل نوع بلون أيقونته ولون خلفيته</span>
           </div>
           <div class="card-body tight">
+            <div class="raw-strip" id="rawIssueStrip"></div>
             <div class="kind-launcher" id="docKinds"></div>
           </div>
         </div>
@@ -417,10 +418,8 @@
         </div>
 
         <div class="tabs" id="prodTabs">
-          <button class="tab active" data-tab="issues">صرف المواد الخام</button>
           <button class="tab" data-tab="prodreceipts"><span class="t3d xs tone-produce"><svg class="ic"><use href="#i-factory"/></svg></span><span class="btn-txt">استلام المنتج التام</span></button>
           <button class="tab" data-tab="prodissues"><span class="t3d xs tone-issue"><svg class="ic"><use href="#i-issue"/></svg></span><span class="btn-txt">صرف خام إلى الإنتاج</span></button>
-          <button class="tab" data-tab="receipts">تقارير الإنتاج</button>
           <button class="tab" data-tab="gap"><span class="t3d xs tone-sell"><svg class="ic"><use href="#i-scale"/></svg></span><span class="btn-txt">العجز والتالف</span></button>
           <button class="tab" data-tab="tolling">دفعات العميل</button>
           <button class="tab" data-tab="scrap">سجل الهدر</button>
@@ -838,7 +837,7 @@
   <!-- ===================== status bar ===================== -->
   <footer class="statusbar">
     <span class="sb-item"><b>SAM</b> 775158678</span>
-    <span class="sb-item dim" id="sbPhase">V7 — النفخ للغير بأربع خطوات · دفعة العميل · فترة في التقارير · توقيع مناسب لكل مستند</span>
+    <span class="sb-item dim" id="sbPhase">V8 — تقارير جديدة · تبويب واحد لكل نوع · أسهم بين المستندات · ترتيب بالرقم الخارجي</span>
     <span class="sb-spacer"></span>
     <span class="sb-item dim" id="sbDb">—</span>
     <span class="sb-item dim" id="sbVer">Electron —</span>

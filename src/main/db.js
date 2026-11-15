@@ -1369,7 +1369,7 @@ function listDocuments(filter = {}) {
      LEFT JOIN warehouses dw ON dw.id=d.dest_warehouse_id
      WHERE (?='' OR d.kind=?)
        AND (?='' OR d.doc_no LIKE ? OR IFNULL(d.external_no,'') LIKE ? OR IFNULL(p.name,'') LIKE ? OR IFNULL(d.invoice_value,'') LIKE ?)
-     ORDER BY d.id DESC
+     ORDER BY COALESCE(NULLIF(TRIM(d.external_no),''), d.doc_no) COLLATE NOCASE, d.id
      LIMIT ?`
   ).all(kind, kind, search.slice(1), search, search, search, search, int(filter.limit) || 300);
   return rows.map((r) => ({ ...r, kindAr: DOC_KINDS[r.kind] ? DOC_KINDS[r.kind].ar : r.kind }));
@@ -2450,7 +2450,12 @@ const REPORTS = [
   { key: 'shortage', title: 'الأصناف الناقصة', hint: 'ما وصل حد التنبيه أو نفد من المخزون', landscape: false },
   { key: 'damage', title: 'التالف والهدر', hint: 'حركة التالف والهدر لكل صنف', landscape: false },
   { key: 'party_balance', title: 'حساب الأطراف', hint: 'ماذا دخل وماذا خرج لكل عميل أو مورد', landscape: false },
-  { key: 'production_gap', title: 'عجز وتالف الإنتاج', hint: 'عجز الكراتين وتالفها — تقرير توثيقي بلا أثر على المخزون', landscape: true }
+  { key: 'production_gap', title: 'عجز وتالف الإنتاج', hint: 'عجز الكراتين وتالفها — تقرير توثيقي بلا أثر على المخزون', landscape: true },
+  { key: 'today_sales', title: 'مبيعات اليوم', hint: 'فواتير مبيعات اليوم — كل فاتورة بسطرها', landscape: false },
+  { key: 'production_receipts', title: 'استلام الإنتاج', hint: 'ما استلمه المصنع من العلب — كل سند استلام بسطره', landscape: false },
+  { key: 'customer_account', title: 'حساب العملاء', hint: 'ماذا دخل وماذا خرج لكل عميل', landscape: false },
+  { key: 'supplier_account', title: 'حساب الموردين', hint: 'ماذا دخل وماذا خرج لكل مورد', landscape: false },
+  { key: 'documents_report', title: 'تقرير المستندات', hint: 'كل مستند على سطر — مرتّب بالرقم الخارجي', landscape: true }
 ];
 
 function reportRange(filters) {
@@ -2851,6 +2856,180 @@ function productionGapReport(filters = {}) {
  * Run one of the ready-made reports. `filters.report` picks the report;
  * every report accepts the same period filter.
  */
+/* =====================================================================
+   The new reports — V7.4
+   =====================================================================
+   · مبيعات اليوم        — the sales of today, one row per document
+   · استلام الإنتاج       — what the plant handed back, one row per receipt
+   · حساب العملاء        — what each customer took and brought
+   · حساب الموردين       — what each supplier brought and took
+   · تقرير المستندات     — every document on its own row, in the order of
+                            the customer's own number (the external one)
+   ===================================================================== */
+
+/** the documents of a period, one row each, with what they carried */
+function documentsReport(filters = {}) {
+  const { where, params } = reportRange(filters);
+  const rows = db.prepare(
+    `SELECT d.id AS docId, d.kind AS docKind, d.doc_no AS docNo, d.external_no AS externalNo,
+            d.doc_date AS docDate, d.invoice_value AS invoiceValue,
+            p.name AS partyName,
+            w.name AS warehouseName,
+            (SELECT COUNT(*) FROM doc_lines l WHERE l.document_id=d.id) AS lineCount,
+            (SELECT COALESCE(SUM(l.pieces),0) FROM doc_lines l WHERE l.document_id=d.id) AS pieces,
+            (SELECT COALESCE(SUM(l.cartons),0) FROM doc_lines l WHERE l.document_id=d.id) AS cartons,
+            (SELECT COALESCE(SUM(l.bags),0) FROM doc_lines l WHERE l.document_id=d.id) AS bags,
+            (SELECT COUNT(*) FROM doc_lines l WHERE l.document_id=d.id AND l.item_id IS NOT NULL) AS itemCount
+     FROM documents d
+     LEFT JOIN parties p ON p.id = d.party_id
+     LEFT JOIN warehouses w ON w.id = d.warehouse_id
+     WHERE 1=1 ${where.length ? 'AND ' + where.join(' AND ') : ''}
+     ORDER BY COALESCE(NULLIF(TRIM(d.external_no),''), d.doc_no) COLLATE NOCASE, d.id`
+  ).all(...params);
+  const out = rows.map((r) => ({
+    ...r,
+    docKindAr: DOC_KINDS[r.docKind] ? DOC_KINDS[r.docKind].ar : r.docKind,
+    partyName: r.partyName || '—'
+  }));
+  return {
+    report: 'documents_report',
+    title: 'تقرير المستندات',
+    columns: [
+      { key: 'externalNo', label: 'الرقم الخارجي' },
+      { key: 'docNo', label: 'الرقم الداخلي' },
+      { key: 'docKindAr', label: 'النوع' },
+      { key: 'docDate', label: 'التاريخ' },
+      { key: 'partyName', label: 'العميل / المورد' },
+      { key: 'warehouseName', label: 'المخزن' },
+      { key: 'itemCount', label: 'عدد الأصناف', num: true },
+      { key: 'pieces', label: 'الكمية (حبة)', num: true },
+      { key: 'cartons', label: 'كراتين', num: true },
+      { key: 'bags', label: 'أكياس', num: true }
+    ],
+    rows: out,
+    totals: {
+      rows: out.length,
+      pieces: out.reduce((a, r) => a + r.pieces, 0),
+      cartons: out.reduce((a, r) => a + r.cartons, 0),
+      bags: out.reduce((a, r) => a + r.bags, 0)
+    }
+  };
+}
+
+/** the sales of today — one row per invoice */
+function todaySalesReport(filters = {}) {
+  const day = (filters.date || '').trim() || db.prepare("SELECT date('now','localtime') AS d").get().d;
+  const rows = db.prepare(
+    `SELECT d.id AS docId, d.doc_no AS docNo, d.external_no AS externalNo, d.doc_date AS docDate,
+            d.invoice_value AS invoiceValue,
+            p.name AS partyName,
+            (SELECT COUNT(*) FROM doc_lines l WHERE l.document_id=d.id) AS lineCount,
+            (SELECT COALESCE(SUM(l.pieces),0) FROM doc_lines l WHERE l.document_id=d.id) AS pieces
+     FROM documents d
+     LEFT JOIN parties p ON p.id = d.party_id
+     WHERE d.kind IN ('sale','sale_return') AND d.doc_date=?
+     ORDER BY COALESCE(NULLIF(TRIM(d.external_no),''), d.doc_no) COLLATE NOCASE, d.id`
+  ).all(day);
+  const out = rows.map((r) => ({ ...r, partyName: r.partyName || '—' }));
+  const value = out.reduce((a, r) => a + (Number(r.invoiceValue) || 0), 0);
+  return {
+    report: 'today_sales',
+    title: 'مبيعات اليوم',
+    columns: [
+      { key: 'externalNo', label: 'الرقم الخارجي' },
+      { key: 'docNo', label: 'الرقم الداخلي' },
+      { key: 'docDate', label: 'التاريخ' },
+      { key: 'partyName', label: 'العميل' },
+      { key: 'lineCount', label: 'عدد الأسطر', num: true },
+      { key: 'pieces', label: 'الكمية (حبة)', num: true },
+      { key: 'invoiceValue', label: 'قيمة الفاتورة', num: true, money: true }
+    ],
+    rows: out,
+    totals: { rows: out.length, pieces: out.reduce((a, r) => a + r.pieces, 0), value }
+  };
+}
+
+/** what the plant handed back — one row per production receipt */
+function productionReceiptsReport(filters = {}) {
+  const { where, params } = reportRange(filters);
+  const rows = db.prepare(
+    `SELECT d.id AS docId, d.doc_no AS docNo, d.external_no AS externalNo, d.doc_date AS docDate,
+            p.name AS partyName,
+            (SELECT COUNT(*) FROM doc_lines l WHERE l.document_id=d.id) AS lineCount,
+            (SELECT COALESCE(SUM(l.pieces),0) FROM doc_lines l WHERE l.document_id=d.id
+               AND l.bucket='good') AS goodPieces,
+            (SELECT COALESCE(SUM(l.pieces),0) FROM doc_lines l WHERE l.document_id=d.id
+               AND l.bucket='defect') AS defectPieces,
+            (SELECT COALESCE(SUM(l.bags),0) FROM doc_lines l WHERE l.document_id=d.id) AS bags
+     FROM documents d
+     LEFT JOIN parties p ON p.id = d.party_id
+     WHERE d.kind='prod_receipt' ${where.length ? 'AND ' + where.join(' AND ') : ''}
+     ORDER BY COALESCE(NULLIF(TRIM(d.external_no),''), d.doc_no) COLLATE NOCASE, d.id`
+  ).all(...params);
+  const out = rows.map((r) => ({ ...r, partyName: r.partyName || '—' }));
+  return {
+    report: 'production_receipts',
+    title: 'استلام الإنتاج',
+    columns: [
+      { key: 'externalNo', label: 'الرقم الخارجي' },
+      { key: 'docNo', label: 'الرقم الداخلي' },
+      { key: 'docDate', label: 'التاريخ' },
+      { key: 'partyName', label: 'العميل' },
+      { key: 'lineCount', label: 'عدد الأسطر', num: true },
+      { key: 'goodPieces', label: 'سليم (حبة)', num: true },
+      { key: 'defectPieces', label: 'تالف (حبة)', num: true },
+      { key: 'bags', label: 'أكياس', num: true }
+    ],
+    rows: out,
+    totals: {
+      rows: out.length,
+      goodPieces: out.reduce((a, r) => a + r.goodPieces, 0),
+      defectPieces: out.reduce((a, r) => a + r.defectPieces, 0)
+    }
+  };
+}
+
+/** the account of the customers, and of the suppliers — one report each */
+function partyAccountReport(filters = {}, type = 'customer') {
+  const { where, params } = reportRange(filters);
+  const rows = db.prepare(
+    `SELECT p.id AS partyId, p.name AS partyName, p.phone AS partyPhone,
+            COALESCE(SUM(CASE WHEN m.piece_delta>0 THEN m.piece_delta ELSE 0 END),0) AS inQty,
+            COALESCE(SUM(CASE WHEN m.piece_delta<0 THEN -m.piece_delta ELSE 0 END),0) AS outQty,
+            COALESCE(SUM(m.piece_delta),0) AS net,
+            COUNT(DISTINCT m.doc_type || '-' || m.doc_id) AS docCount
+     FROM stock_moves m
+     JOIN parties p ON p.id = m.party_id
+     WHERE p.type IN (?, 'both') ${where.length ? 'AND ' + where.join(' AND ') : ''}
+     GROUP BY p.id
+     ORDER BY COALESCE(NULLIF(TRIM(p.name),''), p.id) COLLATE NOCASE`
+  ).all(type, ...params);
+  const out = rows.map((r) => ({
+    ...r,
+    partyTypeAr: type === 'customer' ? 'عميل' : 'مورد',
+    docCount: r.docCount
+  }));
+  return {
+    report: type === 'customer' ? 'customer_account' : 'supplier_account',
+    title: type === 'customer' ? 'حساب العملاء' : 'حساب الموردين',
+    columns: [
+      { key: 'partyName', label: type === 'customer' ? 'العميل' : 'المورد' },
+      { key: 'partyPhone', label: 'الهاتف' },
+      { key: 'docCount', label: 'عدد المستندات', num: true },
+      { key: 'inQty', label: 'وارد', num: true },
+      { key: 'outQty', label: 'صادر', num: true },
+      { key: 'net', label: 'الصافي', num: true, signed: true }
+    ],
+    rows: out,
+    totals: {
+      rows: out.length,
+      inQty: out.reduce((a, r) => a + r.inQty, 0),
+      outQty: out.reduce((a, r) => a + r.outQty, 0),
+      net: out.reduce((a, r) => a + r.net, 0)
+    }
+  };
+}
+
 function runReport(filters = {}) {
   const key = filters.report || 'movements';
   switch (key) {
@@ -2862,6 +3041,11 @@ function runReport(filters = {}) {
     case 'damage': return damageReport(filters);
     case 'party_balance': return partyBalanceReport(filters);
     case 'production_gap': return productionGapReport(filters);
+    case 'today_sales': return todaySalesReport(filters);
+    case 'production_receipts': return productionReceiptsReport(filters);
+    case 'customer_account': return partyAccountReport(filters, 'customer');
+    case 'supplier_account': return partyAccountReport(filters, 'supplier');
+    case 'documents_report': return documentsReport(filters);
     case 'movements':
     default: {
       const q = reportQuery(filters);

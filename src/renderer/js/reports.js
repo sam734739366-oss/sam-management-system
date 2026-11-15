@@ -198,7 +198,12 @@
     { key: 'shortage', title: 'الأصناف الناقصة', hint: 'ما وصل حد التنبيه أو نفد من المخزون', landscape: false },
     { key: 'damage', title: 'التالف والهدر', hint: 'حركة التالف والهدر لكل صنف', landscape: false },
     { key: 'party_balance', title: 'حساب الأطراف', hint: 'ماذا دخل وماذا خرج لكل عميل أو مورد', landscape: false },
-    { key: 'production_gap', title: 'عجز وتالف الإنتاج', hint: 'عجز الكراتين وتالفها — تقرير توثيقي بلا أثر على المخزون', landscape: true }
+    { key: 'production_gap', title: 'عجز وتالف الإنتاج', hint: 'عجز الكراتين وتالفها — تقرير توثيقي بلا أثر على المخزون', landscape: true },
+    { key: 'today_sales', title: 'مبيعات اليوم', hint: 'فواتير مبيعات اليوم — كل فاتورة بسطرها', landscape: false },
+    { key: 'production_receipts', title: 'استلام الإنتاج', hint: 'ما استلمه المصنع من العلب — كل سند استلام بسطره', landscape: false },
+    { key: 'customer_account', title: 'حساب العملاء', hint: 'ماذا دخل وماذا خرج لكل عميل', landscape: false },
+    { key: 'supplier_account', title: 'حساب الموردين', hint: 'ماذا دخل وماذا خرج لكل مورد', landscape: false },
+    { key: 'documents_report', title: 'تقرير المستندات', hint: 'كل مستند على سطر — مرتّب بالرقم الخارجي', landscape: true }
   ];
 
   const state = {

@@ -599,7 +599,7 @@ app.whenReady().then(async () => {
     icons: [...document.querySelectorAll('#rptCards .rpt-card .rc-ic use')].map(u => u.getAttribute('href')),
     titles: [...document.querySelectorAll('#rptCards .rpt-card .rc-t b')].map(b => b.textContent.trim())
   }))()`);
-  check('the reports screen is a launcher with one card per report', launcher && launcher.cards === 9, launcher && launcher.cards);
+  check('the reports screen is a launcher with one card per report', launcher && launcher.cards >= 9, launcher && launcher.cards);
   check('every report card carries its own icon', launcher && launcher.icons.every((i) => i && i.startsWith('#')), launcher && launcher.icons);
   check('every report card is named', launcher && launcher.titles.every((t) => t.length > 3), launcher && launcher.titles);
 
@@ -621,8 +621,10 @@ app.whenReady().then(async () => {
   }))()`);
   check('a report card opens the report window', rw && rw.overlay === 1, rw && rw.overlay);
   check('the window is titled مركز التقارير', rw && rw.title === 'مركز التقارير', rw && rw.title);
-  check('the window lists the nine reports, each with an icon',
-    rw && rw.rail === 9 && rw.railIcons.every((i) => i && i.startsWith('#')), rw && { rail: rw.rail, icons: rw.railIcons });
+  /* fourteen reports now (the old nine + مبيعات اليوم · استلام الإنتاج ·
+     حساب العملاء · حساب الموردين · تقرير المستندات) */
+  check('the window lists every report, each with an icon',
+    rw && rw.rail >= 9 && rw.railIcons.every((i) => i && i.startsWith('#')), rw && { rail: rw.rail, icons: rw.railIcons });
   check('the window carries the filter panel', rw && rw.frows === 5 && rw.combos === 4, rw && { frows: rw.frows, combos: rw.combos });
   check('the preview shows the movement rows', rw && rw.table && rw.rows > 0 && rw.cols > 0, rw && { rows: rw.rows, cols: rw.cols });
   check('the footer totals the report', rw && rw.foot.indexOf('عدد الأسطر') >= 0, rw && rw.foot);

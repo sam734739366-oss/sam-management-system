@@ -54,12 +54,45 @@
     const frame = print
       ? 'border:1px solid #cfd6e0;box-shadow:none;'
       : 'border:1px solid var(--line);box-shadow:0 1px 3px rgba(15,23,42,.14);';
-    return `<img class="sam-pic" src="${esc(url)}" alt="" title="${esc(item.name || '')}"`
+    return `<img class="sam-pic" data-item="${item.id || ''}" src="${esc(url)}" alt="" title="${esc(item.name || '')}"`
       /* the WHOLE picture — a photo that is taller than it is wide must not
          lose its top or its bottom; the frame grows around it */
       + ` style="width:${px}px;height:${px}px;object-fit:contain;border-radius:8px;${frame}`
       + 'background:#f1f5f9;flex:none;align-self:center;">';
   }
+
+
+  /* ---------------- the picture, big ----------------
+     The pictures of the items are small boxes that look alike — so a click
+     on one opens it large, with the name of the item and its code beside it. */
+  function openPicture(item) {
+    const url = pictureUrl(item);
+    if (!url) return;
+    modal({
+      title: item.name || 'صورة الصنف',
+      width: 'min(720px, 94vw)',
+      body: `<div class="pic-big-wrap">
+          <img class="pic-big" src="${esc(url)}" alt="${esc(item.name || '')}" />
+          <div class="pic-big-meta">
+            <b>${esc(item.name || '')}</b>
+            <span class="mono">${esc(item.code || '')}</span>
+            ${item.base_unit ? `<span class="dim">${esc(item.base_unit)}</span>` : ''}
+          </div>
+        </div>`,
+      actions: [{ label: 'إغلاق', value: 'close', kind: 'btn-ghost' }]
+    });
+  }
+
+  /* one listener for every picture of the program */
+  document.addEventListener('click', (e) => {
+    const img = e.target.closest && e.target.closest('img.sam-pic');
+    if (!img) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const id = Number(img.getAttribute('data-item'));
+    const item = (state.items || []).find((x) => Number(x.id) === id) || null;
+    if (item) openPicture(item);
+  });
 
   /* =====================================================================
      The packs of an item — the carton, the bag and the unit of its own

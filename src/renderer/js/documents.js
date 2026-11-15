@@ -197,6 +197,7 @@
       try { state.kindCounts = await SamDB.call('documentKindCounts') || {}; } catch (e) { state.kindCounts = {}; }
       render();
       renderKindLauncher();
+      renderRawIssueStrip();
     } catch (e) { toast(e.message, 'bad'); }
   }
 
@@ -236,6 +237,45 @@
       return `متبقٍّ في الدفعة: ${SamDB.fmt(b.remaining)} ${b.rawUnit || ''} — سطر جاهز بالكمية المتبقية (عدّلها كما تشاء) · العميل: ${b.partyName}`;
     }
     return `العميل: ${b.partyName} — منتَج: ${SamDB.fmt(b.producedGood)} · مسلَّم: ${SamDB.fmt(b.delivered)}`;
+  }
+
+
+  /* ---------------- the raw material, in the operations header ----------
+     The customer asked: «أظهر بيانات صرف الخام في ترويسة العمليات، لأنه
+     لا يظهر إلا في الإنتاج». The strip shows what left the warehouse for
+     the plant — the last issues, with their totals — and opens the
+     production screen with one click. */
+  async function renderRawIssueStrip() {
+    const host = document.getElementById('rawIssueStrip');
+    if (!host) return;
+    let docs = [];
+    try { docs = await SamDB.call('listDocuments', { kind: 'prod_issue', limit: 8 }); }
+    catch (e) { host.innerHTML = ''; return; }
+    const rows = (docs || []).filter((d) => d.kind === 'prod_issue');
+    if (!rows.length) { host.innerHTML = ''; return; }
+    const pieces = rows.reduce((a, d) => a + (Number(d.totalPieces) || 0), 0);
+    const cards = rows.slice(0, 4).map((d) => `
+      <button class="raw-card" type="button" data-doc="${d.id}">
+        <span class="raw-no">${esc(d.external_no || d.doc_no)}</span>
+        <span class="raw-date">${esc(d.doc_date || '')}</span>
+        <span class="raw-qty">${SamDB.fmt(d.totalPieces || 0)} حبة</span>
+      </button>`).join('');
+    host.innerHTML = `
+      <div class="raw-head">
+        <span class="t3d tone-issue"><svg class="ic"><use href="#i-issue"/></svg></span>
+        <b>صرف خام إلى الإنتاج</b>
+        <span class="dim">${SamDB.fmt(pieces)} حبة في ${SamDB.fmt(rows.length)} سند</span>
+        <button class="btn btn-sm btn-ghost" type="button" id="rawGoProduction">شاشة الإنتاج</button>
+      </div>
+      <div class="raw-cards">${cards}</div>`;
+    host.querySelectorAll('.raw-card').forEach((b) => {
+      b.addEventListener('click', () => viewDoc(Number(b.getAttribute('data-doc'))));
+    });
+    const go = host.querySelector('#rawGoProduction');
+    if (go) go.addEventListener('click', () => {
+      const nav = document.querySelector('.nav-item[data-view=production]');
+      if (nav) nav.click();
+    });
   }
 
   function render() {
@@ -1456,6 +1496,12 @@
     ));
     const whSummary = [...new Set(d.lines.map((l) => l.warehouseName).filter(Boolean))].join(' · ');
     const batch = await batchOf(d);
+    /* the neighbours of this document, in the order of the list (the
+       customer's own number) — the walk from one document to the next */
+    const list = state.docs || [];
+    const at = list.findIndex((x) => Number(x.id) === Number(id));
+    const prevDoc = at > 0 ? list[at - 1] : null;
+    const nextDoc = (at >= 0 && at < list.length - 1) ? list[at + 1] : null;
     const v = await modal({
       title: `${d.kindAr} — ${d.doc_no}`,
       width: 'min(900px, 95vw)',
@@ -1485,12 +1531,17 @@
           : []),
         { label: 'تعديل', value: 'edit', kind: 'btn-ghost', icon: 'i-edit' },
         { label: 'حذف نهائي', value: 'del', kind: 'btn-danger', icon: 'i-trash' },
+        ...(prevDoc ? [{ label: 'السابق', value: 'prev', kind: 'btn-ghost' }] : []),
+        ...(nextDoc ? [{ label: 'التالي', value: 'next', kind: 'btn-ghost' }] : []),
         { label: 'إغلاق', value: 'close', kind: 'btn-ghost' }
       ]
     });
     if (v === 'edit') openEditor(id);
     if (v === 'print') printInvoice(id);
     if (v === 'gate') printPermits(id);
+    /* the walk through the documents: the one before and the one after */
+    if (v === 'prev' && prevDoc) return viewDoc(prevDoc.id);
+    if (v === 'next' && nextDoc) return viewDoc(nextDoc.id);
     if (v === 'del') {
       // the impact warning (what the deletion reverses) comes first
       await removeDoc({ id: d.id, kindAr: d.kindAr, doc_no: d.doc_no });
