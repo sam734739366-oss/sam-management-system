@@ -61,8 +61,8 @@
       ]);
       Object.assign(state, { items, warehouses: whs, parties, issues, receipts, routing, tolling, scrap, archive, prodDocs, prodIssueDocs });
       initRoutingUI();
-      renderIssues();
-      renderReceipts();
+      /* the old tables are gone — their records became documents */
+
       renderTolling();
       renderScrap();
       renderArchive();
@@ -1469,7 +1469,8 @@
   }
 
   /* ---------------- tabs + wiring ---------------- */
-  const PANELS = ['issues', 'receipts', 'tolling', 'scrap', 'archive', 'prodreceipts', 'prodissues', 'gap'];
+  /* the old records are not tabs any more — they live under the new tab */
+  const PANELS = ['tolling', 'scrap', 'archive', 'prodreceipts', 'prodissues', 'gap'];
   function showTab(tab) {
     state.tab = tab;
     document.querySelectorAll('#prodTabs .tab').forEach((x) => x.classList.toggle('active', x.dataset.tab === tab));
@@ -1552,24 +1553,14 @@
   setHeadText('prodissuesPanel', 'سندات صرف خام إلى الإنتاج — ما خرج من المخزون فعلياً');
   setHeadText('prodreceiptsPanel', 'سندات استلام المنتج التام — ما دخل المخزون فعلياً');
 
-  /* ONE place for each kind: the old records (before the documents were
-     unified) now live UNDER the new tab, and the duplicate tab is gone —
-     the customer should not see two tabs for the same thing. */
-  const legacyIssues = document.getElementById('issuesPanel');
-  const legacyReceipts = document.getElementById('receiptsPanel');
-  const newIssues = document.getElementById('prodissuesPanel');
-  const newReceipts = document.getElementById('prodreceiptsPanel');
-  if (legacyIssues && newIssues) {
-    setHeadText('issuesPanel', 'السجل القديم — صرف المواد الخام (قبل توحيد المستندات)');
-    newIssues.appendChild(legacyIssues);
-  }
-  if (legacyReceipts && newReceipts) {
-    setHeadText('receiptsPanel', 'السجل القديم — استلام الإنتاج (قبل توحيد المستندات)');
-    newReceipts.appendChild(legacyReceipts);
-  }
+  /* ONE place for each kind. The old records were CONVERTED into ordinary
+     documents (see migrateLegacyProduction in db.js), so the old tables have
+     nothing left to show — and the duplicate tabs are gone. */
   ['issues', 'receipts'].forEach((t) => {
     const b = document.querySelector(`#prodTabs .tab[data-tab="${t}"]`);
     if (b) b.remove();
+    const p = document.getElementById(t === 'issues' ? 'issuesPanel' : 'receiptsPanel');
+    if (p) p.remove();
   });
   const btnPrintGap = document.getElementById('btnPrintGap');
   if (btnPrintGap) btnPrintGap.addEventListener('click', printGap);

@@ -324,6 +324,9 @@ function migrate() {
   widenDocumentsV7();
   // V7 — the pack units of an item and the photo of the item
   widenItemsV7();
+  // V8 — the old production records become ordinary documents
+  migrateLegacyProduction();
+  fixConvertedDocumentNumbers();
 }
 
 /**
@@ -574,6 +577,119 @@ function distinctValues(field) {
      WHERE ${spec.column} IS NOT NULL AND TRIM(${spec.column}) <> '' ORDER BY v`
   ).all();
   return rows.map((r) => r.v);
+}
+
+/* =====================================================================
+   V8 — the old production records become ordinary documents
+   =====================================================================
+   The old raw-material issue (prod_issues) and the old production
+   receipt (prod_receipts) were two tables of their own, so the customer
+   saw TWO tabs for the same thing and could not edit the old records like
+   the rest.
+
+   So the old rows are CONVERTED into documents of the same kinds as the
+   new ones (prod_issue / prod_receipt): their numbers, their dates, their
+   items, their cartons and their pieces move into the documents table and
+   their lines, and the ledger rows follow them. After that there is ONE
+   record for every kind — and the quantities follow the cartons and the
+   bags, the way the customer asked.
+   ===================================================================== */
+
+function migrateLegacyProduction() {
+  if (getSetting('migrated.legacy_production') === '1') return { done: false };
+
+  const oldIssues = db.prepare('SELECT * FROM prod_issues ORDER BY id').all();
+  const oldReceipts = db.prepare('SELECT * FROM prod_receipts ORDER BY id').all();
+
+  let issues = 0;
+  let receipts = 0;
+
+  const tx = db.transaction(() => {
+    /* ---- the old raw-material issues → documents of kind prod_issue ---- */
+    for (const r of oldIssues) {
+      const docNo = String(r.doc_no || '').trim() || nextDocNo('prod_issue');
+      const info = db.prepare(
+        `INSERT INTO documents(kind,doc_no,external_no,doc_date,party_id,warehouse_id,dest_warehouse_id,invoice_value,notes)
+         VALUES('prod_issue',?,?,?,?,?,?,?,?)`
+      ).run(docNo, null, r.doc_date || db.prepare("SELECT date('now','localtime') AS d").get().d, null, r.warehouse_id || null, null, null, r.note || null);
+      const docId = info.lastInsertRowid;
+      db.prepare(
+        `INSERT INTO doc_lines(document_id,item_id,warehouse_id,dest_warehouse_id,bucket,pieces,cartons,bags,cartons_part,bags_part,unit_count,unit_part,note,sign)
+         VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+      ).run(docId, r.item_id, r.warehouse_id || null, null, 'good',
+        int(r.pieces), int(r.cartons), 0, 0, 0, 0, 0, null, -1);
+      /* the ledger rows follow the document */
+      db.prepare("UPDATE stock_moves SET doc_type='prod_issue', doc_id=?, doc_no=? WHERE doc_type='issue' AND doc_id=?")
+        .run(docId, docNo, r.id);
+      db.prepare('DELETE FROM prod_issues WHERE id=?').run(r.id);
+      issues++;
+    }
+
+    /* ---- the old production receipts → documents of kind prod_receipt ---- */
+    for (const r of oldReceipts) {
+      const docNo = String(r.doc_no || '').trim() || nextDocNo('prod_receipt');
+      const info = db.prepare(
+        `INSERT INTO documents(kind,doc_no,external_no,doc_date,party_id,warehouse_id,dest_warehouse_id,invoice_value,notes)
+         VALUES('prod_receipt',?,?,?,?,?,?,?,?)`
+      ).run(docNo, null, r.doc_date || db.prepare("SELECT date('now','localtime') AS d").get().d, null, null, null, null, null, r.note || null);
+      const docId = info.lastInsertRowId;
+      const lines = db.prepare('SELECT * FROM prod_receipt_lines WHERE receipt_id=? ORDER BY id').all(r.id);
+      lines.forEach((l) => {
+        const good = int(l.good);
+        const defect = int(l.defect_cans) + int(l.defect_ampoules);
+        if (good > 0) {
+          db.prepare(
+            `INSERT INTO doc_lines(document_id,item_id,warehouse_id,dest_warehouse_id,bucket,pieces,cartons,bags,cartons_part,bags_part,unit_count,unit_part,note,sign)
+             VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+          ).run(docId, l.item_id, null, null, 'good', good, 0, int(l.bags_used), 0, 0, 0, 0, null, 1);
+        }
+        if (defect > 0) {
+          db.prepare(
+            `INSERT INTO doc_lines(document_id,item_id,warehouse_id,dest_warehouse_id,bucket,pieces,cartons,bags,cartons_part,bags_part,unit_count,unit_part,note,sign)
+             VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+          ).run(docId, l.item_id, null, null, 'defect', defect, 0, 0, 0, 0, 0, 0, null, 1);
+        }
+      });
+      db.prepare("UPDATE stock_moves SET doc_type='prod_receipt', doc_id=?, doc_no=? WHERE doc_type='receipt' AND doc_id=?")
+        .run(docId, docNo, r.id);
+      db.prepare("UPDATE stock_moves SET doc_id=?, doc_no=? WHERE doc_type='bags' AND doc_id=?")
+        .run(docId, docNo, r.id);
+      db.prepare('DELETE FROM prod_receipt_lines WHERE receipt_id=?').run(r.id);
+      db.prepare('DELETE FROM prod_receipts WHERE id=?').run(r.id);
+      receipts++;
+    }
+  });
+  tx();
+
+  setSetting('migrated.legacy_production', '1');
+  return { done: true, issues, receipts };
+}
+
+
+/**
+ * V8 — the converted records get OUR number.
+ *
+ * The old raw-material rows were numbered plainly («1», «2», «3»), which
+ * does not sit beside the other documents. They receive the program's own
+ * number (PRI-0001 …) and the old number stays as the EXTERNAL number, so
+ * the customer still recognises his own papers.
+ */
+function fixConvertedDocumentNumbers() {
+  ['prod_issue', 'prod_receipt'].forEach((kind) => {
+    const meta = DOC_KINDS[kind];
+    if (!meta) return;
+    const rows = db.prepare(
+      `SELECT id, doc_no FROM documents WHERE kind=? AND doc_no NOT LIKE ?`
+    ).all(kind, `${meta.prefix}-%`);
+    rows.forEach((d) => {
+      const no = nextDocNo(kind);
+      db.prepare(
+        `UPDATE documents SET doc_no=?, external_no=COALESCE(NULLIF(TRIM(external_no),''),?) WHERE id=?`
+      ).run(no, String(d.doc_no || '').trim() || null, d.id);
+      db.prepare('UPDATE stock_moves SET doc_no=? WHERE doc_type=? AND doc_id=?').run(no, kind, d.id);
+    });
+    return rows.length;
+  });
 }
 
 function init(userDataDir) {
@@ -3124,6 +3240,8 @@ module.exports = {
   availableByLocation,
   getSetting,
   listSettings,
+  migrateLegacyProduction,
+  fixConvertedDocumentNumbers,
   setSetting,
   prodRouting,
   setProdRouting,

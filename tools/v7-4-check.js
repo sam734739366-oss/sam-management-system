@@ -121,8 +121,16 @@ app.whenReady().then(async () => {
   check('there is no tab for the old production receipt', tabs.receipts === 0, tabs.list);
   check('there is ONE tab for the raw material', tabs.prodissues === 1, tabs.list);
   check('there is ONE tab for the production receipt', tabs.prodreceipts === 1, tabs.list);
-  check('the old raw-material records live under the new tab', tabs.legacyInside === 1, tabs);
-  check('the old receipt records live under the new tab', tabs.legacyReceiptsInside === 1, tabs);
+  check('the old raw-material records are not a second tab', tabs.legacyInside === 0, tabs);
+  check('the old receipt records are not a second tab', tabs.legacyReceiptsInside === 0, tabs);
+
+  /* the old panels are gone — their records became documents */
+  const gone = (await js(`(() => ({
+    issuesPanel: !!document.getElementById('issuesPanel'),
+    receiptsPanel: !!document.getElementById('receiptsPanel')
+  }))()`)) || {};
+  check('the old raw-material panel is gone', gone.issuesPanel === false, gone);
+  check('the old receipt panel is gone', gone.receiptsPanel === false, gone);
 
   /* the walk from one document to the next */
   await js(`document.querySelector('.nav-item[data-view=transactions]').click()`);
