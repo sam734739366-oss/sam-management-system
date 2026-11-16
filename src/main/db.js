@@ -327,6 +327,9 @@ function migrate() {
   // V8 — the old production records become ordinary documents
   migrateLegacyProduction();
   fixConvertedDocumentNumbers();
+  // V9 — the kind «استلام خام عميل» and the batches that become documents
+  widenDocumentKindsV9();
+  migrateBatchesToDocuments();
 }
 
 /**
@@ -690,6 +693,105 @@ function fixConvertedDocumentNumbers() {
     });
     return rows.length;
   });
+}
+
+
+/**
+ * V9 — the documents table learns the new kind «استلام خام عميل».
+ *
+ * SQLite cannot change a CHECK constraint, so the table is rebuilt the
+ * documented way (see widenDocumentsV6): every row is copied WITH ITS ID,
+ * so `doc_lines` and `stock_moves` keep pointing at the right row, and
+ * the new columns (blowing_fee, batch_id) travel with it.
+ */
+function widenDocumentKindsV9() {
+  const sql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='documents'").get();
+  if (!sql) return;
+  if (sql.sql.includes("'tolling_in'")) return;
+
+  const old = db.prepare('SELECT * FROM documents ORDER BY id').all();
+  db.pragma('foreign_keys = OFF');
+  db.pragma('legacy_alter_table = ON');
+  try {
+    db.exec(`
+      CREATE TABLE documents_v9 (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        kind TEXT NOT NULL CHECK (kind IN ('purchase','sale','sale_return','purchase_return','transfer','prod_receipt','prod_issue','gate_in','gate_out','adjustment','tolling_in')),
+        doc_no TEXT NOT NULL,
+        external_no TEXT,
+        doc_date TEXT NOT NULL DEFAULT (date('now','localtime')),
+        party_id INTEGER REFERENCES parties(id) ON DELETE RESTRICT,
+        warehouse_id INTEGER REFERENCES warehouses(id) ON DELETE RESTRICT,
+        dest_warehouse_id INTEGER REFERENCES warehouses(id) ON DELETE RESTRICT,
+        invoice_value TEXT,
+        blowing_fee TEXT,
+        batch_id INTEGER REFERENCES tolling_orders(id) ON DELETE SET NULL,
+        notes TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+        updated_at TEXT
+      );
+    `);
+    const ins = db.prepare(
+      `INSERT INTO documents_v9 (id,kind,doc_no,external_no,doc_date,party_id,warehouse_id,
+        dest_warehouse_id,invoice_value,blowing_fee,batch_id,notes,created_at,updated_at)
+       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+    );
+    old.forEach((r) => ins.run(
+      r.id, r.kind, r.doc_no, r.external_no, r.doc_date, r.party_id, r.warehouse_id,
+      r.dest_warehouse_id, r.invoice_value, r.blowing_fee || null, r.batch_id || null,
+      r.notes, r.created_at, r.updated_at != null ? r.updated_at : null
+    ));
+    db.exec('DROP TABLE documents; ALTER TABLE documents_v9 RENAME TO documents;');
+  } finally {
+    db.pragma('legacy_alter_table = OFF');
+    db.pragma('foreign_keys = ON');
+  }
+  const broken = db.pragma('foreign_key_check');
+  if (broken && broken.length) throw new Error('فشل توسيع أنواع المستندات: ' + JSON.stringify(broken));
+}
+
+
+/**
+ * V9 — every batch becomes a document of the kind «استلام خام عميل».
+ *
+ * The batches used to live in a table of their own, with a form of their
+ * own — that is why the customer could not edit them like the other
+ * documents. Now each batch has a document in front of it: the same
+ * editor, the same colours, the same lines with their bags and cartons.
+ * Nothing is lost — the batch keeps its own row, and the document points
+ * at it, so the other documents (the issue, the receipt, the invoice)
+ * keep their link to the batch.
+ */
+function migrateBatchesToDocuments() {
+  if (getSetting('migrated.batches_to_documents') === '1') return { done: false };
+  const batches = db.prepare('SELECT * FROM tolling_orders ORDER BY id').all();
+  let made = 0;
+
+  const tx = db.transaction(() => {
+    for (const b of batches) {
+      const exists = db.prepare("SELECT id FROM documents WHERE kind='tolling_in' AND batch_id=?").get(b.id);
+      if (exists) continue;
+      const info = db.prepare(
+        `INSERT INTO documents(kind,doc_no,external_no,doc_date,party_id,warehouse_id,dest_warehouse_id,invoice_value,blowing_fee,batch_id,notes)
+         VALUES('tolling_in',?,?,?,?,?,?,?,?,?,?)`
+      ).run(String(b.doc_no || '').trim() || nextDocNo('tolling_in'), null,
+        b.doc_date || db.prepare("SELECT date('now','localtime') AS d").get().d,
+        b.party_id, b.warehouse_id || null, null, null, null, b.id, b.note || null);
+      const docId = info.lastInsertRowid;
+      db.prepare(
+        `INSERT INTO doc_lines(document_id,item_id,warehouse_id,dest_warehouse_id,bucket,pieces,cartons,bags,cartons_part,bags_part,unit_count,unit_part,note,sign)
+         VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+      ).run(docId, b.raw_item_id, b.warehouse_id || null, null, 'good',
+        int(b.pieces_in), 0, int(b.bags_in), 0, 0, 0, 0, null, 1);
+      /* the ledger row of the batch follows its document */
+      db.prepare("UPDATE stock_moves SET doc_type='tolling_in', doc_id=?, doc_no=? WHERE doc_type='tolling_in' AND doc_id=?")
+        .run(docId, String(b.doc_no || '').trim(), b.id);
+      made++;
+    }
+  });
+  tx();
+  setSetting('migrated.batches_to_documents', '1');
+  return { done: true, made };
 }
 
 function init(userDataDir) {
@@ -1143,7 +1245,8 @@ const DOC_KINDS = {
   prod_issue: { ar: 'صرف خام إلى الإنتاج', sign: -1, prefix: 'PRI', group: 'مستودع' },
   gate_in: { ar: 'إذن إدخال', sign: 1, prefix: 'GIN', group: 'بوابة' },
   gate_out: { ar: 'إذن خروج', sign: -1, prefix: 'GOT', group: 'بوابة' },
-  adjustment: { ar: 'تسوية جرد', sign: 0, prefix: 'ADJ', group: 'مستودع' }
+  adjustment: { ar: 'تسوية جرد', sign: 0, prefix: 'ADJ', group: 'مستودع' },
+  tolling_in: { ar: 'استلام خام عميل', sign: 1, prefix: 'TOL', group: 'مستودع' }
 };
 
 /** kinds whose lines need a warehouse of their own (one warehouse per line) */
@@ -1316,9 +1419,23 @@ function saveDocument(payload) {
      carries a batch is about the customer's material, so its movements
      belong to that customer (is_customer = 1) and the stock stays
      flagged as the customer's until it is delivered. */
-  const batchId = int(payload.batch_id) || null;
+  let batchId = int(payload.batch_id) || null;
+  if (batchId && !getTollingBatch(batchId)) throw new Error('دفعة العميل غير موجودة');
+
+  /* V9 — the document «استلام خام عميل» carries its batch: the batch is
+     created BEFORE the movements, so the material of the customer is marked
+     as HIS (is_customer = 1) from the very first line */
+  if (payload.kind === 'tolling_in' && !batchId) {
+    const first = (payload.lines || [])[0] || {};
+    const bInfo = db.prepare(
+      `INSERT INTO tolling_orders(doc_no,doc_date,party_id,raw_item_id,warehouse_id,pieces_in,bags_in,note)
+       VALUES(?,?,?,?,?,?,?,?)`
+    ).run(String(payload.doc_no || '').trim() || nextDocNo('tolling_in'), payload.doc_date,
+      int(payload.party_id) || null, int(first.item_id) || null, int(first.warehouse_id) || null,
+      int(first.pieces) || 0, int(first.bags) || 0, str(payload.notes) || null);
+    batchId = bInfo.lastInsertRowid;
+  }
   const batch = batchId ? getTollingBatch(batchId) : null;
-  if (batchId && !batch) throw new Error('دفعة العميل غير موجودة');
 
   const tx = db.transaction(() => {
     if (id) {
@@ -1416,6 +1533,17 @@ function saveDocument(payload) {
         insMove.run(itemId, wh, bucket, sign * pieces, cartons, bags, payload.kind, docId, numbers.docNo,
           moveParty, moveCustomer, l.note || null, payload.doc_date);
       }
+    }
+    /* the batch follows its document — the pieces, the warehouse and the
+       customer of the document are the batch's */
+    if (payload.kind === 'tolling_in' && batchId) {
+      const first = payload.lines[0] || {};
+      db.prepare(
+        `UPDATE tolling_orders SET doc_no=?, doc_date=?, party_id=?, raw_item_id=?, warehouse_id=?,
+         pieces_in=?, bags_in=?, note=?, updated_at=datetime('now','localtime') WHERE id=?`
+      ).run(numbers.docNo, payload.doc_date, int(payload.party_id) || null,
+        int(first.item_id) || null, int(first.warehouse_id) || null,
+        int(first.pieces) || 0, int(first.bags) || 0, str(payload.notes) || null, batchId);
     }
     savedWarnings[docId] = warnings;
     return docId;
@@ -3244,6 +3372,7 @@ module.exports = {
   listSettings,
   migrateLegacyProduction,
   fixConvertedDocumentNumbers,
+  migrateBatchesToDocuments,
   setSetting,
   prodRouting,
   setProdRouting,

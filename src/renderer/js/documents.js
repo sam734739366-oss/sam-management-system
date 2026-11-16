@@ -48,6 +48,7 @@
     transfer: { ar: 'نقل بين المخازن', icon: 'i-truck', tone: 'move', hint: 'انتقال داخلي — يخرج من مخزن ويدخل آخر' },
     prod_receipt: { ar: 'استلام المنتج التام', icon: 'i-factory', tone: 'produce', hint: 'إنتاج المستودع الداخل — يزيد الرصيد ويصدر تصريح خروج' },
     prod_issue: { ar: 'صرف خام إلى الإنتاج', icon: 'i-issue', tone: 'issue', hint: 'صرف خام العميل أو خامنا إلى خط الإنتاج — يخفض الرصيد ويصدر تصريح توريد' },
+    tolling_in: { ar: 'استلام خام عميل', icon: 'i-tolling', tone: 'produce', hint: 'دخول خامة العميل إلى مخزننا — يزيد رصيده المميّز ويصدر تصريح دخول' },
     gate_in: { ar: 'إذن إدخال', icon: 'i-gate-in', tone: 'gin', hint: 'دخول بضاعة من خارج المصنع — يزيد الرصيد' },
     gate_out: { ar: 'إذن خروج', icon: 'i-gate-out', tone: 'gout', hint: 'خروج بضاعة من المصنع — يخفض الرصيد' },
     adjustment: { ar: 'تسوية جرد', icon: 'i-scale', tone: 'adjust', hint: 'فرق الجرد — كل سطر يزيد أو ينقص بمقداره' }
@@ -70,7 +71,7 @@
       and their number comes from that other system) */
   const isExternal = (kind) => !['transfer', 'prod_receipt', 'prod_issue', 'gate_in', 'gate_out', 'adjustment'].includes(kind);
   /** the kinds that leave the warehouse and therefore need an exit permit */
-  const NEEDS_PERMIT = ['sale', 'transfer', 'prod_receipt', 'prod_issue', 'gate_out'];
+  const NEEDS_PERMIT = ['sale', 'transfer', 'prod_receipt', 'prod_issue', 'gate_out', 'tolling_in'];
   /** the kinds whose lines must each name their own warehouse */
   const PER_LINE_WH = ['prod_receipt', 'prod_issue', 'gate_in', 'gate_out', 'adjustment'];
   /** the kind whose lines carry their own direction */
@@ -260,13 +261,16 @@
         <span class="raw-date">${esc(d.doc_date || '')}</span>
         <span class="raw-qty">${SamDB.fmt(d.totalPieces || 0)} حبة</span>
       </button>`).join('');
+    /* the customer's raw material — the batches are DOCUMENTS now, so they
+       live in the operations list like every other document */
     let batches = [];
-    try { batches = await SamDB.call('listTolling', 50); } catch (e) { batches = []; }
-    const batchCards = (batches || []).slice(0, 4).map((b) => `
+    try { batches = (await SamDB.call('listDocuments', { kind: 'tolling_in', limit: 50 })) || []; }
+    catch (e) { batches = []; }
+    const batchCards = batches.slice(0, 4).map((b) => `
       <button class="raw-card" type="button" data-batch="${b.id}">
-        <span class="raw-no">${esc(b.doc_no || '')}</span>
+        <span class="raw-no">${esc(b.external_no || b.doc_no || '')}</span>
         <span class="raw-date">${esc(b.partyName || '')}</span>
-        <span class="raw-qty">${SamDB.fmt(b.pieces_in || 0)} حبة</span>
+        <span class="raw-qty">${SamDB.fmt(b.totalPieces || 0)} حبة</span>
       </button>`).join('');
     host.innerHTML = `
       <div class="raw-head">
@@ -286,8 +290,7 @@
       if (b.getAttribute('data-batch')) {
         b.addEventListener('click', () => {
           const id = Number(b.getAttribute('data-batch'));
-          if (window.SamProduction && SamProduction.printTolling) SamProduction.printTolling(id);
-          else toast('افتح شاشة الإنتاج لطباعة تصريح الدخول', 'warn');
+          printPermits(id);
         });
         return;
       }
@@ -1108,9 +1111,10 @@
       const isTransfer = kind === 'transfer';
       const perLineWh = PER_LINE_WH.includes(kind);
 
-      /* the party exists on a commercial document — and on the permits,
-         where the goods of a named customer enter or leave the gate */
-      const withParty = commercial || kind === 'gate_in' || kind === 'gate_out';
+      /* the party exists on a commercial document — on the permits, where
+         the goods of a named customer enter or leave the gate — and on
+         the customer's raw material */
+      const withParty = commercial || kind === 'tolling_in' || kind === 'gate_in' || kind === 'gate_out';
       grid.querySelector('.party-cell').style.display = withParty ? '' : 'none';
       const partyLabel = grid.querySelector('.party-cell .field-txt');
       if (partyLabel) partyLabel.textContent = withParty && !commercial ? 'العميل / الجهة المستفيدة' : 'العميل / المورد';
@@ -1136,7 +1140,7 @@
       /* the routing quick-fill belongs to the production receipt only */
       routeBtn.classList.toggle('hidden', kind !== 'prod_receipt');
 
-      const wantCustomer = kind === 'sale' || kind === 'sale_return';
+      const wantCustomer = kind === 'sale' || kind === 'sale_return' || kind === 'tolling_in';
       partyCombo.setItems(partyOptions(wantCustomer));
       externalNo.placeholder = EXT_NO_PLACEHOLDER[kind] || 'رقم المستند';
 
@@ -1268,7 +1272,7 @@
         external_no: externalNo.value.trim(),
         doc_date: docDate.value,
         /* only a commercial document carries a party */
-        party_id: isExternal(kind) ? partyCombo.getValue() : null,
+        party_id: (isExternal(kind) || kind === 'tolling_in') ? partyCombo.getValue() : null,
         /* the header keeps the first line's warehouse — the lines carry the truth */
         warehouse_id: lines[0] ? lines[0].whCombo.getValue() : null,
         dest_warehouse_id: kind === 'transfer' && lines[0] ? lines[0].destCombo.getValue() : null,
@@ -1766,7 +1770,8 @@
       : d.kind === 'prod_receipt' ? 'تصريح خروج إنتاج'
         : d.kind === 'prod_issue' ? 'تصريح توريد إنتاج'
           : d.kind === 'gate_out' ? 'تصريح خروج من المصنع'
-            : 'تصاريح خروج';
+            : d.kind === 'tolling_in' ? 'تصريح دخول خامة عميل'
+              : 'تصاريح خروج';
     printPreview({
       title: `${label} (${pages.length})`,
       pages,

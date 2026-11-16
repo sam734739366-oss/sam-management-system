@@ -583,25 +583,42 @@
     const kinds = packKinds();
     const packsOn = state.packs && kinds.length > 0;
 
+    /* the paper takes the SAME shape as the screen: the packs of every
+       hangar, the total of all the hangars (when it is wanted), and the
+       two choices of the user */
+    const perWarehouse = !state.itemTotalOnly;
+    const withGrand = perWarehouse && state.showGrand;
+    const whSpan = 3 + (packsOn ? kinds.length : 0);
     const head1 = `<th rowspan="2" style="width:132px">الصنف</th><th rowspan="2">الوحدة</th>`
-      + whs.map((w) => `<th colspan="3">${esc(w.name)}</th>`).join('')
-      + '<th colspan="3">إجمالي كل المخازن</th>'
+      + (perWarehouse ? whs.map((w) => `<th colspan="${whSpan}">${esc(w.name)}</th>`).join('') : '')
+      + (withGrand ? '<th colspan="3">إجمالي كل المخازن</th>' : '')
       + (packsOn ? `<th colspan="${kinds.length}">الكراتين والأكياس</th>` : '');
-    const head2 = whs.map(() => '<th>وارد الفترة</th><th>صادر الفترة</th><th>المتبقي</th>').join('')
-      + '<th>وارد</th><th>صادر</th><th>المتبقي</th>'
+    const head2 = (perWarehouse
+      ? whs.map(() => '<th>وارد الفترة</th><th>صادر الفترة</th><th>المتبقي</th>'
+        + (packsOn ? kinds.map((k) => `<th>${esc(k.label)}</th>`).join('') : '')).join('')
+      : '')
+      + (withGrand ? '<th>وارد</th><th>صادر</th><th>المتبقي</th>' : '')
       + (packsOn ? kinds.map((k) => `<th>${esc(k.label)}</th>`).join('') : '');
     const body = rows.map((r) => {
-      const cells = whs.map((w) => {
+      const cells = perWarehouse ? whs.map((w) => {
         const c = r.cells[w.id] || {};
-        return `<td>${SamDB.fmt(SamDB.n(c.inQty))}</td><td>${SamDB.fmt(SamDB.n(c.outQty))}</td><td>${SamDB.fmt(SamDB.n(c.balance))}</td>`;
-      }).join('');
+        const bal = SamDB.n(c.balance);
+        const whPacks = packsOn ? kinds.map((k) => {
+          const txt = packText(itemOf(r.itemId), k.key, bal);
+          return `<td>${txt ? esc(txt) : '—'}</td>`;
+        }).join('') : '';
+        return `<td>${SamDB.fmt(SamDB.n(c.inQty))}</td><td>${SamDB.fmt(SamDB.n(c.outQty))}</td><td>${SamDB.fmt(bal)}</td>${whPacks}`;
+      }).join('') : '';
       const total = SamDB.n(r.totalBalance);
       const packs = packsOn ? kinds.map((k) => {
         const txt = packText(itemOf(r.itemId), k.key, total);
         return `<td>${txt ? esc(txt) : '—'}</td>`;
       }).join('') : '';
+      const grandCells = withGrand
+        ? `<td>${SamDB.fmt(SamDB.n(r.totalIn))}</td><td>${SamDB.fmt(SamDB.n(r.totalOut))}</td><td>${SamDB.fmt(total)}</td>`
+        : '';
       return `<tr><td class="sam-item-cell">${itemCellHtml(r, PIC_PRINT, true)}</td><td>${esc(r.baseUnit)}</td>${cells}
-        <td>${SamDB.fmt(SamDB.n(r.totalIn))}</td><td>${SamDB.fmt(SamDB.n(r.totalOut))}</td><td>${SamDB.fmt(total)}</td>${packs}</tr>`;
+        ${grandCells}${packs}</tr>`;
     }).join('');
 
     const grandIn = whs.reduce((a, w) => a + SamDB.n((res.warehouseTotals[w.id] || {}).inQty), 0);
