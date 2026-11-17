@@ -176,6 +176,13 @@ module.exports = function registerIpc(getWindow) {
       dbPath
     };
   });
+
+  /* ---- V9 — the note the window shows when the data folder was repaired.
+         The customer reads it in Arabic, the moment the window opens. */
+  ipcMain.handle('app:notice', () => {
+    try { return { ok: true, data: require('./notice').take() }; }
+    catch (e) { return { ok: false, error: String((e && e.message) || e) }; }
+  });
   /* ---- the pictures: the photo of an item and the logo of the company ----
      The renderer cannot write a file, so the picture travels as a data URL
      and lands in the data folder (with the database) — never in the

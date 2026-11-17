@@ -569,17 +569,45 @@
       const d = res.data;
       state.datadir = d;
       const badge = document.getElementById('ddBadge');
-      badge.textContent = d.isCustom ? 'مجلد مخصص' : 'المجلد الافتراضي';
-      badge.className = `badge ${d.isCustom ? 'ok' : ''}`;
+      /* V9 — a folder that cannot take a write is a problem the customer
+         must see, not a detail hidden in a log file */
+      const blocked = d.writable === false || d.dbWritable === false;
+      badge.textContent = blocked ? 'يحتاج إصلاحاً' : (d.isCustom ? 'مجلد مخصص' : 'المجلد الافتراضي');
+      badge.className = `badge ${blocked ? 'bad' : (d.isCustom ? 'ok' : '')}`;
       document.getElementById('ddInfo').innerHTML = rows([
         ['مجلد البيانات', d.dir],
         ['ملف قاعدة البيانات', d.dbFile],
         ['حجم قاعدة البيانات', `${SamDB.fmt(Math.round(d.dbSize / 1024))} ك.ب`],
+        ['صلاحية الكتابة', blocked ? 'لا يستطيع البرنامج الكتابة هنا — اضغط «إصلاح مجلد البيانات»' : 'سليمة — يمكن الكتابة في هذا المجلد'],
         ['المساحة الحرة', d.freeSpaceMB == null ? '—' : `${SamDB.fmt(d.freeSpaceMB)} م.ب`],
         ['الوضع', d.isCustom ? 'مجلد تختاره أنت' : 'المجلد الافتراضي للبرنامج']
       ]);
+      const fix = document.getElementById('btnFixDataDir');
+      if (fix) {
+        fix.style.display = blocked ? '' : 'none';
+      }
     } catch (e) { toast(e.message, 'bad'); }
     loadCloud();
+  }
+
+  /* ---------------- V9 — repair the read-only data folder ---------------- */
+  async function repairDataDir() {
+    const yes = await modal({
+      title: 'إصلاح مجلد البيانات',
+      body: '<p>سيتحقق البرنامج من مجلد البيانات، ويرفع علامة «للقراءة فقط» إن وُجدت.</p>'
+        + '<p>إن كان المجلد نفسه لا يقبل الكتابة، ستُنسخ بياناتك إلى مجلد آخر يعمل، وتبقى النسخة الأصلية كما هي.</p>',
+      actions: [
+        { label: 'إصلاح الآن', value: 'yes', kind: 'btn-primary', icon: 'i-refresh' },
+        { label: 'إلغاء', value: 'no', kind: 'btn-ghost' }
+      ]
+    });
+    if (yes !== 'yes') return;
+    const res = await sam.datadir.repair();
+    if (!res) return;
+    if (!res.ok) return toast(res.error, 'bad');
+    const d = res.data || {};
+    toast(d.message || 'تم إصلاح مجلد البيانات', d.relocated ? 'warn' : 'ok', 6500);
+    loadDataTab();
   }
 
   async function pickDataDir() {
@@ -633,7 +661,22 @@
     if (!res) return;
     if (res.canceled) return;
     if (!res.ok) return toast(res.error, 'bad');
-    toast(`تم حفظ النسخة في ${res.data.path}`, 'ok', 5200);
+    /* V9 — the copy is ONE self-contained file that can be carried to
+       another computer and restored there. The customer must know exactly
+       which file to take and what to do with it. */
+    const answer = await modal({
+      title: 'تم حفظ نسخة البيانات',
+      body: `<p>النسخة ملف واحد مكتمل، موجود في:</p>
+        <p style="direction:ltr;text-align:start"><b>${esc(res.data.path || '')}</b></p>
+        <p>انقل هذا الملف إلى الجهاز الآخر (بـ USB أو سحابة)، ثم في ذلك الجهاز:</p>
+        <p><b>الإعدادات ← مجلد البيانات ← «استعادة بيانات من ملف…»</b> واختر الملف نفسه.</p>
+        <p style="margin-top:10px">النسخة لا تحمل علامة «للقراءة فقط»، وتُفتح على أي جهاز.</p>`,
+      actions: [
+        { label: 'فتح المجلد', value: 'open', kind: 'btn-ghost', icon: 'i-out' },
+        { label: 'تم', value: 'ok', kind: 'btn-primary' }
+      ]
+    });
+    if (answer === 'open') sam.app.openPath(res.data.dir || '');
   }
 
   /* ---------------- the cloud sync ---------------- */
@@ -943,6 +986,8 @@
   document.getElementById('btnOpenDataDir').addEventListener('click', openDataDir);
   document.getElementById('btnResetDataDir').addEventListener('click', resetDataDir);
   document.getElementById('btnExportDataDir').addEventListener('click', exportDataDir);
+  const fixBtn = document.getElementById('btnFixDataDir');
+  if (fixBtn) fixBtn.addEventListener('click', repairDataDir);
   document.getElementById('btnCloudSync').addEventListener('click', () => doCloudSync(null));
   document.getElementById('btnChangeOwnPw').addEventListener('click', changeOwnPassword);
   document.getElementById('btnCheckUpdate').addEventListener('click', checkUpdate);

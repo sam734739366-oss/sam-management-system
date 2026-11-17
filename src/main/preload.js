@@ -24,6 +24,8 @@ contextBridge.exposeInMainWorld('sam', {
   },
   app: {
     info: () => ipcRenderer.invoke('app:info'),
+    /* V9 — the note the window shows when the data folder was repaired */
+    notice: () => ipcRenderer.invoke('app:notice'),
     openPath: (p) => ipcRenderer.invoke('app:openPath', p),
     saveFile: (opts) => ipcRenderer.invoke('app:saveFile', opts || {}),
     saveXlsx: (spec) => ipcRenderer.invoke('app:saveXlsx', spec || {}),
@@ -53,7 +55,9 @@ contextBridge.exposeInMainWorld('sam', {
     info: () => ipcRenderer.invoke('datadir:info'),
     pick: () => ipcRenderer.invoke('datadir:pick'),
     reset: () => ipcRenderer.invoke('datadir:reset'),
-    exportCopy: () => ipcRenderer.invoke('datadir:export')
+    exportCopy: () => ipcRenderer.invoke('datadir:export'),
+    /* V9 — lift the read-only mark of the data folder */
+    repair: () => ipcRenderer.invoke('datadir:repair')
   },
   cloud: {
     status: () => ipcRenderer.invoke('cloud:status'),

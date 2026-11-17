@@ -159,6 +159,31 @@ module.exports = function registerAuthIpc(getWindow) {
 
   ipcMain.handle('datadir:reset', () => wrap(() => datadir.forget(app)));
 
+  /* ---------------- V9 — the read-only data folder ----------------
+     The customer does not have to reinstall anything: one click lifts the
+     read-only mark, or copies the data to a folder that accepts writes. */
+  ipcMain.handle('datadir:repair', async () => {
+    try {
+      const dir = datadir.resolveDir(app);
+      const res = datadir.ensureUsable(app, dir);
+      if (!res.ok) return { ok: false, error: res.message || 'تعذّر إصلاح مجلد البيانات' };
+      /* when the data moved, the live database must follow it */
+      if (res.relocated && res.dir !== dir) {
+        try {
+          const db = require('./db');
+          db.close();
+          db.init(res.dir);
+          require('./session').ensureSeed();
+        } catch (e) {
+          return { ok: false, error: 'تعذّر فتح قاعدة البيانات في المجلد الجديد: ' + (e && e.message ? e.message : e) };
+        }
+      }
+      return { ok: true, data: { repaired: res.repaired, relocated: res.relocated, from: res.from, to: res.to, message: res.message, info: datadir.info(app) } };
+    } catch (err) {
+      return { ok: false, error: (err && err.message) ? err.message : String(err) };
+    }
+  });
+
   ipcMain.handle('datadir:export', async (e) => {
     const w = winOf(e);
     const res = await dialog.showOpenDialog(w, {

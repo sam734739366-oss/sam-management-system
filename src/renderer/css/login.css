@@ -100,6 +100,25 @@ form { display: flex; flex-direction: column; gap: 13px; }
 .err { min-height: 18px; font-size: 12.5px; color: var(--bad); font-weight: 700; }
 .err:empty { min-height: 0; }
 
+/* ---------------- V9 — the repair note ----------------
+   The data folder arrived read-only and the program fixed it. The
+   customer reads it here, in Arabic, before he logs in. */
+.lc-notice {
+  display: none;
+  margin: 0 0 14px;
+  padding: 11px 13px;
+  border-radius: 12px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface-2);
+  color: var(--ink);
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.85;
+}
+.lc-notice.on { display: block; }
+.lc-notice.warn { border-color: var(--warn-line); background: var(--warn-bg); color: var(--warn); }
+.lc-notice b { color: var(--brand-700); font-weight: 800; }
+
 #loginBtn svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 #loginBtn[disabled] { cursor: progress; }
 #loginBtn .spin { border-color: rgba(255, 255, 255, .35); border-top-color: #fff; }

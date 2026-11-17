@@ -844,11 +844,27 @@ function close() {
 /**
  * Online backup via the SQLite backup API — safe to call while the app is
  * running, no need to close the connection first.
+ *
+ * V9 — the copy is FOLDED before it is handed over. The live database
+ * works in WAL mode, and the backup API copies that mode into the new
+ * file: the result says «wal» in its header, so SQLite expects a -wal
+ * file beside it. The copy is therefore switched to the plain journal
+ * mode, which makes it ONE self-contained file that opens anywhere — on a
+ * USB stick, on the other computer, even on a read-only medium — without
+ * needing a second file next to it.
  */
 async function backupTo(filePath) {
   if (!db) throw new Error('قاعدة البيانات غير مفتوحة');
   try { db.pragma('wal_checkpoint(TRUNCATE)'); } catch (e) { /* ignore */ }
   await db.backup(filePath);
+  try {
+    const Database = require('better-sqlite3');
+    const copy = new Database(filePath);
+    try { copy.pragma('journal_mode = DELETE'); } catch (e) { /* ignore */ }
+    try { copy.close(); } catch (e) { /* ignore */ }
+  } catch (e) { /* the file is written; the mode is a nicety */ }
+  /* the copy must never carry the read-only mark to the other machine */
+  try { require('./writable').unlockFile(filePath); } catch (e) { /* ignore */ }
   return { path: filePath, size: fs.statSync(filePath).size };
 }
 

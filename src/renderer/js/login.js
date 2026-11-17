@@ -75,3 +75,22 @@ form.addEventListener('submit', async (e) => {
 });
 
 window.addEventListener('DOMContentLoaded', () => $('username').focus());
+
+/* =====================================================================
+   V9 — the note the main process left for us.
+   The data folder can arrive from another machine with the Windows
+   read-only mark on it. The program repaired it before the window
+   opened, and says so here — in Arabic, in plain words.
+   ===================================================================== */
+(async () => {
+  const box = $('loginNotice');
+  if (!box) return;
+  try {
+    const res = await window.sam.app.notice();
+    const n = res && res.ok ? res.data : null;
+    if (!n || !n.message) return;
+    box.textContent = n.message;
+    box.classList.add('on');
+    if (n.kind === 'warn') box.classList.add('warn');
+  } catch (e) { /* no note — the normal case */ }
+})();

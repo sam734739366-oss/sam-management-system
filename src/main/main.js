@@ -44,6 +44,10 @@ const ICON_ICO = path.join(ROOT, 'build', 'icon.ico');
 
 let mainWindow = null;
 
+/* V9 — a note the customer must see in Arabic (the data folder was
+   repaired, or the data was moved to a folder that accepts writes).
+   It lives in src/main/notice.js so the window can read it. */
+
 function windowIcon() {
   try {
     if (process.platform === 'win32' && fs.existsSync(ICON_ICO)) {
@@ -58,6 +62,47 @@ function windowIcon() {
     console.warn('icon load failed:', err.message);
   }
   return nativeImage.createEmpty();
+}
+
+/**
+ * V9 — the customer never sees an English stack trace.
+ *
+ * The most common failure is a data folder that arrived from another
+ * machine with the Windows read-only mark still on it. SQLite reads the
+ * file, then dies on the first write, and the whole program closes before
+ * the window appears. The message says what happened, where the data is,
+ * and what to do — in Arabic, in three lines.
+ */
+function startupErrorMessage(err, dataDir) {
+  const raw = String((err && err.message) || err || '');
+  const isReadonly = /readonly|read-only|attempt to write/i.test(raw);
+  const lines = [];
+
+  if (isReadonly) {
+    lines.push('تعذّر الكتابة في مجلد البيانات — الملف محفوظ «للقراءة فقط».');
+    lines.push('');
+    lines.push('سبب ذلك: عادةً ما يكون مجلد البيانات قد نُسخ من جهاز آخر، فاحتفظ ويندوز بعلامة «للقراءة فقط».');
+    lines.push('');
+    lines.push('الحل: افتح المجلد التالي، وأنزع علامة «للقراءة فقط» من مجلده ومن ملف sam.db، ثم شغّل البرنامج:');
+    lines.push(String(dataDir || ''));
+    lines.push('');
+    lines.push('بياناتك سليمة ولن تُفقد — الملف موجود ويمكن قراءته.');
+  } else {
+    lines.push('حدث خطأ أثناء فتح قاعدة البيانات.');
+    if (dataDir) {
+      lines.push('');
+      lines.push('مجلد البيانات:');
+      lines.push(String(dataDir));
+    }
+    if (raw) {
+      lines.push('');
+      lines.push('التفاصيل التقنية: ' + raw);
+    }
+  }
+
+  lines.push('');
+  lines.push('سجل البرنامج كاملاً: ' + STARTUP_LOG);
+  return lines.join('\n');
 }
 
 function createWindow() {
@@ -120,6 +165,7 @@ if (!gotLock) {
   });
 
   app.whenReady().then(async () => {
+    let dataDir = '';
     try {
       startupLog('app ready');
       Menu.setApplicationMenu(null);
@@ -132,9 +178,29 @@ if (!gotLock) {
       const datadir = require('./datadir');
       const pending = datadir.applyPending(app);
       if (pending) startupLog('data folder switched to ' + pending.dir + ' (copied=' + pending.copied + ')');
-      const dataDir = datadir.resolveDir(app);
+      let dataDir = datadir.resolveDir(app);
+
+      /* V9 — the data folder can arrive READ-ONLY (copied from another
+         machine over a USB drive or a network share keeps the Windows
+         read-only mark). SQLite reads such a file perfectly, then dies on
+         the first write — the program used to close with an English stack
+         trace and no window at all. Here the mark is lifted, or the data is
+         copied to a folder that accepts writes. Nothing is ever deleted. */
+      let prep = null;
+      try {
+        prep = datadir.ensureUsable(app, dataDir);
+        if (prep && prep.dir) dataDir = prep.dir;
+        if (prep && prep.repaired) startupLog('data folder repaired: ' + prep.repaired + ' -> ' + dataDir);
+      } catch (err) {
+        startupLog('data folder check failed: ' + (err && err.message ? err.message : err));
+      }
       db.init(dataDir);
       startupLog('database opened at ' + dataDir);
+      /* the repair is worth telling the customer about — it is kept for the
+         window to show it in Arabic the moment it appears */
+      if (prep && prep.message) {
+        require('./notice').set(prep.message, prep.relocated ? 'warn' : 'ok');
+      }
       const session = require('./session');
       const seeded = session.ensureSeed();
       require('./ipc-db')();
@@ -163,7 +229,9 @@ if (!gotLock) {
       });
     } catch (err) {
       startupLog('STARTUP FAILED: ' + (err && err.stack ? err.stack : err));
-      dialog.showErrorBox('تعذّر تشغيل نظام SAM', String((err && err.stack) || err));
+      /* V9 — the customer gets an Arabic sentence, never an English stack
+         trace. The technical detail stays in the log file. */
+      dialog.showErrorBox('تعذّر تشغيل نظام SAM', startupErrorMessage(err, dataDir));
       app.exit(1);
     }
   });

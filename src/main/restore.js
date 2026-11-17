@@ -28,6 +28,7 @@ const path = require('path');
 const { app } = require('electron');
 const db = require('./db');
 const backup = require('./backup');
+const { unlockFile } = require('./writable');
 
 const MAGIC = 'SQLite format 3';
 /* the one table every SAM file has — without it the file is not ours */
@@ -86,11 +87,19 @@ function rmrf(dir) {
  * write-ahead log (if the file came from a running program) is merged into
  * the copy — so the restored data is complete even if the customer copied
  * the file while the program was running.
+ *
+ * V9 — the file may arrive with the Windows READ-ONLY mark on it (a copy
+ * that travelled over a USB drive, a network share or an archive keeps
+ * that mark). The mark is lifted on the COPY, so the merge can happen and
+ * so the restored program can write again. The customer's own file is left
+ * exactly as it was.
  */
 function materialise(source) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sam-restore-'));
   const target = path.join(dir, 'sam.db');
   fs.copyFileSync(source, target);
+  /* the copy inherits the read-only mark of the source — lift it here */
+  unlockFile(target);
   const wal = source + '-wal';
   if (isFile(wal) && fs.statSync(wal).size > 0) {
     try { fs.copyFileSync(wal, target + '-wal'); } catch (e) { /* optional */ }
@@ -192,6 +201,14 @@ async function restoreFrom(source, opts = {}) {
     for (const suffix of ['-wal', '-shm']) {
       try { fs.unlinkSync(live + suffix); } catch (e) { /* not there */ }
     }
+    /* V9 — the copy inherited the read-only mark of the file the customer
+       brought. Left as it is, the very next write (the migration that runs
+       when the database opens) dies with «attempt to write a readonly
+       database» and the program can never start again. The mark is lifted
+       HERE, so the restored program writes normally from the first moment. */
+    unlockFile(live);
+    unlockFile(live + '-wal');
+    unlockFile(live + '-shm');
 
     /* 4 — open the restored database again: the schema and the migrations
            run on it exactly as they do on any normal start */

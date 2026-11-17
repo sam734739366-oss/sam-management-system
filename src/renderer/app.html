@@ -770,9 +770,11 @@
                   <button class="btn btn-ghost" id="btnResetDataDir"><span class="t3d xs tone-info"><svg class="ic"><use href="#i-refresh"/></svg></span><span class="btn-txt">العودة للمجلد الافتراضي</span></button>
                   <button class="btn btn-ghost" id="btnExportDataDir"><span class="t3d xs tone-plain"><svg class="ic"><use href="#i-archive"/></svg></span><span class="btn-txt">حفظ نسخة في مكان آخر</span></button>
                   <button class="btn btn-primary" id="btnRestoreDataDir"><span class="t3d xs tone-ok"><svg class="ic"><use href="#i-restore"/></svg></span><span class="btn-txt">استعادة بيانات من ملف…</span></button>
+                  <button class="btn btn-ghost" id="btnFixDataDir" style="display:none"><span class="t3d xs tone-warn"><svg class="ic"><use href="#i-refresh"/></svg></span><span class="btn-txt">إصلاح مجلد البيانات</span></button>
                 </div>
                 <p class="foot-note">تُنسخ قاعدة البيانات إلى المجلد الجديد فوراً، وتبقى النسخة القديمة سليمة كنسخة احتياطية. التغيير يُطبَّق بالكامل عند إعادة تشغيل البرنامج — بياناتك لا تُفقد أبداً.</p>
                 <p class="foot-note">«استعادة بيانات من ملف…» تضع ملف بيانات جديداً مكان الحالي: تُؤخذ نسخة احتياطية من بياناتك أولاً، ثم يُعاد تشغيل البرنامج على البيانات المستعادة.</p>
+                <p class="foot-note">«إصلاح مجلد البيانات» يظهر فقط عند الحاجة إليه: إذا كان المجلد محفوظاً «للقراءة فقط» (بعد نسخه من جهاز آخر)، يرفع البرنامج العلامة بنفسه، أو ينقل البيانات إلى مجلد يعمل — والنسخة الأصلية تبقى كما هي.</p>
               </div>
             </div>
             <div class="card">
@@ -837,7 +839,7 @@
   <!-- ===================== status bar ===================== -->
   <footer class="statusbar">
     <span class="sb-item"><b>SAM</b> 775158678</span>
-    <span class="sb-item dim" id="sbPhase">V8 — تقارير جديدة · تبويب واحد لكل نوع · أسهم بين المستندات · ترتيب بالرقم الخارجي</span>
+    <span class="sb-item dim" id="sbPhase">V8.4 — نقل البيانات بين الأجهزة: ملف واحد نظيف يُفتح على أي جهاز</span>
     <span class="sb-spacer"></span>
     <span class="sb-item dim" id="sbDb">—</span>
     <span class="sb-item dim" id="sbVer">Electron —</span>
