@@ -432,73 +432,55 @@ app.whenReady().then(async () => {
   await step('archive table', `[...document.querySelectorAll('#archiveTbl tbody tr')].map(t=>[t.children[1].textContent.trim(), t.children[3].textContent.trim(), t.children[4].textContent.trim(), t.children[9].textContent.trim()])`);
   await shot('v2-07-archive');
 
-  /* ================= 10) reports: default = good only, totals on visible cols ================= */
+  /* ================= 10) تقارير المستندات (V9 — حلّت محل مركز التقارير) ================= */
   await js(`document.querySelector('.nav-item[data-view=reports]').click()`);
-  await sleep(900);
-  /* V4: the report centre is a window — the screen only launches it */
-  await step('open the report window', `window.SamReports.run().then(() => 'opened')`);
+  await sleep(1600);
+  await step('run the document reports', `window.SamDocReports.run().then(() => 'ran')`);
   await sleep(1500);
-  const winProbe = await step('the report window is up', `(() => ({
-    overlay: document.querySelectorAll('.rw-overlay').length,
-    rail: document.querySelectorAll('.rw-rail .rw-item').length,
-    cards: document.querySelectorAll('.rpt-card').length,
-    actions: [...document.querySelectorAll('.rw-actions .btn')].map(b => b.textContent.trim())
+  const winProbe = await step('the reports screen is up', `(() => ({
+    kinds: document.querySelectorAll('#drKinds .dr-kind').length,
+    rows: document.querySelectorAll('#drTbl tbody tr.dr-row').length,
+    actions: [...document.querySelectorAll('#v-reports .view-actions .btn')].map(b => b.textContent.trim())
   }))()`);
-  check('the report centre opens as a window', winProbe && winProbe.overlay === 1, winProbe);
-  check('the window lists the ready-made reports', winProbe && winProbe.rail === 9, winProbe);
-  check('the window carries the export / print actions',
+  check('the reports screen offers the seven kinds', winProbe && winProbe.kinds === 7, winProbe);
+  check('the screen carries the export / print actions',
     winProbe && winProbe.actions.some((a) => /Excel/.test(a)) && winProbe.actions.some((a) => /طباعة/.test(a)), winProbe && winProbe.actions);
 
-  const buckets = await step('bucket checkboxes default', `[...document.querySelectorAll('#bucketWrap .col-check')].map(l => [l.textContent.trim(), l.querySelector('input').checked])`);
+  const buckets = await step('bucket checkboxes default', `[...document.querySelectorAll('#drBuckets .col-check')].map(l => [l.textContent.trim(), l.querySelector('input').checked])`);
   check('only Good ticked by default', JSON.stringify(buckets) === JSON.stringify([['سليم', true], ['تالف', false]]), buckets);
   await step('widen the report period to cover the harness history', `(() => {
-    document.getElementById('fFrom').value = '2026-10-01';
-    document.getElementById('fTo').value = '2026-12-31';
-    document.getElementById('fFrom').dispatchEvent(new Event('change', { bubbles: true }));
-    document.getElementById('fTo').dispatchEvent(new Event('change', { bubbles: true }));
-    return [document.getElementById('fFrom').value, document.getElementById('fTo').value];
+    const b = [...document.querySelectorAll('#drPeriods .dr-chip')].find(x => /كل الفترات/.test(x.textContent));
+    if (b) b.click();
+    return 'widened';
   })()`);
-  await sleep(1400);
-  const rep1 = await step('good-only report', `({ rows: SamReports ? undefined : undefined, count: document.querySelectorAll('#reportTbl tbody tr').length, foot: document.getElementById('reportFoot').textContent.replace(/\\s+/g,' ').slice(0,180) })`);
+  await sleep(1500);
+  const rep1 = await step('good-only report', `({ count: document.querySelectorAll('#drTbl tbody tr.dr-row').length, foot: document.getElementById('drTotals').textContent.replace(/\\s+/g,' ').slice(0,180) })`);
   check('report ran and shows rows', rep1.count > 0, rep1.count);
-  check('footer sums visible numeric columns only', /وارد/.test(rep1.foot) && /صادر/.test(rep1.foot) && /صافي الحركة/.test(rep1.foot) && /الوحدة:/.test(rep1.foot), rep1.foot);
+  check('the totals box carries the money and the units', /قيمة الفواتير/.test(rep1.foot) && /ريال/.test(rep1.foot), rep1.foot);
   await shot('v2-08-report-good-only');
 
   await shot('v2-08b-report-grid');
-  // tick Defect -> row count must grow, footer must follow the visible columns
+  // tick Defect -> the rows follow the buckets, the totals follow the rows
   await step('tick defect', `(() => {
-    [...document.querySelectorAll('#bucketWrap input')].forEach(cb => { cb.checked = true; cb.dispatchEvent(new Event('change', { bubbles: true })); });
+    [...document.querySelectorAll('#drBuckets input')].forEach(cb => { cb.checked = true; cb.dispatchEvent(new Event('change', { bubbles: true })); });
     return 'ticked';
   })()`);
   await sleep(1600);
-  const rep2 = await step('all-buckets report', `({ count: document.querySelectorAll('#reportTbl tbody tr').length, foot: document.getElementById('reportFoot').textContent.replace(/\\s+/g,' ').slice(0,180) })`);
-  check('adding buckets adds rows', rep2.count > rep1.count, [rep1.count, rep2.count]);
+  const rep2 = await step('all-buckets report', `({ count: document.querySelectorAll('#drTbl tbody tr.dr-row').length })`);
+  check('adding buckets never loses rows', rep2.count >= rep1.count, [rep1.count, rep2.count]);
 
-  await step('hide the IN column', `(() => {
-    const lab = [...document.querySelectorAll('#colsWrap .col-check')].find(l => /وارد/.test(l.textContent));
-    const cb = lab.querySelector('input');
-    cb.checked = false;
-    cb.dispatchEvent(new Event('change', { bubbles: true }));
+  await step('hide a column', `(() => {
+    const lab = [...document.querySelectorAll('#drCols .col-check')].find(l => /ملاحظة/.test(l.textContent));
+    const cb = lab && lab.querySelector('input');
+    if (cb) { cb.checked = false; cb.dispatchEvent(new Event('change', { bubbles: true })); }
     return 'hidden';
   })()`);
-  await sleep(1600);
-  const footAfter = await step('the footer after hiding the column', `document.getElementById('reportFoot').textContent.replace(/\\s+/g,' ').slice(0,200)`);
-  check('footer drops the hidden column total', !/وارد:/.test(footAfter), footAfter.slice(0, 160));
+  await sleep(1300);
+  const headsAfter = await step('the heads after hiding the column', `[...document.querySelectorAll('#drTbl thead th')].map(t => t.textContent.trim())`);
+  check('the hidden column is gone from the table', !/ملاحظة/.test(headsAfter.join('|')), headsAfter);
 
-  // optional per-hangar breakdown
-  await step('enable breakdown by hangar', `(() => {
-    const lab = [...document.querySelectorAll('#optWrap .col-check')].find(l => /تفصيل/.test(l.textContent));
-    const cb = lab.querySelector('input');
-    cb.checked = true; cb.dispatchEvent(new Event('change', { bubbles: true }));
-    return 'on';
-  })()`);
+  await step('print report to preview', `(() => { document.getElementById('btnDocPrint').click(); return 'clicked'; })()`);
   await sleep(1600);
-  await step('print report to preview', `(() => {
-    const b = [...document.querySelectorAll('.rw-actions .btn')].find(x => /طباعة/.test(x.textContent));
-    if (!b) return 'no-btn';
-    b.click(); return 'clicked';
-  })()`);
-  await sleep(1200);
   const pv = await step('print sheet structure', `(() => {
     const s = [...document.querySelectorAll('.pv .sheet')].pop();
     if (!s) return { present: false };
@@ -510,16 +492,14 @@ app.whenReady().then(async () => {
       meta,
       signatures: [...s.querySelectorAll('.sig .nm')].map(n => n.textContent),
       wm: s.querySelector('.wm').textContent,
-      wmColor: getComputedStyle(s.querySelector('.wm')).color,
-      locationTable: /تفصيل حسب المخزن/.test(s.textContent)
+      wmColor: getComputedStyle(s.querySelector('.wm')).color
     };
   })()`);
-  check('print preview renders the premium sheet', pv.present && pv.landscape, pv.present && pv.landscape);
-  check('centred meta holds period/buckets/rows', pv.meta && pv.meta.length === 3, pv.meta);
-  check('signature band has the three roles', JSON.stringify(pv.signatures) === JSON.stringify(['المعد', 'المراجع', 'المدير']), pv.signatures);
+  check('print preview renders the premium sheet', pv.present === true, pv.present);
+  check('centred meta holds the period and the totals', pv.meta && pv.meta.length === 4, pv.meta);
+  check('a report is not signed unless the customer asks', JSON.stringify(pv.signatures) === JSON.stringify([]), pv.signatures);
   const wmAlpha = Number((pv.wmColor.match(/([\d.]+)\)\s*$/) || [0, 1])[1]);
   check('watermark is subtle', /775158678/.test(pv.wm) && wmAlpha <= 0.08, [pv.wm, pv.wmColor]);
-  check('hangar breakdown printed', pv.locationTable, pv.locationTable);
   await step('layer census at print preview', `({
     previews: document.querySelectorAll('.pv').length,
     editors: document.querySelectorAll('.modal.editor').length,

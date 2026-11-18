@@ -185,14 +185,21 @@ app.whenReady().then(async () => {
   check('daily summary has every warehouse + a grand total row', daily && daily.sumRows === 5, daily && daily.sumRows);
 
   const expected = dbMod.dailyReport({ date: today, buckets: ['good'] });
+  /* V9 — the opening balance is no longer a movement of the day. The old
+     numbers (28000 / 12000 / 6400) included it, so they now belong to the
+     report that ASKS for it; the default report must show less. */
+  const expectedOpen = dbMod.dailyReport({ date: today, buckets: ['good'], includeOpening: true });
   check('daily grand balance matches the DB', daily && daily.kpi.replace(/,/g, '') === String(expected.grand.balance), { kpi: daily && daily.kpi, db: expected.grand.balance });
-  check('daily "in today" counts only inflows',
-    expected.warehouseTotals[whA.id].inQty === 28000 && expected.warehouseTotals[whB.id].inQty === 12000
-    && expected.warehouseTotals[whC.id].inQty === 6400,
-    Object.fromEntries(Object.entries(expected.warehouseTotals).map(([k, v]) => [k, v.inQty])));
+  check('daily "in today" counts only inflows, opening included on request',
+    expectedOpen.warehouseTotals[whA.id].inQty === 28000 && expectedOpen.warehouseTotals[whB.id].inQty === 12000
+    && expectedOpen.warehouseTotals[whC.id].inQty === 6400,
+    Object.fromEntries(Object.entries(expectedOpen.warehouseTotals).map(([k, v]) => [k, v.inQty])));
+  check('daily hides the opening unless the user asks for it',
+    expected.warehouseTotals[whA.id].inQty < expectedOpen.warehouseTotals[whA.id].inQty,
+    { hidden: expected.warehouseTotals[whA.id].inQty, shown: expectedOpen.warehouseTotals[whA.id].inQty });
   check("the purchase of yesterday is NOT counted as today's inflow",
-    expected.warehouseTotals[whA.id].inQty === 28000,
-    { inToday: expected.warehouseTotals[whA.id].inQty });
+    expectedOpen.warehouseTotals[whA.id].inQty === 28000,
+    { inToday: expectedOpen.warehouseTotals[whA.id].inQty });
 
   /* the date filter really filters */
   /* the report takes a PERIOD now — the day is set on both ends */

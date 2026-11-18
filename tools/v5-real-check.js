@@ -331,7 +331,7 @@ app.whenReady().then(async () => {
   /* run the report window over their data and print it */
   const reportRun = await js(`(async () => {
     try {
-      await SamReports.run();
+      await SamDocReports.run();
       await new Promise((r) => setTimeout(r, 2200));
       const win = document.querySelector('.rw-window');
       const rows = document.querySelectorAll('.rw-window tbody tr').length;

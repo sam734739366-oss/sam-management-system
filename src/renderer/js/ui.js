@@ -505,7 +505,9 @@
   }
 
   function sheet(o) {
-    const s = el('section', `sheet${o.landscape ? ' landscape' : ''}${o.half ? ' half' : ''}`);
+    /* V9 — A5 is a real paper choice, not only the half-permit */
+    const a5 = o.paper === 'a5' && !o.half;
+    const s = el('section', `sheet${o.landscape ? ' landscape' : ''}${o.half ? ' half' : ''}${a5 ? ' a5' : ''}`);
     const now = new Date().toLocaleString('ar-EG-u-nu-latn');
     const meta = o.head || [];
     s.innerHTML = `
@@ -565,6 +567,9 @@
     const pages = (Array.isArray(opts.pages) && opts.pages.length) ? opts.pages : [opts];
     const half = !!opts.half;
     const land = !!opts.landscape;
+    /* V9 — the paper the customer chose: A4 (the default) or A5 */
+    const paper = opts.paper === 'a5' ? 'a5' : 'a4';
+    const paperLabel = `${paper === 'a5' ? 'A5' : 'A4'}${land ? ' عرضي' : ''}`;
 
     /* ---- the signature footer of THIS print ----------------------------
        The names come from the system: the user's own choice for the kind
@@ -607,13 +612,13 @@
 
       const built = el('div', 'pv-pages');
       groups.forEach((grp, gi) => {
-        const frame = el('div', `pv-frame${land ? ' land' : ''}`);
+        const frame = el('div', `pv-frame${land ? ' land' : ''}${paper === 'a5' ? ' a5' : ''}`);
         const cap = el('div', 'pv-cap');
-        cap.innerHTML = `<b>صفحة ${gi + 1}</b> من ${groups.length} — ${land ? 'A4 عرضي' : 'A4'}` +
+        cap.innerHTML = `<b>صفحة ${gi + 1}</b> من ${groups.length} — ${paperLabel}` +
           (half ? ' — تصريحان بنصف ورقة' : '');
         frame.appendChild(cap);
 
-        const page = el('div', `print-page${half ? ' perm' : ''}${land ? ' land' : ''}`);
+        const page = el('div', `print-page${half ? ' perm' : ''}${land ? ' land' : ''}${paper === 'a5' && !half ? ' a5' : ''}`);
         grp.forEach((p, i) => {
           if (half && i > 0) {
             const cut = el('div', 'pv-cut', '<span>خط القص</span>');
@@ -623,6 +628,7 @@
             ...p,
             half: half || !!p.half,
             landscape: land || !!p.landscape,
+            paper: p.paper || paper,
             __sigs: sigSet
           }));
         });
@@ -639,7 +645,7 @@
       const ov = el('div', 'pv no-print');
       const bar = el('div', 'pv-bar');
       bar.innerHTML = `<span class="t">معاينة قبل الطباعة</span>
-        <span class="pv-note">${esc(opts.title || '')} — ${land ? 'A4 عرضي' : 'A4'}${pageCount > 1 ? ` — ${pageCount} صفحات` : ''}</span>
+        <span class="pv-note">${esc(opts.title || '')} — ${paperLabel}${pageCount > 1 ? ` — ${pageCount} صفحات` : ''}</span>
         <span class="pv-fidelity" title="المعاينة بمقاس الورقة الحقيقي — ما تراه هنا هو ما سيُطبع">مطابق للمطبوع</span>`;
 
       /* zoom: the preview is scaled to fit the window, and the user can
@@ -711,7 +717,8 @@
       const markOverflow = () => {
         const overflowing = [];
         built.querySelectorAll('.print-page').forEach((p, i) => {
-          const paperMm = p.classList.contains('land') ? 210 : 297;
+          const isA5 = p.classList.contains('a5');
+          const paperMm = isA5 ? (p.classList.contains('land') ? 148 : 210) : (p.classList.contains('land') ? 210 : 297);
           const used = [...p.querySelectorAll('.sheet')].reduce((a, s) => a + s.offsetHeight, 0);
           if (used > paperMm * MM + 2) overflowing.push(i + 1);
         });
@@ -840,7 +847,7 @@
         ov.remove();
         resolve(false);
       };
-      const doPrintNow = async () => { await doPrint(built, { landscape: land }); };
+      const doPrintNow = async () => { await doPrint(built, { landscape: land, paper }); };
       pop = pushKeys({ save: null, print: doPrintNow });
       bClose.addEventListener('click', close);
       bPrint.addEventListener('click', doPrintNow);
@@ -852,6 +859,7 @@
         try {
           const r = await global.sam.win.savePdf({
             landscape: land,
+            paper,
             fileName: `${opts.title || 'SAM'}${pageCount > 1 ? `-${pageCount} صفحات` : ''}.pdf`
           });
           if (r && r.ok) toast(`تم حفظ الملف: ${r.path}`, 'ok', 5200);
@@ -913,7 +921,7 @@
            at all — Chromium takes the paper from the print settings, so
            the orientation has to be passed here or a landscape sheet is
            printed on a portrait page and a quarter of it is cut off. */
-      const printOpts = { landscape: !!opts.landscape, pageSize: 'A4' };
+      const printOpts = { landscape: !!opts.landscape, pageSize: opts.paper === 'a5' ? 'A5' : 'A4' };
       if (opts.deviceName) printOpts.deviceName = opts.deviceName;
       if (opts.copies) printOpts.copies = opts.copies;
       const r = await global.sam.win.print(printOpts);

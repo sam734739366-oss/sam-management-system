@@ -123,7 +123,7 @@ app.whenReady().then(async () => {
   await js(`document.querySelector('.nav-item[data-view=reports]').click()`);
   await sleep(1200);
   await shot('11-report-centre');
-  await js(`void SamReports.openWindow('movements')`);
+  await js(`document.querySelector('.nav-item[data-view=reports]').click(); void (window.SamDocReports && SamDocReports.run())`);
   await sleep(900);
   await shot('12-report-window');
   await js(`document.querySelector('.rw-x').click()`);

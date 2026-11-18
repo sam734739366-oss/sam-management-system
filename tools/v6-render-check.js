@@ -218,7 +218,7 @@ app.whenReady().then(async () => {
       counts: tiles.map(t => (t.querySelector('.kl-count') || {}).textContent)
     };
   })()`);
-  check('the launcher carries ten kinds', launcher.count === 10, launcher.count);
+  check('the launcher carries eleven kinds', launcher.count === 11, launcher.count);
   const lIssue = launcher.names.indexOf('صرف خام إلى الإنتاج');
   check('«صرف خام إلى الإنتاج» is in the launcher', lIssue >= 0, launcher.names);
   check('the launcher tile of «توريد الإنتاج» has its own icon', launcher.icons[lIssue] === '#i-issue', launcher.icons[lIssue]);
@@ -241,7 +241,7 @@ app.whenReady().then(async () => {
       tones: cards.map(c => [...c.classList].filter(x => x.startsWith('tone-'))[0] || null)
     };
   })()`);
-  check('the chooser carries ten kinds', !!grid && grid.count === 10, grid && grid.count);
+  check('the chooser carries eleven kinds', !!grid && grid.count === 11, grid && grid.count);
   const issueIdx = grid ? grid.names.indexOf('صرف خام إلى الإنتاج') : -1;
   check('«صرف خام إلى الإنتاج» is in the chooser', issueIdx >= 0, grid && grid.names);
   check('«توريد الإنتاج» has its own icon', grid && grid.icons[issueIdx] === '#i-issue', grid && grid.icons[issueIdx]);

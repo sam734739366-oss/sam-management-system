@@ -97,6 +97,10 @@ const API = {
   reportFacets: () => d.reportFacets(),
   dailyReport: (filters) => d.dailyReport(filters || {}),
 
+  /* V9 — the document reports that replace the old catalogue */
+  docReport: (filters) => d.docReport(filters || {}),
+  DOC_REPORT_KINDS: () => d.DOC_REPORT_KINDS,
+
   /* V4 — the ready-made report catalogue and the dispatcher behind it */
   REPORTS: () => d.REPORTS,
   runReport: (filters) => d.runReport(filters || {})
@@ -176,6 +180,8 @@ const PERMS = {
   reportQuery: ['reports', 'view'],
   reportFacets: ['reports', 'view'],
   dailyReport: ['reports', 'view'],
+  docReport: ['reports', 'view'],
+  DOC_REPORT_KINDS: ['reports', 'view'],
   REPORTS: ['reports', 'view'],
   runReport: ['reports', 'view']
 };

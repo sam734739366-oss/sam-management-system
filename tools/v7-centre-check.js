@@ -402,27 +402,18 @@ app.whenReady().then(async () => {
   check('the real screens carry head cells to measure', seenHead > 0, { seenHead });
 
   /* =================================================================
-     1b — the REPORTS of the customer: the window of the report centre
-          with the picture beside the name of the item
+     1b — تقارير المستندات (V9): الشاشة الجديدة، والصورة بجانب الاسم
      ================================================================= */
   await js(`document.querySelector('.nav-item[data-view="reports"]').click()`);
-  await sleep(1200);
+  await sleep(1800);
   const cardOpened = await js(`(() => {
-    const c = document.querySelector('.rpt-card');
+    const c = document.querySelector('#drKinds .dr-kind');
     if (!c) return false;
     c.click();
     return true;
   })()`);
-  check('the window of the report centre opened', cardOpened === true);
-  await sleep(2200);
-  const railPicked = await js(`(() => {
-    const it = document.querySelector('.rw-item');
-    if (!it) return false;
-    it.click();
-    return true;
-  })()`);
-  if (railPicked) { await sleep(2800); }
-  else { note('the rail of the reports carries no item — the preview was not measured'); }
+  check('the screen of the document reports opened', cardOpened === true);
+  await sleep(2400);
   const rptTables = (await js(`window.__ctr.tables()`)) || [];
   const rptCells = [];
   rptTables.forEach((t) => { rptCells.push(...t.align.body, ...t.align.head, ...t.align.tot); });
@@ -436,14 +427,12 @@ app.whenReady().then(async () => {
     note('the report carries no table yet — the report window was measured on the paper instead');
   }
   await js(`(() => {
-    const t = document.querySelector('.rw-content table.tbl, .rw-pbody table.tbl, .rw-body table.tbl');
+    const t = document.getElementById('drTbl');
     if (t) t.scrollIntoView({ block: 'center' });
     return true;
   })()`);
   await sleep(500);
   await shot('05-report');
-  await js(`(() => { const x = document.querySelector('.rw-x'); if (x) x.click(); return true; })()`);
-  await sleep(800);
 
   /* =================================================================
      2 — the probe: the picture beside the name, the reading under the

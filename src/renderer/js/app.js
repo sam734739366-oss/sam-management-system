@@ -50,7 +50,7 @@ const VIEW_TITLE = {
   transactions: 'العمليات',
   production: 'الإنتاج',
   daily: 'التقرير اليومي',
-  reports: 'التقارير',
+  reports: 'تقارير المستندات',
   settings: 'الإعدادات'
 };
 /**
@@ -67,7 +67,7 @@ const LOADERS = {
   transactions: () => window.SamDocs && window.SamDocs.load(),
   production: () => window.SamProd && window.SamProd.load(),
   daily: () => window.SamDaily && window.SamDaily.load(),
-  reports: () => window.SamReports && window.SamReports.load(),
+  reports: () => window.SamDocReports && window.SamDocReports.load(),
   settings: () => SamSettings.showTab('general'),
   dashboard: () => loadDashboard()
 };
@@ -79,7 +79,7 @@ const NEW_ACTIONS = {
   transactions: () => window.SamDocs && window.SamDocs.openEditor(null),
   production: () => window.SamProd && window.SamProd.newFromTab(),
   daily: () => window.SamDaily && window.SamDaily.run(),
-  reports: () => window.SamReports && window.SamReports.run()
+  reports: () => window.SamDocReports && window.SamDocReports.run()
 };
 
 /* ---------------- navigation ---------------- */

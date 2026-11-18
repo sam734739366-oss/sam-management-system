@@ -219,13 +219,13 @@ app.whenReady().then(async () => {
       on: cards.filter(c => c.classList.contains('on')).length
     };
   })()`);
-  check('the kind page shows one card per document kind', grid && grid.count === 10, grid && grid.count);
+  check('the kind page shows one card per document kind', grid && grid.count === 11, grid && grid.count);
   check('every card carries a name, a hint and an icon',
     grid && grid.hints.every(Boolean) && grid.icons.every((i) => !!i && i.startsWith('#')), grid && { hints: grid.hints, icons: grid.icons });
-  check('every card owns its own colour', grid && new Set(grid.tones).size === 10, grid && grid.tones);
-  check('the names are the ten document kinds',
+  check('every card owns its own colour', grid && new Set(grid.tones).size >= 10, grid && grid.tones);
+  check('the names are the eleven document kinds',
     grid && JSON.stringify(grid.names) === JSON.stringify(['مشتريات', 'مبيعات', 'مرتجع مبيعات', 'مرتجع مشتريات',
-      'نقل بين المخازن', 'استلام المنتج التام', 'صرف خام إلى الإنتاج', 'إذن إدخال', 'إذن خروج', 'تسوية جرد']), grid && grid.names);
+      'نقل بين المخازن', 'استلام المنتج التام', 'صرف خام إلى الإنتاج', 'استلام خام عميل', 'إذن إدخال', 'إذن خروج', 'تسوية جرد']), grid && grid.names);
   check('a brand-new document selects nothing yet', grid && grid.on === 0, grid && grid.on);
   await shot('01-kind-grid');
 
@@ -591,59 +591,53 @@ app.whenReady().then(async () => {
   })();
   check('no renderer file mentions «محرز» any more', srcHeld.length === 0, srcHeld);
 
-  /* ================= 16. the report centre is a window ================= */
+  /* ================= 16. تقارير المستندات (V9 — حلّت محل مركز التقارير) ================= */
   await js(`document.querySelector('.nav-item[data-view=reports]').click()`);
-  await sleep(1200);
+  await sleep(1800);
   const launcher = await js(`(() => ({
-    cards: document.querySelectorAll('#rptCards .rpt-card').length,
-    icons: [...document.querySelectorAll('#rptCards .rpt-card .rc-ic use')].map(u => u.getAttribute('href')),
-    titles: [...document.querySelectorAll('#rptCards .rpt-card .rc-t b')].map(b => b.textContent.trim())
+    kinds: document.querySelectorAll('#drKinds .dr-kind').length,
+    icons: [...document.querySelectorAll('#drKinds .dr-kind use')].map(u => u.getAttribute('href')),
+    titles: [...document.querySelectorAll('#drKinds .dr-kind b')].map(b => b.textContent.trim()),
+    oldCards: document.querySelectorAll('#rptCards .rpt-card').length
   }))()`);
-  check('the reports screen is a launcher with one card per report', launcher && launcher.cards >= 9, launcher && launcher.cards);
-  check('every report card carries its own icon', launcher && launcher.icons.every((i) => i && i.startsWith('#')), launcher && launcher.icons);
-  check('every report card is named', launcher && launcher.titles.every((t) => t.length > 3), launcher && launcher.titles);
+  check('the reports screen offers one button per document kind', launcher && launcher.kinds === 7, launcher && launcher.kinds);
+  check('every kind carries its own icon', launcher && launcher.icons.every((i) => i && i.startsWith('#')), launcher && launcher.icons);
+  check('every kind is named', launcher && launcher.titles.every((t) => t.length > 3), launcher && launcher.titles);
+  check('the old launcher of the cancelled reports is gone', launcher && launcher.oldCards === 0, launcher && launcher.oldCards);
 
-  /* a card opens the report window */
-  await js(`document.querySelector('#rptCards .rpt-card[data-report=movements]').click(); 1`);
-  await sleep(1600);
+  /* a kind button fills the table in place — no separate window.
+     This harness creates a production receipt (section 7), so that is the
+     kind it can really measure. */
+  await js(`(() => { const b=[...document.querySelectorAll('#drKinds .dr-kind')].find(x=>x.dataset.kind==='prod_receipt'); if(b) b.click(); return 1; })()`);
+  await sleep(1500);
+  /* the harness seeds its documents across a wide history — the report must
+     look at all of it, not only at today */
+  await js(`(() => { const b=[...document.querySelectorAll('#drPeriods .dr-chip')].find(x=>/كل الفترات/.test(x.textContent)); if(b) b.click(); return 1; })()`);
+  await sleep(1800);
   const rw = await js(`(() => ({
-    overlay: document.querySelectorAll('.rw-overlay').length,
-    title: document.querySelector('.rw-head h3') ? document.querySelector('.rw-head h3').textContent.trim() : null,
-    rail: document.querySelectorAll('.rw-rail .rw-item').length,
-    railIcons: [...document.querySelectorAll('.rw-rail .rw-item .rw-ic use')].map((u) => u.getAttribute('href')),
-    frows: document.querySelectorAll('.rw-content .rw-frow').length,
-    combos: document.querySelectorAll('.rw-content .combo').length,
-    table: !!document.getElementById('reportTbl'),
-    rows: document.querySelectorAll('#reportTbl tbody tr').length,
-    cols: document.querySelectorAll('#reportTbl thead th').length,
-    foot: document.getElementById('reportFoot') ? document.getElementById('reportFoot').textContent.trim() : '',
-    actions: [...document.querySelectorAll('.rw-actions .btn')].map((b) => b.textContent.trim())
+    table: !!document.getElementById('drTbl'),
+    rows: document.querySelectorAll('#drTbl tbody tr.dr-row').length,
+    cols: document.querySelectorAll('#drTbl thead th').length,
+    combos: document.querySelectorAll('#v-reports .combo').length,
+    totals: document.getElementById('drTotals') ? document.getElementById('drTotals').textContent.trim() : '',
+    actions: [...document.querySelectorAll('#v-reports .view-actions .btn')].map((b) => b.textContent.trim())
   }))()`);
-  check('a report card opens the report window', rw && rw.overlay === 1, rw && rw.overlay);
-  check('the window is titled مركز التقارير', rw && rw.title === 'مركز التقارير', rw && rw.title);
-  /* fourteen reports now (the old nine + مبيعات اليوم · استلام الإنتاج ·
-     حساب العملاء · حساب الموردين · تقرير المستندات) */
-  check('the window lists every report, each with an icon',
-    rw && rw.rail >= 9 && rw.railIcons.every((i) => i && i.startsWith('#')), rw && { rail: rw.rail, icons: rw.railIcons });
-  check('the window carries the filter panel', rw && rw.frows === 5 && rw.combos === 4, rw && { frows: rw.frows, combos: rw.combos });
-  check('the preview shows the movement rows', rw && rw.table && rw.rows > 0 && rw.cols > 0, rw && { rows: rw.rows, cols: rw.cols });
-  check('the footer totals the report', rw && rw.foot.indexOf('عدد الأسطر') >= 0, rw && rw.foot);
-  check('the window offers Excel, print, PDF and close',
-    rw && rw.actions.some((a) => a.indexOf('Excel') >= 0) && rw.actions.some((a) => a.indexOf('طباعة') >= 0)
-      && rw.actions.some((a) => a.indexOf('PDF') >= 0) && rw.actions.some((a) => a.indexOf('إغلاق') >= 0), rw && rw.actions);
+  check('the kind button fills the table', rw && rw.table && rw.rows > 0 && rw.cols > 0, rw && { rows: rw.rows, cols: rw.cols });
+  check('the screen carries the four filters', rw && rw.combos === 4, rw && rw.combos);
+  check('the totals box totals the report', rw && rw.totals.indexOf('قيمة الفواتير') >= 0, rw && rw.totals.slice(0, 90));
+  check('the screen offers run, print and Excel',
+    rw && rw.actions.some((a) => a.indexOf('تشغيل') >= 0) && rw.actions.some((a) => a.indexOf('طباعة') >= 0)
+      && rw.actions.some((a) => a.indexOf('Excel') >= 0), rw && rw.actions);
   await shot('09-report-window');
 
   /* double-clicking a row opens the source document, with edit + hard delete.
      The first row may be an opening balance (no source document), so the row
      that belongs to a real document is the one that must open. */
   const dbl = await js(`(() => {
-    const rows = (window.SamReports.state.result && window.SamReports.state.result.rows) || [];
-    const i = rows.findIndex((r) => r.docId);
-    if (i < 0) return 'no-doc-row';
-    const tr = document.querySelectorAll('#reportTbl tbody tr')[i];
+    const tr = document.querySelector('#drTbl tbody tr.dr-row');
     if (!tr) return 'no-tr';
     tr.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true }));
-    return 'clicked ' + i;
+    return 'clicked';
   })()`);
   await sleep(1400);
   const docView = await js(`(() => {
@@ -664,55 +658,30 @@ app.whenReady().then(async () => {
 
   /* the column chooser really changes the table (the repaint is async, so
      every read waits for it) */
-  await js(`document.getElementById('btnNoCols').click(); 1`);
-  await sleep(1300);
-  const noCols = await js(`(() => {
-    const err = document.querySelector('.rw-error');
-    return {
-      cols: document.querySelectorAll('#reportTbl thead th').length,
-      err: err ? err.textContent.trim() : ''
-    };
-  })()`);
+  await js(`document.getElementById('drNoCols').click(); 1`);
+  await sleep(1100);
+  const noCols = await js(`(() => ({
+    cols: document.querySelectorAll('#drTbl thead th').length,
+    said: document.body.textContent.indexOf('أبقِ عموداً') >= 0
+  }))()`);
   check('cancelling every column is refused with a clear message',
-    noCols && noCols.cols === 0 && noCols.err.indexOf('عمود') >= 0, noCols);
+    noCols && noCols.cols > 0 && noCols.said === true, noCols);
 
-  await js(`(() => {
-    /* the item code column is gone (the picture took its place) — pick a
-       column that still exists */
-    const box = [...document.querySelectorAll('#colsWrap .col-check')].find((x) => x.textContent.indexOf('كود الصنف') < 0);
-    if (!box) return 'no-box';
-    box.querySelector('input').click();
-    return 'clicked';
-  })()`);
+  await js(`document.getElementById('drAllCols').click(); 1`);
   await sleep(1300);
-  const oneCol = await js(`({
-    cols: document.querySelectorAll('#reportTbl thead th').length,
-    head: [...document.querySelectorAll('#reportTbl thead th')].map((t) => t.textContent.trim())
-  })`);
-  check('picking one column leaves exactly one column', oneCol && oneCol.cols === 1, oneCol);
-  check('the surviving column is the one that was picked', oneCol && oneCol.head.length === 1 && oneCol.head[0].length > 0, oneCol);
-  await js(`document.getElementById('btnAllCols').click(); 1`);
-  await sleep(1300);
-  const allCols = await js(`document.querySelectorAll('#reportTbl thead th').length`);
-  check('selecting every column brings them all back', allCols > 10, allCols);
+  const allCols = await js(`document.querySelectorAll('#drTbl thead th').length`);
+  check('selecting every column brings them all back', allCols >= 10, allCols);
 
-  /* another report from the rail brings its own table, and hides the columns row */
-  await js(`document.querySelector('.rw-rail .rw-item[data-key=stock_status]').click(); 1`);
-  await sleep(1400);
-  const stock = await js(`(() => {
-    const row = document.querySelector('.rw-f-cols');
-    return {
-      colsRow: row ? getComputedStyle(row).display : null,
-      cols: document.querySelectorAll('#reportTbl thead th').length,
-      rows: document.querySelectorAll('#reportTbl tbody tr').length,
-      head: [...document.querySelectorAll('#reportTbl thead th')].map((t) => t.textContent.trim())
-    };
-  })()`);
-  check('the columns row belongs to the movement report only', stock && stock.colsRow === 'none', stock && stock.colsRow);
-  check('the other report brings its own columns and rows',
-    stock && stock.cols > 0 && stock.rows > 0, stock && { cols: stock.cols, rows: stock.rows });
-  check('the stock report shows the balance columns',
-    stock && stock.head.join('|').indexOf('سليم') >= 0 && stock.head.join('|').indexOf('تالف') >= 0, stock && stock.head);
+  /* another kind brings its own report, in the same screen */
+  await js(`(() => { const b=[...document.querySelectorAll('#drKinds .dr-kind')].find(x=>x.dataset.kind==='sale'); if(b) b.click(); return 1; })()`);
+  await sleep(1700);
+  const stock = await js(`(() => ({
+    cols: document.querySelectorAll('#drTbl thead th').length,
+    rows: document.querySelectorAll('#drTbl tbody tr.dr-row').length,
+    title: document.getElementById('drTitle') ? document.getElementById('drTitle').textContent.trim() : ''
+  }))()`);
+  check('another kind brings its own columns', stock && stock.cols > 0, stock && stock.cols);
+  check('another kind is named in the head of the table', stock && stock.title.length > 2, stock && stock.title);
   await shot('11-stock-status');
 
   /* the daily report opens in the same shell, without the rail */

@@ -304,24 +304,26 @@ async function main() {
   await sleep(700);
 
   /* =====================================================================
-     2 — the reports centre (the movements report)
+     2 — تقرير المستندات (V9: الشاشة التي حلّت محل مركز التقارير القديم)
      ===================================================================== */
-  await js(`SamReports.load()`);
+  await js(`document.querySelector('.nav-item[data-view=reports]').click()`);
+  await sleep(1800);
+  await js(`(() => { const b=[...document.querySelectorAll('#drKinds .dr-kind')].find(x=>x.dataset.kind==='purchase'); if(b) b.click(); return true; })()`);
   await sleep(1600);
-  await js(`(() => { SamReports.openWindow('movements'); return true; })()`);
-  await sleep(2200);
+  await js(`(() => { const b=[...document.querySelectorAll('#drMode button')].find(x=>x.dataset.mode==='detail'); if(b) b.click(); return true; })()`);
+  await sleep(1400);
   await waitFor(`(() => {
-    const img = document.querySelector('.rw-window #reportTbl tbody img.sam-pic');
+    const img = document.querySelector('#drTbl tbody img.sam-pic');
     if (!img) return false;
     const r = img.getBoundingClientRect();
     return r.width > 0 ? true : false;
   })()`);
 
   const mov = await js(`(() => {
-    const tbl = document.querySelector('.rw-window #reportTbl');
+    const tbl = document.getElementById('drTbl');
     if (!tbl) return { err: 'no table' };
     const heads = [...tbl.querySelectorAll('thead th')].map(n => n.textContent.trim());
-    const rows = [...tbl.querySelectorAll('tbody tr')];
+    const rows = [...tbl.querySelectorAll('tbody tr.dr-row')];
     const rowOf = (name) => rows.find(tr => tr.textContent.indexOf(name) >= 0) || null;
     const picRow = rowOf('${NAME_PIC}');
     const plainRow = rowOf('${NAME_PLAIN}');
@@ -343,7 +345,7 @@ async function main() {
           return s.indexOf('border') >= 0 && !n.querySelector('img');
         }).length
       : null;
-    const res = (window.SamReports && SamReports.state) ? SamReports.state.result : null;
+    const res = (window.SamDocReports && SamDocReports.state) ? SamDocReports.state.res : null;
     return {
       heads,
       codeHead: heads.indexOf('كود الصنف') >= 0,
@@ -381,19 +383,15 @@ async function main() {
   await shot('02-report-window');
 
   /* =====================================================================
-     2b — the ledger of one item: the name of that item, with its picture
+     2b — فلتر الصنف: صورة ذلك الصنف واسمه وحدهما
      ===================================================================== */
-  await js(`(() => {
-    try { SamReports.filters.itemId = ${picItem.id}; } catch (e) {}
-    SamReports.openWindow('item_ledger');
-    return true;
-  })()`);
-  await sleep(2200);
+  await js(`(() => { SamDocReports.state.itemId = ${picItem.id}; return SamDocReports.run(); })()`);
+  await sleep(1800);
   const ledger = await js(`(() => {
-    const tbl = document.querySelector('.rw-window #reportTbl');
+    const tbl = document.getElementById('drTbl');
     if (!tbl) return { err: 'no table' };
     const heads = [...tbl.querySelectorAll('thead th')].map(n => n.textContent.trim());
-    const rows = [...tbl.querySelectorAll('tbody tr')];
+    const rows = [...tbl.querySelectorAll('tbody tr.dr-row')];
     const row = rows.find(tr => tr.textContent.indexOf('${NAME_PIC}') >= 0) || null;
     const cell = row ? row.querySelector('td .sam-item') : null;
     const img = cell ? cell.querySelector('img.sam-pic') : null;
@@ -401,6 +399,7 @@ async function main() {
     return {
       heads,
       rows: rows.length,
+      onlyThatItem: rows.every(tr => tr.textContent.indexOf('${NAME_PIC}') >= 0),
       img: !!img,
       src: img ? img.getAttribute('src') : '',
       name: name ? name.textContent.trim() : '',
@@ -411,14 +410,11 @@ async function main() {
   check('the ledger of an item shows the picture of the item',
     ledger.img === true && String(ledger.src || '').indexOf(picFile) >= 0, ledger);
   check('the name of the item is bold in the ledger', ledger.bold === true, ledger);
+  check('the filter of the item really narrows the report', ledger.onlyThatItem === true, ledger);
 
-  /* back to the movements report for the print */
-  await js(`(() => {
-    try { SamReports.filters.itemId = null; } catch (e) {}
-    SamReports.openWindow('movements');
-    return true;
-  })()`);
-  await sleep(1800);
+  /* back to every item for the print */
+  await js(`(() => { SamDocReports.state.itemId = null; return SamDocReports.run(); })()`);
+  await sleep(1600);
 
   /* =====================================================================
      3 — the printed sheet (the paper)
@@ -439,7 +435,7 @@ async function main() {
         };
       });
     };
-    const r = SamReports.sheetSpec();
+    const r = SamDocReports.sheetOpts();
     const d = SamDaily.sheetSpec();
     return {
       report: parse(r ? r.bodyHtml : ''),
@@ -470,7 +466,7 @@ async function main() {
      4 — the Excel: the code stays, the name is marked bold
      ===================================================================== */
   const xl = await js(`(() => {
-    const r = SamReports.excelSpec();
+    const r = SamDocReports.excelSpec();
     const d = SamDaily.excelSpec();
     const pick = (x) => ({
       heads: (x && x.columns || []).map(c => c.header),
@@ -489,8 +485,7 @@ async function main() {
 
   /* ---- the look of the paper ---- */
   await js(`(() => {
-    const btn = [...document.querySelectorAll('.rw-window .rw-actions button')]
-      .find(b => b.textContent.indexOf('طباعة') >= 0);
+    const btn = document.getElementById('btnDocPrint');
     if (btn) { btn.click(); return true; }
     return false;
   })()`);

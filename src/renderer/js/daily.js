@@ -47,6 +47,13 @@
     itemTotalOnly: false, // the item with the total of all the warehouses only
     from: SamUI.today(),
     to: SamUI.today(),
+    /* V9 — the new filters. null means «الكل»: no constraint at all */
+    kind: null,
+    partyId: null,
+    itemId: null,
+    category: null,
+    includeOpening: false,
+    period: 'today',
     win: null
   };
 
@@ -273,10 +280,129 @@
     paint();
   }
 
+  /* =====================================================================
+     V9 — more options, the same truth.
+     The daily report takes the same filters as the document reports, every
+     one of them with a visible «الكل», and the opening balance stays OUT
+     of the period's movements until the customer asks for it.
+     ===================================================================== */
+  const D_PERIODS = [
+    { key: 'today', label: 'اليوم' },
+    { key: 'd7', label: 'آخر ٧ أيام' },
+    { key: 'd30', label: 'آخر ٣٠ يوم' },
+    { key: 'month', label: 'هذا الشهر' },
+    { key: 'all', label: 'كل الفترات' }
+  ];
+  let dCombos = null;
+
+  function isoDate(x) {
+    return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`;
+  }
+  function applyDailyPeriod(key) {
+    state.period = key;
+    const t = SamUI.today();
+    const d = new Date();
+    if (key === 'today') { state.from = t; state.to = t; }
+    else if (key === 'd7') { d.setDate(d.getDate() - 6); state.from = isoDate(d); state.to = t; }
+    else if (key === 'd30') { d.setDate(d.getDate() - 29); state.from = isoDate(d); state.to = t; }
+    else if (key === 'month') { state.from = `${t.slice(0, 7)}-01`; state.to = t; }
+    else { state.from = ''; state.to = ''; }
+    const f = document.getElementById('dFrom'); const o = document.getElementById('dTo');
+    if (f) f.value = state.from;
+    if (o) o.value = state.to;
+    paintDailyPeriods();
+  }
+  function paintDailyPeriods() {
+    const host = document.getElementById('dPeriods');
+    if (!host) return;
+    host.innerHTML = '';
+    D_PERIODS.forEach((p) => {
+      const b = el('button', `dr-chip ${state.period === p.key ? 'on' : ''}`, esc(p.label));
+      b.type = 'button';
+      b.addEventListener('click', () => { applyDailyPeriod(p.key); run(); });
+      host.appendChild(b);
+    });
+  }
+
+  function initExtraFilters() {
+    if (dCombos) return;
+    const ALL = 'الكل';
+    const mk = (id, key) => {
+      const host = document.getElementById(id);
+      if (!host) return null;
+      const c = combo(host, {
+        placeholder: 'الكل…', allLabel: ALL, emptyText: 'لا توجد خيارات',
+        onChange: (v) => { state[key] = v; run(); }
+      });
+      c.setValue(state[key] || null, false);
+      return c;
+    };
+    dCombos = {
+      kind: mk('dKind', 'kind'),
+      party: mk('dParty', 'partyId'),
+      item: mk('dItem', 'itemId'),
+      category: mk('dCategory', 'category')
+    };
+    fillExtraCombos();
+  }
+
+  async function fillExtraCombos() {
+    if (!dCombos) return;
+    if (dCombos.kind && !dCombos.kind.items.length) {
+      try {
+        const kinds = await SamDB.call('DOC_KINDS');
+        const opts = Object.entries(kinds || {}).map(([id, v]) => ({ id, label: (v && v.ar) || id }));
+        opts.push({ id: 'opening', label: 'رصيد افتتاحي' });
+        dCombos.kind.setItems(opts);
+        dCombos.kind.setValue(state.kind || null, false);
+      } catch (e) { /* a user without the permission still gets the report */ }
+    }
+    if (dCombos.party && !dCombos.party.items.length) {
+      try {
+        const ps = (await SamDB.call('listParties', {})) || [];
+        dCombos.party.setItems(ps.map((p) => ({ id: p.id, label: p.name, code: p.phone || '' })));
+        dCombos.party.setValue(state.partyId || null, false);
+      } catch (e) { /* ignore */ }
+    }
+    if (dCombos.item) {
+      dCombos.item.setItems(ref.items.map((i) => ({ id: i.id, label: i.name, code: i.code, sub: i.base_unit })));
+      dCombos.item.setValue(state.itemId || null, false);
+    }
+    if (dCombos.category) {
+      const cats = new Set();
+      ref.items.forEach((i) => { const c = String(i.category || '').trim(); if (c) cats.add(c); });
+      dCombos.category.setItems([...cats].sort((a, b) => a.localeCompare(b, 'ar')).map((c) => ({ id: c, label: c })));
+      dCombos.category.setValue(state.category || null, false);
+    }
+  }
+
+  /** a total for every unit that appears — ampoules are never added to covers */
+  function paintUnitTotals() {
+    const host = document.getElementById('dUnitTotals');
+    if (!host) return;
+    const res = state.res;
+    const units = (res && res.totalsByUnit) || [];
+    if (!units.length) { host.innerHTML = ''; return; }
+    const card = (label, value, unit, cls) => `<div class="dr-tot ${cls || ''}">`
+      + `<span class="lbl">${esc(label)}</span><b>${SamDB.fmt(SamDB.n(value))}</b><span class="unit">${esc(unit)}</span></div>`;
+    let html = card('إجمالي الوارد', res.grand.inQty, 'كل الوحدات', 'docs')
+      + card('إجمالي الصادر', res.grand.outQty, 'كل الوحدات', 'lines')
+      + card('إجمالي المتبقي', res.grand.balance, 'كل الوحدات', 'money');
+    if (state.includeOpening) html += card('الرصيد الافتتاحي', res.grand.opening, 'كل الوحدات', 'unit');
+    units.forEach((u) => {
+      html += `<div class="dr-tot unit"><span class="lbl">${esc(u.unit)}</span>`
+        + `<b>${SamDB.fmt(SamDB.n(u.balance))}</b><span class="unit">${esc(u.unit)} — متبقي</span>`
+        + `<small>وارد ${SamDB.fmt(u.inQty)} · صادر ${SamDB.fmt(u.outQty)}`
+        + (state.includeOpening ? ` · افتتاحي ${SamDB.fmt(u.opening)}` : '') + '</small></div>';
+    });
+    host.innerHTML = html;
+  }
+
   function initUi() {
     if (!whCombo) {
       whCombo = combo(document.getElementById('dWh'), {
         placeholder: 'كل المخازن…',
+        allLabel: 'الكل',
         emptyText: 'لا توجد مخازن',
         onChange: (v) => {
           state.whFilter = v;
@@ -327,6 +453,17 @@
       }
     }
     syncPacksInputs();
+    /* V9 — the opening switch, the period chips and the new filters */
+    const openEl = document.getElementById('dOpening');
+    if (openEl) {
+      openEl.checked = state.includeOpening;
+      if (!openEl.dataset.wired) {
+        openEl.dataset.wired = '1';
+        openEl.addEventListener('change', () => { state.includeOpening = openEl.checked; run(); });
+      }
+    }
+    paintDailyPeriods();
+    initExtraFilters();
   }
 
   /* ---------------- run ---------------- */
@@ -346,7 +483,15 @@
         dateFrom: state.from,
         dateTo: state.to,
         buckets,
-        includeCustomer: state.includeCustomer
+        includeCustomer: state.includeCustomer,
+        /* V9 — the same filters as the document reports, and the opening
+           stays out of the period's movements unless it is asked for */
+        kind: state.kind || '',
+        partyId: state.partyId || '',
+        itemId: state.itemId || '',
+        category: state.category || '',
+        warehouseId: state.whFilter || '',
+        includeOpening: state.includeOpening
       });
     } catch (e) { return toast(e.message, 'bad'); }
 
@@ -365,10 +510,12 @@
     }
 
     paint();
+    paintUnitTotals();
+    fillExtraCombos();
     /* when the items arrive, the packs of the items join the table */
     if (itemsReady) {
       itemsReady.then(() => {
-        if (state.res === res) paint();
+        if (state.res === res) { paint(); paintUnitTotals(); fillExtraCombos(); }
       });
     }
     /* when the folder of the pictures arrives, the pictures join the table */
@@ -576,6 +723,22 @@
   }
 
   /* ---------------- the print sheet ---------------- */
+  /** V9 — a total for every unit, on the PAPER too. Ampoules are never
+      added to covers: each unit the customer typed gets its own row. */
+  function unitTotalsBlock() {
+    const res = state.res;
+    const units = (res && res.totalsByUnit) || [];
+    if (!units.length) return '';
+    const rows = units.map((u) => `<tr><td>${esc(u.unit)}</td><td>${SamDB.fmt(u.inQty)}</td>`
+      + `<td>${SamDB.fmt(u.outQty)}</td><td>${SamDB.fmt(u.balance)}</td>`
+      + (state.includeOpening ? `<td>${SamDB.fmt(u.opening)}</td>` : '') + '</tr>').join('');
+    return `<div style="margin-top:4mm"><b>الإجماليات — كل شيء بوحدته</b>
+      <table class="tbl" style="font-size:9pt">
+        <thead><tr><th>الوحدة</th><th>وارد الفترة</th><th>صادر الفترة</th><th>المتبقي</th>${state.includeOpening ? '<th>الافتتاحي</th>' : ''}</tr></thead>
+        <tbody>${rows}</tbody>
+      </table></div>`;
+  }
+
   function sheetOpts() {
     const res = state.res;
     const whs = shownWarehouses();
@@ -652,7 +815,7 @@
             <thead><tr><th>المخزن</th><th>وارد الفترة</th><th>صادر الفترة</th><th>المتبقي</th></tr></thead>
             <tbody>${sumBody}</tbody>
           </table>
-        </div>`,
+        </div>${unitTotalsBlock()}`,
       dense: true,
       landscape: true,
       footer: 'SAM Management System — التقرير اليومي (الكميات بالوحدة الأساسية لكل صنف)'
@@ -755,7 +918,9 @@
         ['الحالات', (res.bucketLabels || []).join(' + ')],
         ['المخازن', whs.map((w) => w.name).join(' · ')],
         ['عدد الأصناف', SamDB.fmt(rows.length)],
-        ['إجمالي المتبقي في كل المخازن', SamDB.fmt(totals.find((t) => t.key === 'total').value)]
+        ['إجمالي المتبقي في كل المخازن', SamDB.fmt(totals.find((t) => t.key === 'total').value)],
+        /* V9 — the same per-unit totals the screen and the paper carry */
+        ...((res.totalsByUnit || []).map((u) => [`إجمالي ${u.unit} — متبقي`, SamDB.fmt(u.balance)]))
       ],
       columns,
       rows: data,

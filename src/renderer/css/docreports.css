@@ -1,0 +1,118 @@
+/* =====================================================================
+   تقارير المستندات — V9
+   The screen that replaces the old catalogue. Small boxes, clear colour,
+   a total card per unit, and rows that never overlap.
+   ===================================================================== */
+
+/* ---------------- the seven kinds ---------------- */
+.dr-kinds {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(196px, 1fr));
+  gap: 9px;
+  margin-bottom: 14px;
+}
+.dr-kind {
+  display: flex; align-items: center; gap: 9px;
+  padding: 9px 11px; border-radius: 13px;
+  border: 1.5px solid var(--line); background: var(--surface);
+  box-shadow: var(--shadow-s); cursor: pointer; text-align: start;
+  transition: transform var(--dur) var(--ease), box-shadow var(--dur) var(--ease),
+              border-color var(--dur) var(--ease), background var(--dur) var(--ease);
+}
+.dr-kind:hover { transform: translateY(-2px); box-shadow: var(--shadow-m); border-color: var(--brand-300); }
+.dr-kind:active { transform: translateY(0) scale(.985); }
+.dr-kind .dr-kind-txt { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.dr-kind b { font-size: 13px; font-weight: 800; color: var(--ink); line-height: 1.25; }
+.dr-kind small { font-size: 11px; font-weight: 600; color: var(--muted-fg); line-height: 1.3; }
+.dr-kind.on {
+  border-color: var(--brand); background: var(--brand-050);
+  box-shadow: 0 0 0 2px var(--brand-100), var(--shadow-m);
+}
+.dr-kind.on b { color: var(--brand-700); }
+.dr-kind.on::after {
+  content: ''; position: absolute; inset-inline-start: 0; top: 12%; bottom: 12%;
+  width: 3px; border-radius: 3px; background: var(--brand);
+}
+.dr-kind { position: relative; overflow: hidden; }
+
+/* ---------------- the period chips ---------------- */
+.dr-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.dr-chip {
+  padding: 5px 12px; border-radius: 999px; font-size: 12px; font-weight: 700;
+  border: 1px solid var(--line); background: var(--surface); color: var(--label-fg);
+  cursor: pointer; transition: all var(--dur) var(--ease);
+}
+.dr-chip:hover { border-color: var(--brand-300); background: var(--brand-050); }
+.dr-chip.on { background: var(--brand); border-color: var(--brand); color: #fff; box-shadow: var(--shadow-s); }
+
+/* ---------------- segmented controls (shape / paper) ---------------- */
+.dr-seg {
+  display: inline-flex; flex-wrap: wrap; gap: 4px; padding: 4px;
+  border-radius: 12px; background: var(--surface-2); border: 1px solid var(--line);
+}
+.dr-seg button {
+  padding: 6px 13px; border-radius: 9px; border: 0; background: transparent;
+  font-size: 12px; font-weight: 700; color: var(--label-fg); cursor: pointer;
+  font-family: inherit; transition: all var(--dur) var(--ease);
+}
+.dr-seg button:hover { background: var(--brand-050); color: var(--brand-700); }
+.dr-seg button.on { background: var(--surface); color: var(--brand-700); box-shadow: var(--shadow-s); font-weight: 800; }
+
+.dr-colbtns { display: inline-flex; gap: 6px; margin-inline-start: auto; }
+.form-sec { display: flex; align-items: center; gap: 8px; }
+
+/* ---------------- the totals: a card per unit ---------------- */
+.dr-totals {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
+  gap: 9px; margin-top: 14px;
+}
+.dr-tot {
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 10px 12px; border-radius: 13px;
+  border: 1.5px solid var(--line); background: var(--surface);
+  box-shadow: var(--shadow-s); position: relative; overflow: hidden;
+}
+.dr-tot::before {
+  content: ''; position: absolute; inset-inline-start: 0; top: 0; bottom: 0; width: 4px;
+  background: var(--brand);
+}
+.dr-tot .lbl { font-size: 11px; font-weight: 700; color: var(--muted-fg); }
+.dr-tot b {
+  font-size: 19px; font-weight: 800; color: var(--ink);
+  font-variant-numeric: tabular-nums; line-height: 1.2;
+}
+.dr-tot .unit { font-size: 11px; font-weight: 700; color: var(--label-fg); }
+.dr-tot small { font-size: 11px; font-weight: 700; color: var(--muted-fg); margin-top: 2px; }
+.dr-tot.money { background: var(--ok-bg); border-color: var(--ok-line); }
+.dr-tot.money::before { background: var(--ok); }
+.dr-tot.money b { color: var(--ok); }
+.dr-tot.docs { background: var(--brand-050); border-color: var(--brand-300); }
+.dr-tot.docs::before { background: var(--brand); }
+.dr-tot.docs b { color: var(--brand-700); }
+.dr-tot.lines { background: var(--accent-050); border-color: var(--accent-300); }
+.dr-tot.lines::before { background: var(--accent); }
+.dr-tot.lines b { color: var(--accent-600); }
+.dr-tot.unit { background: var(--surface-2); }
+.dr-tot.unit::before { background: var(--info, #3b82f6); }
+
+/* ---------------- the table ---------------- */
+#drTbl th.num, #drTbl td.num { text-align: center; font-variant-numeric: tabular-nums; }
+#drTbl td.num .num { font-weight: 700; }
+#drTbl tr.doc-first td { border-top: 2px solid var(--brand-300); }
+#drTbl tr.dr-row:hover td { background: var(--brand-050); }
+#drTbl th.pic { min-width: 150px; }
+
+#drFitNote {
+  display: flex; align-items: flex-start; gap: 8px;
+  margin-top: 10px; padding: 9px 11px; border-radius: 11px;
+  background: var(--warn-bg); border: 1px solid var(--warn-line);
+  color: var(--warn); font-size: 12px; font-weight: 700; line-height: 1.5;
+}
+
+/* ---------------- narrow screens ---------------- */
+@media (max-width: 900px) {
+  .dr-kinds { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+  .dr-kind small { display: none; }
+  .dr-totals { grid-template-columns: repeat(auto-fit, minmax(126px, 1fr)); }
+  .dr-tot b { font-size: 16px; }
+}

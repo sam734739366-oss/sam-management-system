@@ -71,7 +71,13 @@ app.whenReady().then(async () => {
   check('dailyReport warehouse totals', dr.warehouseTotals[A.id].balance === 70 && dr.warehouseTotals[B.id].balance === 30);
   const drToday = db.dailyReport({ date: today });
   const todayRow = drToday.rows.find((r) => r.itemId === item.id);
-  check('dailyReport today excludes past-date sale (out=0, opening in=150)', todayRow.totalOut === 0 && todayRow.totalIn === 150, { in: todayRow.totalIn, out: todayRow.totalOut });
+  /* V9 — the opening balance is no longer counted as a movement of the day.
+     The customer asked for it to disappear from the reports unless he asks
+     for it, so «وارد اليوم» is 0 here, and the opening is reported apart. */
+  check('dailyReport today excludes past-date sale and the opening (out=0, in=0)', todayRow.totalOut === 0 && todayRow.totalIn === 0, { in: todayRow.totalIn, out: todayRow.totalOut });
+  check('dailyReport keeps the opening as a number of its own', todayRow.totalOpening === 150, { opening: todayRow.totalOpening });
+  const drOpen = db.dailyReport({ date: today, includeOpening: true });
+  check('dailyReport counts the opening only when the user asks', drOpen.rows.find((r) => r.itemId === item.id).totalIn === 150, { in: drOpen.rows.find((r) => r.itemId === item.id).totalIn });
 
   // Task 3: per-warehouse shortage warning (sell 999 from A which has 70)
   const warnDoc = db.saveDocument({

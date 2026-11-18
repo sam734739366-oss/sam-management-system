@@ -226,77 +226,62 @@ async function main() {
   await js(`(() => { const cb = document.getElementById('dPacks'); cb.checked = true; cb.dispatchEvent(new Event('change')); return true; })()`);
   await sleep(600);
 
-  /* ---------------- the reports centre ---------------- */
-  await js(`SamReports.load()`);
-  await sleep(1500);
-  await js(`(() => { SamReports.openWindow('movements'); return true; })()`);
-  await sleep(2000);
-  const mov = await js(`(() => { try {
-    const heads = [...document.querySelectorAll('.rw-window #reportTbl thead th')].map(n => n.textContent.trim());
-    const rows = [...document.querySelectorAll('.rw-window #reportTbl tbody tr')].map(tr => [...tr.children].map(td => td.textContent.trim()));
-    const row = rows.find(r => r.some(c => c.indexOf('P-1') >= 0));
-    return {
-      heads: heads.slice(-4),
-      packHead: heads.some(h => h.indexOf('كيس') >= 0 && h.indexOf('الحركة') >= 0),
-      row: row || null,
-      text: !!(row && row.some(c => c.indexOf('${T_BAG}') >= 0)),
-      switchExists: !!document.getElementById('fPacks'),
-      switchOn: (document.getElementById('fPacks') || {}).checked
-    };
-  } catch (e) { return { err: String((e && e.message) || e) }; } })()`) || {};
-  check('the movement report has the packs of the movement', mov.packHead === true, mov.heads);
-  check('the movement is written as «12 كيس + 12 حبة»', mov.text === true, mov.row);
-  check('the switch is in the report window', mov.switchExists === true && mov.switchOn === true, mov);
-
-  /* the Excel of the reports centre */
-  const rSpec = await js(`(() => {
-    const x = SamReports.excelSpec();
-    const row = (x.rows || []).find(r => r.itemCode === 'P-1');
-    return {
-      packCols: (x.columns || []).filter(c => String(c.key).indexOf('pack_') === 0).map(c => c.header),
-      row: row || null
-    };
-  })()`) || {};
-  check('the Excel of the reports centre carries the packs', (rSpec.packCols || []).length > 0, rSpec.packCols);
-  check('the Excel of the reports centre carries the numbers',
-    !!(rSpec.row && String(rSpec.row.pack_bags || '').indexOf(T_BAG) >= 0), rSpec.row);
-
-  /* the switch of the report window */
-  await js(`(() => { const cb = document.getElementById('fPacks'); cb.checked = false; cb.dispatchEvent(new Event('change')); return true; })()`);
-  await sleep(1600);
-  const movOff = await js(`(() => {
-    const heads = [...document.querySelectorAll('.rw-window #reportTbl thead th')].map(n => n.textContent.trim());
-    const x = SamReports.excelSpec();
-    return {
-      packHead: heads.some(h => h.indexOf('كيس') >= 0 && h.indexOf('الحركة') >= 0),
-      packCols: (x.columns || []).filter(c => String(c.key).indexOf('pack_') === 0).length
-    };
-  })()`) || {};
-  check('the switch of the report window takes the packs away',
-    movOff.packHead === false && movOff.packCols === 0, movOff);
-
-  await js(`(() => { const cb = document.getElementById('fPacks'); cb.checked = true; cb.dispatchEvent(new Event('change')); return true; })()`);
-  await sleep(1600);
-  const movBack = await js(`(() => {
-    const heads = [...document.querySelectorAll('.rw-window #reportTbl thead th')].map(n => n.textContent.trim());
-    return { packHead: heads.some(h => h.indexOf('كيس') >= 0 && h.indexOf('الحركة') >= 0) };
-  })()`) || {};
-  check('the switch of the report window brings the packs back', movBack.packHead === true, movBack);
-
-  /* ---------------- the stock report: the packs of the balance ---------------- */
-  await js(`(() => { SamReports.openWindow('stock_status'); return true; })()`);
+  /* ---------------- تقرير المستندات (V9): أعمدة الكراتين والأكياس ---------------- */
+  await js(`document.querySelector('.nav-item[data-view="reports"]').click()`);
   await sleep(1800);
-  const stock = await js(`(() => { try {
-    const heads = [...document.querySelectorAll('.rw-window #reportTbl thead th')].map(n => n.textContent.trim());
-    const rows = [...document.querySelectorAll('.rw-window #reportTbl tbody tr')].map(tr => [...tr.children].map(td => td.textContent.trim()));
-    const row = rows.find(r => r.some(c => c.indexOf('P-1') >= 0));
+  await js(`(() => { const b=[...document.querySelectorAll('#drKinds .dr-kind')].find(x=>x.dataset.kind==='purchase'); if(b) b.click(); return true; })()`);
+  await sleep(1800);
+  await js(`(() => { const b=[...document.querySelectorAll('#drMode button')].find(x=>x.dataset.mode==='detail'); if(b) b.click(); return true; })()`);
+  await sleep(1500);
+  const mov = await js(`(() => { try {
+    const heads = [...document.querySelectorAll('#drTbl thead th')].map(n => n.textContent.trim());
+    const rows = [...document.querySelectorAll('#drTbl tbody tr.dr-row')].map(tr => [...tr.children].map(td => td.textContent.trim()));
+    const i = heads.indexOf('أكياس');
     return {
-      packHead: heads.some(h => h.indexOf('كيس') >= 0 && h.indexOf('الرصيد') >= 0),
-      text: !!(row && row.some(c => c.indexOf('${T_BAG}') >= 0)),
-      row: row || null
+      heads,
+      cartons: heads.indexOf('كراتين') >= 0,
+      bags: i >= 0,
+      bagNumbers: i >= 0 ? rows.map(r => r[i]).filter(Boolean) : [],
+      colSwitches: [...document.querySelectorAll('#drCols .col-check')].length
     };
   } catch (e) { return { err: String((e && e.message) || e) }; } })()`) || {};
-  check('the stock report shows the packs of the balance', stock.packHead === true && stock.text === true, stock);
+  check('the document report has a column of cartons', mov.cartons === true, mov.heads);
+  check('the document report has a column of bags', mov.bags === true, mov.heads);
+  check('the bags carry the number the customer counted', (mov.bagNumbers || []).some(x => x.indexOf('12') >= 0), mov.bagNumbers);
+  check('the columns of the report are the choice of the customer', mov.colSwitches >= 8, mov.colSwitches);
+
+  /* the Excel of the document report */
+  const rSpec = await js(`(() => {
+    const x = SamDocReports.excelSpec();
+    return {
+      packCols: (x.columns || []).filter(c => c.key === 'cartons' || c.key === 'bags').map(c => c.header),
+      rows: (x.rows || []).length
+    };
+  })()`) || {};
+  check('the Excel of the document report carries the packs', (rSpec.packCols || []).length === 2, rSpec.packCols);
+  check('the Excel of the document report carries the rows', rSpec.rows > 0, rSpec.rows);
+
+  /* hiding a column takes it away from the screen AND from the Excel */
+  const toggleBags = (on) => `(() => {
+    const lab = [...document.querySelectorAll('#drCols .col-check')].find(l => l.textContent.trim() === 'أكياس');
+    const cb = lab && lab.querySelector('input');
+    if (cb) { cb.checked = ${on}; cb.dispatchEvent(new Event('change')); }
+    return true;
+  })()`;
+  await js(toggleBags(false));
+  await sleep(1200);
+  const movOff = await js(`(() => {
+    const heads = [...document.querySelectorAll('#drTbl thead th')].map(n => n.textContent.trim());
+    const x = SamDocReports.excelSpec();
+    return { bagHead: heads.indexOf('أكياس') >= 0, bagCol: (x.columns || []).some(c => c.key === 'bags') };
+  })()`);
+  check('hiding the bags takes them from the screen and the Excel',
+    movOff && movOff.bagHead === false && movOff.bagCol === false, movOff);
+
+  await js(toggleBags(true));
+  await sleep(1200);
+  const movBack = await js(`[...document.querySelectorAll('#drTbl thead th')].map(n=>n.textContent.trim()).indexOf('أكياس') >= 0`);
+  check('bringing the bags back brings them to the screen', movBack === true, movBack);
 
   await shutdown(fail ? 1 : 0);
 }

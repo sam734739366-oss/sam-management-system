@@ -553,8 +553,11 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--brand); width:
   font-size: 8pt; color: #33415a; font-weight: 700; border-top: .5pt solid #c9d3e0; padding-top: 1.5mm;
 }
 .sheet .doc-foot .f-left { text-align: end; }
-/* dense mode: many report columns still fit one A4 width */
-.sheet .dense table, .sheet.dense table { width: 100% !important; table-layout: fixed; font-size: 8pt !important; }
+/* dense mode: many report columns still fit one A4 width.
+   V9 — the 8pt !important that used to live here overrode every font size
+   the report computed, on the paper AND in the preview. It is gone: the
+   paper layer (print.css) owns the size of the writing, once, for both. */
+.sheet .dense table, .sheet.dense table { width: 100% !important; table-layout: fixed; }
 .sheet .dense th, .sheet .dense td, .sheet.dense th, .sheet.dense td { padding: 3px 4px; overflow-wrap: anywhere; word-break: break-word; }
 /* the named @page rules live in print.css — they must be the LAST rules
    of the cascade, because Chromium takes the last matching @page rule */

@@ -201,10 +201,14 @@ app.whenReady().then(async () => {
     };
   })()`;
 
-  /* ---------- 1) تقرير حركة المخزون (عرضي) ---------- */
-  await js(`SamReports.openWindow('movements'); 1`);
-  await sleep(2000);
-  await js(`SamReports.printReport(); 1`);
+  /* ---------- 1) تقرير المستندات (عرضي) — V9: الشاشة الجديدة ---------- */
+  await js(`document.querySelector('.nav-item[data-view=reports]').click(); 1`);
+  await sleep(1800);
+  await js(`(() => { const b=[...document.querySelectorAll('#drPaper button')].find(x=>x.dataset.paper==='a4'); if(b) b.click(); return 1; })()`);
+  await sleep(500);
+  await js(`(() => { const b=[...document.querySelectorAll('#drPaper button')].find(x=>x.dataset.orient==='landscape'); if(b) b.click(); return 1; })()`);
+  await sleep(700);
+  await js(`SamDocReports.print(); 1`);
   await sleep(1500);
 
   const g = await js(measure);

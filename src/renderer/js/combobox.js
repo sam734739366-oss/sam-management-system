@@ -164,7 +164,14 @@
         .filter((r) => r.s > 0)
         .sort((a, b) => b.s - a.s || norm(a.it.label).localeCompare(norm(b.it.label)))
         .map((r) => r.it);
-      return list.slice(0, this.opts.limit || 50);
+      const out = list.slice(0, this.opts.limit || 50);
+      /* V9 — «الكل» is a real, visible choice, not an empty field the
+         customer has to guess at. Picking it clears the constraint. */
+      if (this.opts.allLabel) {
+        const all = { id: null, label: this.opts.allLabel };
+        if (!this._typing || score(all.label, this._needle) > 0) out.unshift(all);
+      }
+      return out;
     }
 
     /**
@@ -327,7 +334,12 @@
         this._label = it.code ? `${it.code} — ${it.label}` : it.label;
         this.input.value = this._label;
       } else if (!it) {
-        if (!this._typing) { this._label = ''; this.input.value = ''; }
+        if (!this._typing) {
+          /* nothing chosen means «الكل» — say so instead of leaving a blank
+             box that looks like a field the customer forgot to fill */
+          this._label = this.opts.allLabel || '';
+          this.input.value = this._label;
+        }
       }
       // a filled field gets a subtle highlight so the chosen item is obvious
       this.root.classList.toggle('filled', !!it && !this._typing);

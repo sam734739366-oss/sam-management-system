@@ -220,7 +220,7 @@ app.whenReady().then(async () => {
   await js(`[...document.querySelectorAll('.pv')].pop().querySelectorAll('.pv-bar .btn-ghost')[1].click(); 1`);
 
   await go('reports');
-  await js(`window.SamReports.run(); 1`);
+  await js(`document.querySelector('.nav-item[data-view=reports]').click(); window.SamDocReports && SamDocReports.run(); 1`);
   await sleep(1600);
   await shot('20b-reports-launcher-and-window');
   await js(`(() => { [...document.querySelectorAll('#bucketWrap input')].forEach(cb => { cb.checked = true; cb.dispatchEvent(new Event('change', { bubbles: true })); }); return 1; })()`);
