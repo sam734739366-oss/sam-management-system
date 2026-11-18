@@ -17,7 +17,7 @@ const path = require('path');
 const fs = require('fs');
 
 const ROOT = path.resolve(__dirname, '..');
-const DATA = path.join(ROOT, '.tmp', 'v9doc');
+const DATA = path.join(ROOT, '.tmp', `v9doc-${process.pid}`);
 process.env.SAM_DATA_DIR = DATA;
 
 let pass = 0, fail = 0;
@@ -26,6 +26,13 @@ function check(name, ok, detail) {
   ok ? pass++ : fail++;
 }
 const eq = (name, got, want) => check(name, JSON.stringify(got) === JSON.stringify(want), { got, want });
+
+/* a seed or query that throws must FAIL the run, never hang it */
+process.on('unhandledRejection', (e) => {
+  console.log('UNHANDLED: ' + (e && e.message ? e.message : e));
+  console.log('\n==== ' + pass + ' passed, ' + (fail + 1) + ' failed ====');
+  app.exit(1);
+});
 
 app.whenReady().then(async () => {
   try { fs.rmSync(DATA, { recursive: true, force: true }); } catch (e) { /* ignore */ }
@@ -179,6 +186,47 @@ app.whenReady().then(async () => {
   /* ================= 9 — nothing was written ================= */
   const after = { docs: db.listDocuments({}).length, moves: db.reportQuery({}).rows.length };
   eq('التقارير لا تكتب شيئاً في البيانات', after, before);
+
+  /* ================= 10 — the value as the customer REALLY types it =================
+     His own database stores the invoice value as formatted text: "412,500",
+     "352,000", "178,750" — the editor writes it with SamDB.money(). Number()
+     on that text is NaN, so the column showed 0 and the total was nonsense.
+     The report must read the number the customer wrote, commas and all. */
+  doc('sale', 'EXT-900', '412,500', [line(A, 10)], { party_id: P1.id || P1 });
+  doc('sale', 'EXT-901', '1,234.50', [line(B, 5)], { party_id: P1.id || P1 });
+  const fmtRes = db.docReport({ kind: 'sale', mode: 'detail' });
+  const row900 = fmtRes.rows.find((r) => r.externalNo === 'EXT-900');
+  eq('قيمة منسّقة بفاصلة الآلاف تُقرأ رقماً', row900 && row900.invoiceValue, 412500);
+  const row901 = fmtRes.rows.find((r) => r.externalNo === 'EXT-901');
+  eq('قيمة بفاصلة وكسر عشري تُقرأ رقماً', row901 && row901.invoiceValue, 1234.5);
+  eq('إجمالي الفواتير يجمع القيم المنسّقة كلها', fmtRes.totals.value, 25000 + 412500 + 1234.5);
+  const fmtSum = db.docReport({ kind: 'sale', mode: 'summary' });
+  eq('الملخّص يعرض القيمة المنسّقة رقماً', (fmtSum.rows.find((r) => r.externalNo === 'EXT-900') || {}).invoiceValue, 412500);
+  eq('الملخّص والإجمالي متفقان', fmtSum.totals.value, fmtRes.totals.value);
+
+  /* ================= 11 — حركة المخازن: تفصيل وإجمالي ================= */
+  const flowDet = db.stockFlowReport({ mode: 'detail' });
+  check('حركة المخازن: كل حركة على سطر', flowDet.rows.length > 0, flowDet.rows.length);
+  check('حركة المخازن: لا رصيد افتتاحي فيها', flowDet.rows.every((r) => r.docType !== 'opening'),
+    [...new Set(flowDet.rows.map((r) => r.docType))]);
+  check('حركة المخازن: مادة العملاء خارجها افتراضياً', flowDet.rows.every((r) => r.docType !== 'tolling_in'),
+    [...new Set(flowDet.rows.map((r) => r.docType))]);
+  const flowSum = db.stockFlowReport({ mode: 'summary' });
+  check('الملخّص: سطر لكل مخزن باسمه', flowSum.rows.length >= 1 && flowSum.rows.every((r) => !!r.warehouseName),
+    flowSum.rows.map((r) => r.warehouseName));
+  eq('إجمالي الوارد = مجموع وارد التفصيل', flowSum.totals.inQty, flowDet.rows.reduce((a, r) => a + r.inQty, 0));
+  eq('إجمالي الصادر = مجموع صادر التفصيل', flowSum.totals.outQty, flowDet.rows.reduce((a, r) => a + r.outQty, 0));
+  eq('الصافي = وارد − صادر', flowSum.totals.net, flowSum.totals.inQty - flowSum.totals.outQty);
+  const amp = (flowDet.totals.byUnit || []).find((u) => u.unit === 'أمبول');
+  eq('وارد الأمبول بوحدته (المشتريات فقط، ومادة العميل خارجها)', amp && amp.inQty, 2000);
+  check('إجماليات حركة المخازن بالوحدة', Array.isArray(flowDet.totals.byUnit) && flowDet.totals.byUnit.length >= 2,
+    flowDet.totals.byUnit);
+  eq('فترة بلا حركات تعطي تقريراً فارغاً', db.stockFlowReport({ dateFrom: '2000-01-01', dateTo: '2000-01-02' }).rows.length, 0);
+  const flowWh = db.stockFlowReport({ mode: 'summary', warehouseId: W2 });
+  check('فلتر المخزن يضيّق حركة المخازن', flowWh.rows.every((r) => r.warehouseName === 'الفرعي'), flowWh.rows);
+  const flowOpen = db.stockFlowReport({ mode: 'detail', includeOpening: true });
+  check('إظهار الافتتاحي يُدخله عند الطلب فقط', flowOpen.rows.some((r) => r.docType === 'opening'),
+    flowOpen.rows.length - flowDet.rows.length);
 
   finish();
 

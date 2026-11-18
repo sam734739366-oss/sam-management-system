@@ -78,7 +78,12 @@
       this.root = root;
       this.opts = opts;
       this.items = [];
+      /* V9 — a filter may hold SEVERAL choices. In multi mode the value is
+         an array, the list stays open after every pick, and «الكل» clears. */
+      this.multi = !!opts.multi;
+      this.values = [];
       this.value = opts.value == null ? null : opts.value;
+      if (this.multi && Array.isArray(opts.value)) this.values = opts.value.slice();
       this.active = -1;
       this._typing = false;   /* the user is typing — the list is filtered */
       this._needle = '';       /* what he really typed — the filter */
@@ -259,7 +264,8 @@
       }
       this.pop.innerHTML = list
         .map((it, i) => `
-          <div class="combo-opt ${it.id === this.value ? 'sel' : ''} ${i === this.active ? 'active' : ''}" data-i="${i}">
+          <div class="combo-opt ${this.isSel(it) ? 'sel' : ''} ${i === this.active ? 'active' : ''}" data-i="${i}">
+            ${this.multi ? `<span class="combo-tick" style="width:15px;flex:none;font-weight:900;color:var(--brand)">${this.isSel(it) ? '✓' : ''}</span>` : ''}
             ${it.code ? `<span class="code">${esc(it.code)}</span>` : ''}
             <span class="label">${esc(it.label)}</span>
             ${it.sub ? `<span class="sub">${esc(it.sub)}</span>` : ''}
@@ -281,6 +287,18 @@
     pick(i) {
       const it = (this._list || [])[i];
       if (!it) return;
+      if (this.multi) {
+        /* «الكل» clears; any other choice toggles, and the list STAYS open
+           so a second and a third can be picked without reopening it */
+        if (it.id == null) this.values = [];
+        else {
+          const at = this.values.indexOf(it.id);
+          if (at >= 0) this.values.splice(at, 1); else this.values.push(it.id);
+        }
+        this.setValue(this.values, true);
+        this.renderList();
+        return;
+      }
       this.setValue(it.id, true);
       // the list stays reachable — the customer must be able to CHANGE the
       // item straight away without clearing the field first
@@ -316,19 +334,49 @@
     }
 
     setValue(id, notify) {
-      this.value = id == null || id === '' ? null : id;
-      this.hidden.value = this.value == null ? '' : this.value;
+      if (this.multi) {
+        const arr = Array.isArray(id) ? id : (id == null || id === '' ? [] : [id]);
+        this.values = arr.filter((x) => x != null && x !== '');
+        this.value = this.values.length ? this.values[0] : null;
+        this.hidden.value = this.values.join(',');
+      } else {
+        this.value = id == null || id === '' ? null : id;
+        this.hidden.value = this.value == null ? '' : this.value;
+      }
       this._typing = false;
       this._needle = '';
       this.renderLabel();
-      if (notify && this.opts.onChange) this.opts.onChange(this.value);
+      if (notify && this.opts.onChange) this.opts.onChange(this.multi ? this.values.slice() : this.value);
     }
 
     getValue() {
-      return this.value;
+      return this.multi ? this.values.slice() : this.value;
+    }
+
+    /** is this option one of the chosen ones? */
+    isSel(it) {
+      if (this.multi) return it.id == null ? this.values.length === 0 : this.values.indexOf(it.id) >= 0;
+      return it.id === this.value;
     }
 
     renderLabel() {
+      if (this.multi) {
+        if (!this._typing) {
+          if (!this.values.length) {
+            this._label = this.opts.allLabel || '';
+            this.input.value = this._label;
+          } else {
+            const names = this.values.map((v) => {
+              const f = this.items.find((x) => x.id === v);
+              return f ? f.label : String(v);
+            });
+            this._label = names.length <= 2 ? names.join(' + ') : `${names[0]} +${names.length - 1}`;
+            this.input.value = this._label;
+          }
+        }
+        this.root.classList.toggle('filled', this.values.length > 0 && !this._typing);
+        return;
+      }
       const it = this.current();
       if (it && !this._typing) {
         this._label = it.code ? `${it.code} — ${it.label}` : it.label;

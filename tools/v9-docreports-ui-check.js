@@ -13,7 +13,7 @@ const path = require('path');
 const fs = require('fs');
 
 const ROOT = path.resolve(__dirname, '..');
-const DATA = path.join(ROOT, '.tmp', 'v9ui');
+const DATA = path.join(ROOT, '.tmp', `v9ui-${process.pid}`);
 const RENDERER = path.join(ROOT, 'src', 'renderer');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -51,6 +51,9 @@ app.whenReady().then(async () => {
   const A = db.addItem({ code: 'A-1', name: 'أمبول زجاج', base_unit: 'أمبول', category: 'خام', pieces_per_carton: 1080 }, [{ warehouseId: W1, good: 5000 }]);
   const B = db.addItem({ code: 'B-1', name: 'علبة تام', base_unit: 'علبة', category: 'منتج تام', pieces_per_carton: 24, image: 'b.png' }, [{ warehouseId: W1, good: 1000 }]);
   const C = db.addItem({ code: 'C-1', name: 'غطاء', base_unit: 'غطاء', category: 'خام' }, [{ warehouseId: W1, good: 1000 }]);
+  /* an item that only SITS in the warehouse: a balance and no movement in the
+     period. The customer asked for it to stay out unless he asks for it. */
+  db.addItem({ code: 'D-1', name: 'صنف راكد', base_unit: 'حبة', category: 'خام' }, [{ warehouseId: W1, good: 77 }]);
   const P1 = db.addParty({ name: 'عميل الرياض', phone: '0555', type: 'customer' });
   const today = new Date().toISOString().slice(0, 10);
   const line = (item, pieces, extra = {}) => ({ item_id: item.id, bucket: 'good', pieces, cartons: 0, bags: 0, ...extra });
@@ -95,7 +98,7 @@ app.whenReady().then(async () => {
   check('شاشة التقارير تفتح', screen && screen.active === true, screen && screen.active);
   check('بطاقات التقارير القديمة اختفت', screen && screen.oldCards === false && screen.oldBtn === false,
     screen && { cards: screen.oldCards, btn: screen.oldBtn });
-  check('أنواع المستندات السبعة موجودة', screen && screen.kinds.length === 7, screen && screen.kinds);
+  check('أنواع المستندات السبعة + حركة المخازن موجودة', screen && screen.kinds.length === 8, screen && screen.kinds);
   check('جدول وصندوق إجماليات موجودان', screen && screen.hasTable && screen.hasTotals, screen);
 
   /* ---- 2 — the sales report, detailed then summary ---- */
@@ -178,6 +181,24 @@ app.whenReady().then(async () => {
   check('اليومي: فلاتر النوع والطرف والصنف والفئة', daily && daily.kind && daily.party && daily.item && daily.category, daily);
   check('اليومي: إجماليات بالوحدة', daily && daily.unitTotals === true && daily.unitText.indexOf('أمبول') >= 0, daily && daily.unitText);
 
+  /* ---- 4b — an item that did not move stays out; the total mode shows the total ---- */
+  const idleHidden = await js(`document.getElementById('dailyTbl').textContent.indexOf('صنف راكد') >= 0`);
+  check('اليومي: صنف لم يتحرك في الفترة لا يظهر', idleHidden === false, idleHidden);
+  await js(`(() => { const cb=document.getElementById('dItemTotal'); cb.checked=true; cb.dispatchEvent(new Event('change',{bubbles:true})); return 1; })()`);
+  await sleep(1000);
+  const totalMode = await js(`(() => {
+    const heads=[...document.querySelectorAll('#dailyTbl thead th')].map(t=>t.textContent.trim());
+    const rows=[...document.querySelectorAll('#dailyTbl tbody tr')];
+    const first=rows[0]?[...rows[0].children].map(td=>td.textContent.trim()):[];
+    return { heads, hasBalance: heads.indexOf('المتبقي')>=0, cells: first.length, first };
+  })()`);
+  check('اليومي: وضع «إجمالي المتبقي فقط» يعرض عمود المتبقي', totalMode && totalMode.hasBalance === true, totalMode && totalMode.heads);
+  check('اليومي: وضع الإجمالي يعرض أكثر من الاسم والوحدة', totalMode && totalMode.cells >= 5, totalMode && totalMode.cells);
+  await js(`(() => { const cb=document.getElementById('dAllItems'); cb.checked=true; cb.dispatchEvent(new Event('change',{bubbles:true})); return 1; })()`);
+  await sleep(1000);
+  const idleShown = await js(`document.getElementById('dailyTbl').textContent.indexOf('صنف راكد') >= 0`);
+  check('اليومي: «إظهار كل الأصناف» يُظهر الراكد عند الطلب', idleShown === true, idleShown);
+
   /* ---- 5 — the preview IS the paper: 5mm, centred, bold, A4 portrait ---- */
   await js(`document.querySelector('.nav-item[data-view=reports]').click()`);
   await sleep(1200);
@@ -210,6 +231,10 @@ app.whenReady().then(async () => {
   /* the preview must wear the PAPER's own type size (10pt), not the screen's
      10.5pt — this is the number that proves the two surfaces are one */
   check('المعاينة تلبس خط الورقة نفسه (١٠نقطة)', paper && paper.size >= 13 && paper.size <= 13.7, paper && paper.size);
+  /* the customer asked for the invoice value in so many words — it must never
+     be the column the paper budget drops */
+  const paperHeads = await js(`[...document.querySelectorAll('.pv-frame .print-page table thead th')].map(t=>t.textContent.trim())`);
+  check('قيمة الفاتورة تظهر على الورقة A4 العمودية', Array.isArray(paperHeads) && paperHeads.indexOf('قيمة الفاتورة') >= 0, paperHeads);
 
   /* ---- 6 — A5 is a real paper, half the width, and the caption says so ---- */
   await js(`(() => { const b=[...document.querySelectorAll('.pv-bar .btn')].find(x=>x.textContent.indexOf('إغلاق')>=0); if(b) b.click(); return 1; })()`);

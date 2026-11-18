@@ -600,7 +600,7 @@ app.whenReady().then(async () => {
     titles: [...document.querySelectorAll('#drKinds .dr-kind b')].map(b => b.textContent.trim()),
     oldCards: document.querySelectorAll('#rptCards .rpt-card').length
   }))()`);
-  check('the reports screen offers one button per document kind', launcher && launcher.kinds === 7, launcher && launcher.kinds);
+  check('the reports screen offers one button per document kind', launcher && launcher.kinds === 8, launcher && launcher.kinds);
   check('every kind carries its own icon', launcher && launcher.icons.every((i) => i && i.startsWith('#')), launcher && launcher.icons);
   check('every kind is named', launcher && launcher.titles.every((t) => t.length > 3), launcher && launcher.titles);
   check('the old launcher of the cancelled reports is gone', launcher && launcher.oldCards === 0, launcher && launcher.oldCards);

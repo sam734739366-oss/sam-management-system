@@ -26,7 +26,8 @@
     prod_issue: { icon: 'i-issue', tone: 'tone-issue' },
     sale_return: { icon: 'i-return', tone: 'tone-sreturn' },
     purchase_return: { icon: 'i-return', tone: 'tone-buy' },
-    tolling_in: { icon: 'i-tolling', tone: 'tone-pretn' }
+    tolling_in: { icon: 'i-tolling', tone: 'tone-pretn' },
+    warehouse_flow: { icon: 'i-swap', tone: 'tone-move' }
   };
 
   const PERIODS = [
@@ -48,10 +49,14 @@
     mode: 'detail',
     from: SamUI.today(),
     to: SamUI.today(),
-    partyId: null,
-    itemId: null,
-    category: null,
-    warehouseId: null,
+    /* V9 — every filter holds SEVERAL choices; an empty array means «الكل».
+       The report opens on «كل الفترات»: opening on «اليوم» showed an EMPTY
+       table whenever the last invoice was yesterday, and the customer read
+       that as «the value and the notes do not show». */
+    partyId: [],
+    itemId: [],
+    category: [],
+    warehouseId: [],
     buckets: ['good'],
     paper: 'a4',
     orient: 'portrait',
@@ -59,7 +64,7 @@
     modes: {},         // per kind → 'detail' | 'summary'
     res: null,
     ran: false,
-    period: 'today'
+    period: 'all'
   };
 
   const ref = { items: [], byId: {}, parties: [], warehouses: [], categories: [] };
@@ -151,8 +156,12 @@
       ref.items.forEach((i) => { const c = String(i.category || '').trim(); if (c) cats.add(c); });
       ref.categories = [...cats].sort((a, b) => a.localeCompare(b, 'ar'));
     } catch (e) { if (!(e && e.denied)) toast(e.message || String(e), 'bad'); }
-    try { ref.parties = (await SamDB.call('listParties', {})) || []; } catch (e) { ref.parties = []; }
-    try { ref.warehouses = (await SamDB.call('listWarehouses')) || []; } catch (e) { ref.warehouses = []; }
+    /* listParties takes a SEARCH STRING, not an object: passing {} became
+       '[object Object]' and the filter came back EMPTY without a word. */
+    try { ref.parties = (await SamDB.call('listParties', '')) || []; }
+    catch (e) { ref.parties = []; if (!(e && e.denied)) toast('تعذّر تحميل قائمة العملاء والموردين: ' + (e.message || e), 'bad', 5200); }
+    try { ref.warehouses = (await SamDB.call('listWarehouses')) || []; }
+    catch (e) { ref.warehouses = []; if (!(e && e.denied)) toast('تعذّر تحميل قائمة المخازن: ' + (e.message || e), 'bad', 5200); }
     try { state.kinds = (await SamDB.call('DOC_REPORT_KINDS')) || []; } catch (e) { state.kinds = []; }
     await ensurePicDir();
   }
@@ -164,10 +173,10 @@
       mode: state.mode,
       dateFrom: state.period === 'all' ? '' : state.from,
       dateTo: state.period === 'all' ? '' : state.to,
-      partyId: state.partyId || '',
-      itemId: state.itemId || '',
-      category: state.category || '',
-      warehouseId: state.warehouseId || '',
+      partyId: state.partyId || [],
+      itemId: state.itemId || [],
+      category: state.category || [],
+      warehouseId: state.warehouseId || [],
       buckets: state.buckets.slice()
     };
   }
@@ -252,11 +261,12 @@
   function initCombos() {
     if (combos || !refs) return;
     const ALL = 'الكل';
+    /* multi: the customer asked to pick MORE THAN ONE choice in one filter */
     combos = {
-      party: combo(refs.party, { placeholder: 'الكل…', allLabel: ALL, emptyText: 'لا توجد أطراف' }),
-      item: combo(refs.item, { placeholder: 'الكل…', allLabel: ALL, emptyText: 'لا توجد أصناف' }),
-      category: combo(refs.category, { placeholder: 'الكل…', allLabel: ALL, emptyText: 'لا توجد فئات' }),
-      wh: combo(refs.wh, { placeholder: 'الكل…', allLabel: ALL, emptyText: 'لا توجد مخازن' })
+      party: combo(refs.party, { placeholder: 'الكل…', allLabel: ALL, multi: true, emptyText: 'لا توجد أطراف' }),
+      item: combo(refs.item, { placeholder: 'الكل…', allLabel: ALL, multi: true, emptyText: 'لا توجد أصناف' }),
+      category: combo(refs.category, { placeholder: 'الكل…', allLabel: ALL, multi: true, emptyText: 'لا توجد فئات' }),
+      wh: combo(refs.wh, { placeholder: 'الكل…', allLabel: ALL, multi: true, emptyText: 'لا توجد مخازن' })
     };
     combos.party.opts.onChange = (v) => { state.partyId = v; run(); };
     combos.item.opts.onChange = (v) => { state.itemId = v; run(); };
@@ -282,7 +292,7 @@
     const res = state.res;
     if (!res) return [];
     const saved = state.cols[colKey()];
-    const on = res.columns.filter((c) => (saved ? saved[c.key] !== false : c.key !== 'note'));
+    const on = res.columns.filter((c) => (saved ? saved[c.key] !== false : true));
     /* a report with no columns is not a report — keep the first one */
     return on.length ? on : res.columns.slice(0, 1);
   }
@@ -292,12 +302,12 @@
     const saved = state.cols[colKey()] || {};
     refs.cols.innerHTML = '';
     state.res.columns.forEach((c) => {
-      const on = saved[c.key] !== undefined ? saved[c.key] !== false : c.key !== 'note';
+      const on = saved[c.key] !== undefined ? saved[c.key] !== false : true;
       const lab = el('label', 'col-check');
       lab.innerHTML = `<input type="checkbox" ${on ? 'checked' : ''}><span>${esc(c.label)}</span>`;
       lab.querySelector('input').addEventListener('change', (e) => {
         const cur = Object.assign({}, state.cols[colKey()]);
-        state.res.columns.forEach((x) => { if (cur[x.key] === undefined) cur[x.key] = x.key !== 'note'; });
+        state.res.columns.forEach((x) => { if (cur[x.key] === undefined) cur[x.key] = true; });
         /* the last visible column is never taken away silently */
         if (!e.target.checked && Object.values(cur).filter(Boolean).length <= 1) {
           e.target.checked = true;
@@ -332,28 +342,69 @@
      overlap the customer cannot read.
      ===================================================================== */
   const COL_MM = {
-    externalNo: 24, docDate: 22, docKindAr: 26, partyName: 34, warehouseName: 26,
-    itemName: 40, baseUnit: 16, bucketAr: 16, itemCount: 16, pieces: 20,
-    cartons: 16, bags: 16, invoiceValue: 26, note: 30
+    externalNo: 20, docDate: 20, moveDate: 20, docKindAr: 22, docTypeAr: 22, partyName: 28, warehouseName: 22,
+    itemName: 34, baseUnit: 12, bucketAr: 12, itemCount: 14, moves: 14, pieces: 16,
+    inQty: 15, outQty: 15, delta: 15, net: 15,
+    cartons: 14, bags: 14, invoiceValue: 22, note: 26
   };
   function paperWidthMM() {
     const w = state.paper === 'a5' ? 148 : 210;
     const h = state.paper === 'a5' ? 210 : 297;
     return (state.orient === 'landscape' ? h : w) - 10;
   }
+  /* V9 — what the paper keeps when it cannot keep everything.
+     The customer asked for the invoice value in so many words, so it is
+     never the column that gets dropped: the money, the number of the
+     document, the item and the quantity come first. A column that carries
+     nothing but zeros is not worth paper at all and gives its room away. */
+  /* the note is information the customer typed himself, so it outranks the
+     derived pack columns — those are often zero and give their room away */
+  const PAPER_PRIORITY = ['externalNo', 'docDate', 'moveDate', 'itemName', 'pieces', 'invoiceValue',
+    'note', 'docKindAr', 'docTypeAr', 'inQty', 'outQty', 'delta', 'net', 'baseUnit', 'partyName',
+    'cartons', 'bags', 'bucketAr', 'warehouseName', 'itemCount', 'moves'];
+  const prio = (c) => { const i = PAPER_PRIORITY.indexOf(c.key); return i < 0 ? 99 : i; };
+
   function paperColumns() {
-    const budget = paperWidthMM();
-    const keep = []; const hidden = [];
-    let used = 0;
-    activeColumns().forEach((c) => {
-      const mm = COL_MM[c.key] || 24;
-      if (used + mm <= budget) { keep.push(c); used += mm; } else hidden.push(c);
+    const act = activeColumns();
+    const rows = (state.res && state.res.rows) || [];
+    const useful = act.filter((c) => {
+      if (['cartons', 'bags', 'unitCount'].indexOf(c.key) < 0) return true;
+      return rows.some((r) => SamDB.n(r[c.key]) !== 0);
     });
-    if (!keep.length && activeColumns().length) keep.push(activeColumns()[0]);
-    return { keep, hidden };
+    const budget = paperWidthMM();
+    const kept = new Set();
+    let used = 0;
+    useful.slice().sort((a, b) => prio(a) - prio(b)).forEach((c) => {
+      const mm = COL_MM[c.key] || 24;
+      if (used + mm <= budget) { kept.add(c.key); used += mm; }
+    });
+    const keep = useful.filter((c) => kept.has(c.key));
+    if (!keep.length && act.length) { keep.push(act[0]); kept.add(act[0].key); }
+    return { keep, hidden: act.filter((c) => !kept.has(c.key)) };
   }
 
   /* ---------------- one cell, one truth ---------------- */
+  /* =====================================================================
+     V9 — colour that MEANS something, on the screen AND on the paper.
+     One source of colour (the same variables the document chips use), so
+     what he sees in the preview is exactly what the printer delivers.
+     ===================================================================== */
+  const KIND_COLOR = {
+    sale: 'var(--c-sell)', purchase: 'var(--c-buy)', sale_return: 'var(--c-sreturn)',
+    purchase_return: 'var(--c-buy)', transfer: 'var(--c-move)', prod_receipt: 'var(--c-produce)',
+    prod_issue: 'var(--c-issue)', gate_in: 'var(--c-gin)', gate_out: 'var(--c-gout)',
+    adjustment: 'var(--c-adjust)', tolling_in: 'var(--c-pretn)', warehouse_flow: 'var(--c-move)',
+    opening: 'var(--c-plain)', issue: 'var(--c-issue)', receipt: 'var(--c-produce)',
+    bags: 'var(--c-move)', tolling_out: 'var(--c-pretn)', scrap: 'var(--c-warn)'
+  };
+  /* every number wears the colour of its own meaning: what came in is not
+     what went out, and a carton is not a bag */
+  const NUM_COLOR = {
+    inQty: 'var(--c-ok)', outQty: 'var(--c-pretn)', pieces: 'var(--c-buy)',
+    cartons: 'var(--c-sell)', bags: 'var(--c-gin)',
+    itemCount: 'var(--c-plain)', moves: 'var(--c-plain)'
+  };
+
   function cellHtml(row, c, print) {
     const v = row[c.key];
     if (c.pic) return itemCell(row, print ? 17 : 14, print);
@@ -362,9 +413,33 @@
         ? ` <small style="color:${print ? '#667085' : '#94a3b8'};font-weight:700">داخلي</small>` : '';
       return `<b style="color:${print ? '#101828' : 'var(--ink)'}">${esc(String(v == null ? '—' : v))}</b>${mark}`;
     }
-    if (c.money) return v == null ? '<span style="opacity:.45">—</span>' : `<b style="color:${print ? '#0b5d3b' : 'var(--ok)'}">${SamDB.fmt(SamDB.n(v))}</b>`;
-    if (c.num) return `<span class="num">${SamDB.fmt(SamDB.n(v))}</span>`;
+    if (c.key === 'docKindAr' || c.key === 'docTypeAr') {
+      const key = row.docKind || row.docType || '';
+      return `<b style="color:${KIND_COLOR[key] || 'var(--c-plain)'};font-weight:800">${esc(String(v == null ? '' : v))}</b>`;
+    }
+    if (c.money) return v == null ? '<span style="opacity:.45">—</span>' : `<b style="color:var(--c-ok)">${SamDB.fmt(SamDB.n(v))}</b>`;
+    if (c.signed) {
+      const n = SamDB.n(v);
+      const col = n > 0 ? 'var(--c-ok)' : n < 0 ? 'var(--c-pretn)' : 'var(--c-plain)';
+      return `<b style="color:${col}">${n > 0 ? '+' : ''}${SamDB.fmt(n)}</b>`;
+    }
+    if (c.num) return `<span class="num" style="font-weight:800;color:${NUM_COLOR[c.key] || 'var(--ink)'}">${SamDB.fmt(SamDB.n(v))}</span>`;
     if (c.key === 'bucketAr') return `<span class="chip ${row.bucket === 'defect' ? 'bad' : 'ok'}">${esc(String(v || ''))}</span>`;
+    /* V9 — a long note must NOT blow up the row. Small writing, short lines,
+       a capped box: two lines on the screen (the whole note is one hover
+       away, and a double-click opens the document itself), and on the paper
+       the same small hand with the full text wrapped inside a fixed column. */
+    if (c.key === 'note') {
+      const txt = String(v == null ? '' : v);
+      if (!txt) return '<span style="opacity:.4">—</span>';
+      if (print) {
+        return `<span class="note-cell" style="display:block;font-size:8.5pt;line-height:1.3;font-weight:600;color:#33415a;`
+          + 'white-space:normal;word-break:break-word;overflow-wrap:anywhere;text-align:center">' + esc(txt) + '</span>';
+      }
+      return `<span class="note-cell" title="${esc(txt)}" style="display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;`
+        + 'overflow:hidden;font-size:11px;line-height:1.3;font-weight:600;color:var(--label-fg);white-space:normal;'
+        + 'word-break:break-word;max-width:188px;text-align:center">' + esc(txt) + '</span>';
+    }
     return esc(String(v == null || v === '' ? '—' : v));
   }
 
@@ -374,10 +449,23 @@
     if (!t) return '';
     const card = (label, value, unit, cls) => `<div class="dr-tot ${cls || ''}">`
       + `<span class="lbl">${esc(label)}</span><b>${SamDB.fmt(SamDB.n(value))}</b><span class="unit">${esc(unit)}</span></div>`;
-    let html = card('قيمة الفواتير', t.value, CURRENCY, 'money');
-    html += card('عدد المستندات', t.documents, 'مستند', 'docs');
+    /* a flow report totals what entered and what left; a document report
+       totals the money of the papers. Each in the unit of the thing. */
+    const flow = t.inQty !== undefined;
+    let html = flow
+      ? card('إجمالي الوارد', t.inQty, 'كل الوحدات', 'docs')
+        + card('إجمالي الصادر', t.outQty, 'كل الوحدات', 'lines')
+        + card('الصافي', t.net, 'وارد − صادر', 'money')
+      : card('قيمة الفواتير', t.value, CURRENCY, 'money');
+    html += card(flow ? 'عدد الحركات' : 'عدد المستندات', flow ? t.moves : t.documents, flow ? 'حركة' : 'مستند', 'docs');
     html += card('عدد الأسطر', t.rows, 'سطر', 'lines');
     (t.byUnit || []).forEach((u) => {
+      if (flow) {
+        html += `<div class="dr-tot unit"><span class="lbl">${esc(u.unit)}</span>`
+          + `<b>${SamDB.fmt(SamDB.n(u.net))}</b><span class="unit">${esc(u.unit)} — صافي</span>`
+          + `<small>وارد ${SamDB.fmt(u.inQty)} · صادر ${SamDB.fmt(u.outQty)}</small></div>`;
+        return;
+      }
       const extra = [];
       if (u.cartons) extra.push(`${SamDB.fmt(u.cartons)} كرتون`);
       if (u.bags) extra.push(`${SamDB.fmt(u.bags)} كيس`);
@@ -445,27 +533,39 @@
     const body = res.rows.map((r) => `<tr class="${r.docFirst ? 'doc-first' : ''}">`
       + cols.map((c) => `<td>${cellHtml(r, c, true)}</td>`).join('') + '</tr>').join('');
     const t = res.totals;
-    const unitRows = (t.byUnit || []).map((u) => `<tr><td>${esc(u.unit)}</td><td>${SamDB.fmt(u.pieces)}</td>`
-      + `<td>${SamDB.fmt(u.cartons)}</td><td>${SamDB.fmt(u.bags)}</td></tr>`).join('');
+    const flow = t.inQty !== undefined;
+    const unitRows = (t.byUnit || []).map((u) => (flow
+      ? `<tr><td>${esc(u.unit)}</td><td>${SamDB.fmt(u.inQty)}</td><td>${SamDB.fmt(u.outQty)}</td><td>${SamDB.fmt(u.net)}</td></tr>`
+      : `<tr><td>${esc(u.unit)}</td><td>${SamDB.fmt(u.pieces)}</td>`
+        + `<td>${SamDB.fmt(u.cartons)}</td><td>${SamDB.fmt(u.bags)}</td></tr>`)).join('');
     const per = state.period === 'all' ? 'كل الفترات' : `${state.from} ← ${state.to}`;
     return {
       title: `تقرير ${res.title}`,
       subtitle: `${state.mode === 'summary' ? 'ملخّص — سطر لكل مستند' : 'تفصيلي — سطر لكل صنف'} · ${per}`,
       docRef: `DR-${state.kind}-${state.from || 'all'}`,
       docRefLabel: 'رقم التقرير',
-      head: [
-        { k: 'الفترة', v: per },
-        { k: 'عدد المستندات', v: SamDB.fmt(t.documents) },
-        { k: 'عدد الأسطر', v: SamDB.fmt(t.rows) },
-        { k: 'قيمة الفواتير', v: `${SamDB.fmt(t.value)} ${CURRENCY}` }
-      ],
+      head: flow
+        ? [
+          { k: 'الفترة', v: per },
+          { k: 'إجمالي الوارد', v: SamDB.fmt(t.inQty) },
+          { k: 'إجمالي الصادر', v: SamDB.fmt(t.outQty) },
+          { k: 'الصافي', v: SamDB.fmt(t.net) }
+        ]
+        : [
+          { k: 'الفترة', v: per },
+          { k: 'عدد المستندات', v: SamDB.fmt(t.documents) },
+          { k: 'عدد الأسطر', v: SamDB.fmt(t.rows) },
+          { k: 'قيمة الفواتير', v: `${SamDB.fmt(t.value)} ${CURRENCY}` }
+        ],
       bodyHtml: `
         <table class="tbl" style="width:100%;table-layout:fixed">
           <thead>${head}</thead><tbody>${body}</tbody>
         </table>
         <div style="margin-top:4mm"><b>الإجماليات — كل شيء بوحدته</b>
           <table class="tbl" style="width:100%">
-            <thead><tr><th>الوحدة</th><th>الكمية</th><th>كراتين</th><th>أكياس</th></tr></thead>
+            <thead><tr>${flow
+              ? '<th>الوحدة</th><th>وارد</th><th>صادر</th><th>الصافي</th>'
+              : '<th>الوحدة</th><th>الكمية</th><th>كراتين</th><th>أكياس</th>'}</tr></thead>
             <tbody>${unitRows}</tbody>
           </table>
         </div>`,
@@ -514,6 +614,12 @@
       return o;
     });
     const totals = [{ key: 'pieces', value: res.totals.pieces }];
+    if (res.totals.inQty !== undefined) {
+      totals.push({ key: 'inQty', value: res.totals.inQty });
+      totals.push({ key: 'outQty', value: res.totals.outQty });
+      totals.push({ key: 'net', value: res.totals.net });
+      totals.push({ key: 'delta', value: res.totals.net });
+    }
     if (cols.some((c) => c.key === 'cartons')) totals.push({ key: 'cartons', value: res.totals.cartons });
     if (cols.some((c) => c.key === 'bags')) totals.push({ key: 'bags', value: res.totals.bags });
     if (cols.some((c) => c.key === 'invoiceValue')) totals.push({ key: 'invoiceValue', value: res.totals.value });
@@ -526,8 +632,14 @@
         ['الفترة', state.period === 'all' ? 'كل الفترات' : `${state.from} ← ${state.to}`],
         ['الشكل', state.mode === 'summary' ? 'ملخّص' : 'تفصيلي'],
         ['عدد المستندات', SamDB.fmt(res.totals.documents)],
-        ['قيمة الفواتير', `${SamDB.fmt(res.totals.value)} ${CURRENCY}`],
-        ...((res.totals.byUnit || []).map((u) => [`إجمالي ${u.unit}`, SamDB.fmt(u.pieces)]))
+        ...(res.totals.inQty !== undefined
+          ? [['إجمالي الوارد', SamDB.fmt(res.totals.inQty)],
+            ['إجمالي الصادر', SamDB.fmt(res.totals.outQty)],
+            ['الصافي', SamDB.fmt(res.totals.net)]]
+          : [['قيمة الفواتير', `${SamDB.fmt(res.totals.value)} ${CURRENCY}`]]),
+        ...((res.totals.byUnit || []).map((u) => (res.totals.inQty !== undefined
+          ? [`إجمالي ${u.unit} — صافي`, SamDB.fmt(u.net)]
+          : [`إجمالي ${u.unit}`, SamDB.fmt(u.pieces)])))
       ],
       columns, rows, totals
     };

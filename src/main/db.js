@@ -2661,17 +2661,17 @@ function dailyReport(filters = {}) {
      An empty value means «الكل»: no constraint at all, not a match on ''. */
   const extra = [];
   const extraParams = [];
-  const kind = String(filters.kind || '').trim();
-  if (kind) { extra.push('m.doc_type = ?'); extraParams.push(kind); }
-  const partyId = int(filters.partyId) || 0;
-  if (partyId) { extra.push('m.party_id = ?'); extraParams.push(partyId); }
-  const itemId = int(filters.itemId) || 0;
-  if (itemId) { extra.push('m.item_id = ?'); extraParams.push(itemId); }
-  const whId = int(filters.warehouseId) || 0;
-  if (whId) { extra.push('m.warehouse_id = ?'); extraParams.push(whId); }
-  const category = String(filters.category || '').trim();
-  const catWhere = category ? "AND IFNULL(i.category,'') = ?" : '';
-  const catParams = category ? [category] : [];
+  const kinds = strList(filters.kind);
+  if (kinds.length) { extra.push(`m.doc_type IN (${holes(kinds)})`); extraParams.push(...kinds); }
+  const partyIds = idList(filters.partyId);
+  if (partyIds.length) { extra.push(`m.party_id IN (${holes(partyIds)})`); extraParams.push(...partyIds); }
+  const itemIds = idList(filters.itemId);
+  if (itemIds.length) { extra.push(`m.item_id IN (${holes(itemIds)})`); extraParams.push(...itemIds); }
+  const whIds = idList(filters.warehouseId);
+  if (whIds.length) { extra.push(`m.warehouse_id IN (${holes(whIds)})`); extraParams.push(...whIds); }
+  const cats = strList(filters.category);
+  const catWhere = cats.length ? `AND IFNULL(i.category,'') IN (${holes(cats)})` : '';
+  const catParams = cats.slice();
   const extraSql = extra.length ? 'AND ' + extra.join(' AND ') : '';
 
   const moves = db.prepare(`
@@ -2706,12 +2706,12 @@ function dailyReport(filters = {}) {
   const openMap = {}; openRows.forEach((r) => (openMap[`${r.itemId}:${r.warehouseId}`] = r.opening));
 
   const allWhs = listWarehouses().map((w) => ({ id: w.id, code: w.code, name: w.name, location: w.location || '' }));
-  const whs = whId ? allWhs.filter((w) => w.id === whId) : allWhs;
+  const whs = whIds.length ? allWhs.filter((w) => whIds.includes(w.id)) : allWhs;
   const items = db.prepare(
     `SELECT id, code, name, base_unit, IFNULL(category,'') AS category FROM items
-     WHERE is_active=1 ${itemId ? 'AND id=?' : ''} ${category ? "AND IFNULL(category,'')=?" : ''}
+     WHERE is_active=1 ${itemIds.length ? `AND id IN (${holes(itemIds)})` : ''} ${cats.length ? `AND IFNULL(category,'') IN (${holes(cats)})` : ''}
      ORDER BY code`
-  ).all(...(itemId ? [itemId] : []), ...catParams);
+  ).all(...itemIds, ...catParams);
 
   const warehouseTotals = {}; whs.forEach((w) => (warehouseTotals[w.id] = { inQty: 0, outQty: 0, balance: 0, opening: 0 }));
   const grand = { inQty: 0, outQty: 0, balance: 0, opening: 0 };
@@ -2774,6 +2774,37 @@ const REPORTS = [
   { key: 'supplier_account', title: 'حساب الموردين', hint: 'ماذا دخل وماذا خرج لكل مورد', landscape: false },
   { key: 'documents_report', title: 'تقرير المستندات', hint: 'كل مستند على سطر — مرتّب بالرقم الخارجي', landscape: true }
 ];
+
+/**
+ * V9 — the money the customer typed is stored as FORMATTED text.
+ *
+ * His own database holds «412,500» and «178,750», because the editor writes
+ * the value with SamDB.money(). Number('412,500') is NaN, so every invoice
+ * column showed 0 and every total was nonsense. The number must be read the
+ * way the renderer's own parseNum reads it: take the digits, the point and
+ * the sign, and leave the thousands separators behind.
+ */
+function moneyNum(v) {
+  if (v == null) return 0;
+  if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
+  const x = Number(String(v).replace(/[^\d.\-]/g, ''));
+  return Number.isFinite(x) ? x : 0;
+}
+
+/**
+ * V9 — a filter carries ONE choice or SEVERAL. An empty list means «الكل»:
+ * no constraint at all. The scalar form keeps working, so every old caller
+ * (and every old check) is untouched.
+ */
+function idList(v) {
+  const arr = Array.isArray(v) ? v : [v];
+  return arr.map((x) => int(x)).filter((x) => x > 0);
+}
+function strList(v) {
+  const arr = Array.isArray(v) ? v : [v];
+  return arr.map((x) => String(x == null ? '' : x).trim()).filter(Boolean);
+}
+const holes = (list) => list.map(() => '?').join(',');
 
 function reportRange(filters) {
   const from = (filters.dateFrom || '').trim();
@@ -3248,7 +3279,7 @@ function todaySalesReport(filters = {}) {
      ORDER BY COALESCE(NULLIF(TRIM(d.external_no),''), d.doc_no) COLLATE NOCASE, d.id`
   ).all(day);
   const out = rows.map((r) => ({ ...r, partyName: r.partyName || '—' }));
-  const value = out.reduce((a, r) => a + (Number(r.invoiceValue) || 0), 0);
+  const value = out.reduce((a, r) => a + moneyNum(r.invoiceValue), 0);
   return {
     report: 'today_sales',
     title: 'مبيعات اليوم',
@@ -3370,35 +3401,42 @@ const DOC_REPORT_KINDS = [
   { key: 'prod_issue', title: 'صرف خام للإنتاج', hint: 'ما خرج من المخزن إلى الإنتاج' },
   { key: 'sale_return', title: 'مرتجع مبيعات', hint: 'ما رجعه العملاء' },
   { key: 'purchase_return', title: 'مرتجع مشتريات', hint: 'ما أُرجع إلى الموردين' },
-  { key: 'tolling_in', title: 'استلام خام العميل', hint: 'مادة العميل التي استلمها المخزن' }
+  { key: 'tolling_in', title: 'استلام خام العميل', hint: 'مادة العميل التي استلمها المخزن' },
+  { key: 'warehouse_flow', title: 'حركة المخازن', hint: 'دخول وخروج كل مخزن خلال الفترة — تفصيل وإجمالي' }
 ];
 
 function docReport(filters = {}) {
   const mode = filters.mode === 'summary' ? 'summary' : 'detail';
-  const kind = String(filters.kind || '').trim();
-  const title = kind ? (DOC_KINDS[kind] ? DOC_KINDS[kind].ar : kind) : 'كل المستندات';
+  const kinds = strList(filters.kind);
+  const kind = kinds.length === 1 ? kinds[0] : '';
+  const title = kinds.length === 1 ? (DOC_KINDS[kind] ? DOC_KINDS[kind].ar : kind)
+    : kinds.length > 1 ? kinds.map((k) => (DOC_KINDS[k] ? DOC_KINDS[k].ar : k)).join(' + ')
+      : 'كل المستندات';
 
   /* document-level conditions. An empty value means «الكل» — no constraint
      at all, never a match against the empty string. */
   const dw = []; const dp = [];
-  if (kind) { dw.push('d.kind = ?'); dp.push(kind); }
+  if (kinds.length) { dw.push(`d.kind IN (${holes(kinds)})`); dp.push(...kinds); }
   const from = String(filters.dateFrom || '').trim();
   const to = String(filters.dateTo || '').trim();
   if (from) { dw.push('d.doc_date >= ?'); dp.push(from); }
   if (to) { dw.push('d.doc_date <= ?'); dp.push(to); }
-  const partyId = int(filters.partyId) || 0;
-  if (partyId) { dw.push('d.party_id = ?'); dp.push(partyId); }
+  const parties = idList(filters.partyId);
+  if (parties.length) { dw.push(`d.party_id IN (${holes(parties)})`); dp.push(...parties); }
 
-  /* line-level conditions */
+  /* line-level conditions — each of them may carry several choices */
   const lw = []; const lp = [];
-  const itemId = int(filters.itemId) || 0;
-  if (itemId) { lw.push('l.item_id = ?'); lp.push(itemId); }
-  const category = String(filters.category || '').trim();
-  if (category) { lw.push("IFNULL(i.category,'') = ?"); lp.push(category); }
-  const whId = int(filters.warehouseId) || 0;
-  if (whId) { lw.push('(l.warehouse_id = ? OR (l.warehouse_id IS NULL AND d.warehouse_id = ?))'); lp.push(whId, whId); }
+  const items = idList(filters.itemId);
+  if (items.length) { lw.push(`l.item_id IN (${holes(items)})`); lp.push(...items); }
+  const cats = strList(filters.category);
+  if (cats.length) { lw.push(`IFNULL(i.category,'') IN (${holes(cats)})`); lp.push(...cats); }
+  const whs = idList(filters.warehouseId);
+  if (whs.length) {
+    lw.push(`(l.warehouse_id IN (${holes(whs)}) OR (l.warehouse_id IS NULL AND d.warehouse_id IN (${holes(whs)})))`);
+    lp.push(...whs, ...whs);
+  }
   const buckets = Array.isArray(filters.buckets) ? filters.buckets.filter((b) => BUCKETS.includes(b)) : [];
-  if (buckets.length) { lw.push(`l.bucket IN (${buckets.map(() => '?').join(',')})`); lp.push(...buckets); }
+  if (buckets.length) { lw.push(`l.bucket IN (${holes(buckets)})`); lp.push(...buckets); }
 
   const dwSql = dw.length ? 'AND ' + dw.join(' AND ') : '';
   const lwSql = lw.length ? 'AND ' + lw.join(' AND ') : '';
@@ -3408,7 +3446,7 @@ function docReport(filters = {}) {
             d.doc_date AS docDate, d.invoice_value AS invoiceValue,
             p.name AS partyName, w.name AS warehouseName,
             l.id AS lineId, l.bucket, l.pieces, l.cartons, l.bags,
-            l.unit_count AS unitCount, l.note AS note,
+            l.unit_count AS unitCount, l.note AS note, d.notes AS docNote,
             i.id AS itemId, i.code AS itemCode, i.name AS itemName,
             i.base_unit AS baseUnit, IFNULL(i.category,'') AS category,
             lw.name AS lineWarehouseName
@@ -3441,8 +3479,13 @@ function docReport(filters = {}) {
       baseUnit: r.baseUnit || 'حبة', category: r.category,
       bucket: r.bucket, bucketAr: AR_BUCKET[r.bucket] || r.bucket,
       pieces: r.pieces, cartons: r.cartons, bags: r.bags, unitCount: r.unitCount,
-      invoiceValue: first ? (Number(r.invoiceValue) || 0) : null,
-      note: r.note || ''
+      invoiceValue: first ? moneyNum(r.invoiceValue) : null,
+      /* V9 — the customer writes his note on the DOCUMENT («محمد الفقيه /
+         كيس بقي 50 علبة»), not on the line. Show the line's own note when it
+         has one, else the document's note ONCE on its first line — the same
+         rule as the invoice value, so nothing is repeated down the page. */
+      docNote: r.docNote || '',
+      note: r.note || (first ? (r.docNote || '') : '')
     };
   });
 
@@ -3454,7 +3497,8 @@ function docReport(filters = {}) {
         docId: r.docId, docKind: r.docKind, docKindAr: r.docKindAr,
         docNo: r.docNo, externalNo: r.externalNo, hasExternal: r.hasExternal,
         docDate: r.docDate, partyName: r.partyName, warehouseName: r.warehouseName,
-        itemCount: 0, pieces: 0, cartons: 0, bags: 0, invoiceValue: r.invoiceValue || 0
+        itemCount: 0, pieces: 0, cartons: 0, bags: 0, invoiceValue: r.invoiceValue || 0,
+        note: r.docNote || ''
       });
     }
     const g = byDoc.get(r.docId);
@@ -3483,7 +3527,8 @@ function docReport(filters = {}) {
       { key: 'pieces', label: 'الكمية', num: true },
       { key: 'cartons', label: 'كراتين', num: true },
       { key: 'bags', label: 'أكياس', num: true },
-      { key: 'invoiceValue', label: 'قيمة الفاتورة', num: true, money: true }
+      { key: 'invoiceValue', label: 'قيمة الفاتورة', num: true, money: true },
+      { key: 'note', label: 'ملاحظة' }
     ]
     : [
       { key: 'externalNo', label: 'رقم المستند' },
@@ -3511,7 +3556,147 @@ function docReport(filters = {}) {
       pieces: detail.reduce((a, r) => a + r.pieces, 0),
       cartons: detail.reduce((a, r) => a + r.cartons, 0),
       bags: detail.reduce((a, r) => a + r.bags, 0),
-      value: summary.reduce((a, r) => a + (Number(r.invoiceValue) || 0), 0),
+      value: summary.reduce((a, r) => a + moneyNum(r.invoiceValue), 0),
+      byUnit: Object.values(unitMap)
+    }
+  };
+}
+
+/* =====================================================================
+   V9 — حركة المخازن: the movement of the warehouses, in detail and in
+   total, for the period the customer chose.
+
+   The document reports answer «what did this paper carry». This one answers
+   «what entered and what left, everywhere, between these two dates» — so it
+   reads the LEDGER (stock_moves), not the documents, and it returns the
+   same shape so the same screen paints it without a special case.
+     · تفصيلي — every movement on its own row
+     · ملخّص  — every warehouse on its own row, with its in / out / net
+   ===================================================================== */
+function stockFlowReport(filters = {}) {
+  const mode = filters.mode === 'summary' ? 'summary' : 'detail';
+  const where = []; const params = [];
+  const from = String(filters.dateFrom || '').trim();
+  const to = String(filters.dateTo || '').trim();
+  if (from) { where.push('m.move_date >= ?'); params.push(from); }
+  if (to) { where.push('m.move_date <= ?'); params.push(to); }
+  /* the opening is not a movement of the period, and the material of the
+     customers is not ours — both stay out until they are asked for */
+  if (filters.includeOpening !== true) where.push("m.doc_type <> 'opening'");
+  if (filters.includeCustomer !== true) where.push('m.is_customer = 0');
+  const whIds = idList(filters.warehouseId);
+  if (whIds.length) { where.push(`m.warehouse_id IN (${holes(whIds)})`); params.push(...whIds); }
+  const itemIds = idList(filters.itemId);
+  if (itemIds.length) { where.push(`m.item_id IN (${holes(itemIds)})`); params.push(...itemIds); }
+  const partyIds = idList(filters.partyId);
+  if (partyIds.length) { where.push(`m.party_id IN (${holes(partyIds)})`); params.push(...partyIds); }
+  const cats = strList(filters.category);
+  if (cats.length) { where.push(`IFNULL(i.category,'') IN (${holes(cats)})`); params.push(...cats); }
+  const buckets = Array.isArray(filters.buckets) ? filters.buckets.filter((b) => BUCKETS.includes(b)) : [];
+  if (buckets.length) { where.push(`m.bucket IN (${buckets.map(() => '?').join(',')})`); params.push(...buckets); }
+  const sql = where.length ? 'AND ' + where.join(' AND ') : '';
+
+  const moves = db.prepare(
+    `SELECT m.id AS moveId, m.move_date AS moveDate, m.doc_type AS docType, m.doc_id AS docId,
+            m.doc_no AS docNo, d.external_no AS externalNo,
+            m.piece_delta AS delta, m.carton_qty AS cartons, m.bag_qty AS bags,
+            m.bucket AS bucket, m.note AS note,
+            i.id AS itemId, i.code AS itemCode, i.name AS itemName, i.base_unit AS baseUnit,
+            w.id AS warehouseId, w.name AS warehouseName, p.name AS partyName
+     FROM stock_moves m
+     JOIN items i ON i.id = m.item_id
+     LEFT JOIN warehouses w ON w.id = m.warehouse_id
+     LEFT JOIN parties p ON p.id = m.party_id
+     LEFT JOIN documents d ON d.id = m.doc_id AND d.kind = m.doc_type
+     WHERE 1=1 ${sql}
+     ORDER BY m.move_date, m.id`
+  ).all(...params);
+
+  const detail = moves.map((r) => {
+    const d = Number(r.delta) || 0;
+    return {
+      moveId: r.moveId, docId: r.docId, docFirst: true,
+      moveDate: r.moveDate,
+      docType: r.docType, docTypeAr: DOC_LABELS_ALL[r.docType] || r.docType,
+      docNo: r.docNo,
+      externalNo: r.externalNo || r.docNo || '—',
+      hasExternal: !!String(r.externalNo || '').trim(),
+      partyName: r.partyName || '—',
+      warehouseId: r.warehouseId, warehouseName: r.warehouseName || '—',
+      itemId: r.itemId, itemCode: r.itemCode, itemName: r.itemName,
+      baseUnit: r.baseUnit || 'حبة',
+      bucket: r.bucket, bucketAr: AR_BUCKET[r.bucket] || r.bucket,
+      inQty: d > 0 ? d : 0, outQty: d < 0 ? -d : 0, delta: d,
+      cartons: Number(r.cartons) || 0, bags: Number(r.bags) || 0,
+      note: r.note || ''
+    };
+  });
+
+  /* the summary: one row per warehouse, with what entered and what left */
+  const whMap = new Map();
+  detail.forEach((r) => {
+    const key = r.warehouseId == null ? '—' : r.warehouseId;
+    if (!whMap.has(key)) {
+      whMap.set(key, { warehouseName: r.warehouseName, itemCount: 0, moves: 0, inQty: 0, outQty: 0, net: 0, _items: new Set() });
+    }
+    const g = whMap.get(key);
+    g.moves += 1; g.inQty += r.inQty; g.outQty += r.outQty; g.net += r.delta;
+    g._items.add(r.itemId);
+  });
+  const summary = [...whMap.values()].map((g) => {
+    g.itemCount = g._items.size; delete g._items; return g;
+  });
+
+  /* a total for every unit — ampoules are never added to covers */
+  const unitMap = {};
+  detail.forEach((r) => {
+    const u = r.baseUnit;
+    if (!unitMap[u]) unitMap[u] = { unit: u, inQty: 0, outQty: 0, net: 0, pieces: 0, cartons: 0, bags: 0, lines: 0 };
+    unitMap[u].inQty += r.inQty; unitMap[u].outQty += r.outQty; unitMap[u].net += r.delta;
+    unitMap[u].pieces += r.inQty; unitMap[u].cartons += r.cartons; unitMap[u].bags += r.bags;
+    unitMap[u].lines += 1;
+  });
+
+  const rows = mode === 'summary' ? summary : detail;
+  const columns = mode === 'summary'
+    ? [
+      { key: 'warehouseName', label: 'المخزن' },
+      { key: 'itemCount', label: 'عدد الأصناف', num: true },
+      { key: 'moves', label: 'عدد الحركات', num: true },
+      { key: 'inQty', label: 'وارد', num: true },
+      { key: 'outQty', label: 'صادر', num: true },
+      { key: 'net', label: 'الصافي', num: true, signed: true }
+    ]
+    : [
+      { key: 'moveDate', label: 'التاريخ' },
+      { key: 'externalNo', label: 'رقم المستند' },
+      { key: 'docTypeAr', label: 'نوع الحركة' },
+      { key: 'partyName', label: 'العميل / المورد' },
+      { key: 'itemName', label: 'الصنف', pic: true },
+      { key: 'baseUnit', label: 'الوحدة' },
+      { key: 'warehouseName', label: 'المخزن' },
+      { key: 'bucketAr', label: 'الحالة' },
+      { key: 'inQty', label: 'وارد', num: true },
+      { key: 'outQty', label: 'صادر', num: true },
+      { key: 'delta', label: 'الصافي', num: true, signed: true },
+      { key: 'note', label: 'ملاحظة' }
+    ];
+
+  const inQty = detail.reduce((a, r) => a + r.inQty, 0);
+  const outQty = detail.reduce((a, r) => a + r.outQty, 0);
+  return {
+    report: 'warehouse_flow',
+    kind: 'warehouse_flow', mode,
+    title: 'حركة المخازن',
+    columns, rows,
+    totals: {
+      rows: rows.length,
+      documents: new Set(detail.map((r) => r.docId).filter((x) => x != null)).size,
+      moves: detail.length,
+      inQty, outQty, net: inQty - outQty,
+      pieces: inQty,
+      cartons: detail.reduce((a, r) => a + r.cartons, 0),
+      bags: detail.reduce((a, r) => a + r.bags, 0),
       byUnit: Object.values(unitMap)
     }
   };
@@ -3645,6 +3830,7 @@ module.exports = {
   reportFacets,
   dailyReport,
   docReport,
+  stockFlowReport,
   DOC_REPORT_KINDS,
   REPORTS,
   runReport,

@@ -97,8 +97,12 @@ const API = {
   reportFacets: () => d.reportFacets(),
   dailyReport: (filters) => d.dailyReport(filters || {}),
 
-  /* V9 — the document reports that replace the old catalogue */
-  docReport: (filters) => d.docReport(filters || {}),
+  /* V9 — the document reports that replace the old catalogue.
+     «حركة المخازن» reads the ledger instead of the documents, and returns
+     the same shape, so one dispatch point serves the whole screen. */
+  docReport: (filters) => (filters && filters.kind === 'warehouse_flow'
+    ? d.stockFlowReport(filters)
+    : d.docReport(filters || {})),
   DOC_REPORT_KINDS: () => d.DOC_REPORT_KINDS,
 
   /* V4 — the ready-made report catalogue and the dispatcher behind it */

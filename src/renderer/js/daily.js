@@ -47,11 +47,11 @@
     itemTotalOnly: false, // the item with the total of all the warehouses only
     from: SamUI.today(),
     to: SamUI.today(),
-    /* V9 — the new filters. null means «الكل»: no constraint at all */
-    kind: null,
-    partyId: null,
-    itemId: null,
-    category: null,
+    /* V9 — the new filters. Each holds SEVERAL choices; empty means «الكل» */
+    kind: [],
+    partyId: [],
+    itemId: [],
+    category: [],
     includeOpening: false,
     period: 'today',
     win: null
@@ -331,7 +331,7 @@
       const host = document.getElementById(id);
       if (!host) return null;
       const c = combo(host, {
-        placeholder: 'الكل…', allLabel: ALL, emptyText: 'لا توجد خيارات',
+        placeholder: 'الكل…', allLabel: ALL, multi: true, emptyText: 'لا توجد خيارات',
         onChange: (v) => { state[key] = v; run(); }
       });
       c.setValue(state[key] || null, false);
@@ -359,7 +359,7 @@
     }
     if (dCombos.party && !dCombos.party.items.length) {
       try {
-        const ps = (await SamDB.call('listParties', {})) || [];
+        const ps = (await SamDB.call('listParties', '')) || [];
         dCombos.party.setItems(ps.map((p) => ({ id: p.id, label: p.name, code: p.phone || '' })));
         dCombos.party.setValue(state.partyId || null, false);
       } catch (e) { /* ignore */ }
@@ -403,6 +403,7 @@
       whCombo = combo(document.getElementById('dWh'), {
         placeholder: 'كل المخازن…',
         allLabel: 'الكل',
+        multi: true,
         emptyText: 'لا توجد مخازن',
         onChange: (v) => {
           state.whFilter = v;
@@ -486,11 +487,11 @@
         includeCustomer: state.includeCustomer,
         /* V9 — the same filters as the document reports, and the opening
            stays out of the period's movements unless it is asked for */
-        kind: state.kind || '',
-        partyId: state.partyId || '',
-        itemId: state.itemId || '',
-        category: state.category || '',
-        warehouseId: state.whFilter || '',
+        kind: state.kind || [],
+        partyId: state.partyId || [],
+        itemId: state.itemId || [],
+        category: state.category || [],
+        warehouseId: state.whFilter || [],
         includeOpening: state.includeOpening
       });
     } catch (e) { return toast(e.message, 'bad'); }
@@ -540,24 +541,25 @@
     const res = state.res;
     if (!res) return [];
     const all = res.warehouses || [];
-    if (!state.whFilter) return all;
-    return all.filter((w) => w.id === state.whFilter);
+    const sel = Array.isArray(state.whFilter) ? state.whFilter : (state.whFilter ? [state.whFilter] : []);
+    if (!sel.length) return all;
+    return all.filter((w) => sel.includes(w.id));
   }
 
-  /** rows worth showing: anything that moved today or still has a balance */
+  /** rows worth showing: an item that MOVED in the period.
+      V9 — the customer asked for it in so many words: «ولا اريد اي صنف يظهر
+      اذا لم يتحرك في الفتره المحددة». A balance alone is not a movement, so
+      an item that only sits in the warehouse stays out until he ticks
+      «إظهار كل الأصناف» — the choice is his, and it is remembered. */
   function visibleRows() {
     const res = state.res;
     if (!res) return [];
     const whs = shownWarehouses();
     if (state.showAll) return res.rows;
-    return res.rows.filter((r) => {
-      const moved = whs.some((w) => {
-        const c = r.cells[w.id] || {};
-        return SamDB.n(c.inQty) || SamDB.n(c.outQty);
-      });
-      const bal = whs.reduce((a, w) => a + SamDB.n((r.cells[w.id] || {}).balance), 0);
-      return moved || bal !== 0;
-    });
+    return res.rows.filter((r) => whs.some((w) => {
+      const c = r.cells[w.id] || {};
+      return SamDB.n(c.inQty) || SamDB.n(c.outQty);
+    }));
   }
 
   /* ---------------- painting (one path for both surfaces) ---------------- */
@@ -593,7 +595,12 @@
     /* the mode: every warehouse beside the item, OR the item with the
        total of all the warehouses only */
     const perWarehouse = !state.itemTotalOnly;
-    const withGrand = perWarehouse && state.showGrand;
+    /* V9 — «الصنف مع إجمالي المتبقي لكل المخازن فقط» means the item WITH its
+       total. The total used to be gated on the per-warehouse mode, so this
+       choice left nothing but the name and the unit — the very number the
+       customer asked for was the one that disappeared. In this mode the
+       total is always shown; on the screen and on the paper alike. */
+    const withGrand = perWarehouse ? state.showGrand : true;
     const packCols = packsOn ? kinds.length : 0;
     const whSpan = 3 + packCols;
     const head1 = `<th rowspan="2" style="min-width:170px">الصنف</th>
@@ -750,7 +757,12 @@
        hangar, the total of all the hangars (when it is wanted), and the
        two choices of the user */
     const perWarehouse = !state.itemTotalOnly;
-    const withGrand = perWarehouse && state.showGrand;
+    /* V9 — «الصنف مع إجمالي المتبقي لكل المخازن فقط» means the item WITH its
+       total. The total used to be gated on the per-warehouse mode, so this
+       choice left nothing but the name and the unit — the very number the
+       customer asked for was the one that disappeared. In this mode the
+       total is always shown; on the screen and on the paper alike. */
+    const withGrand = perWarehouse ? state.showGrand : true;
     const whSpan = 3 + (packsOn ? kinds.length : 0);
     const head1 = `<th rowspan="2" style="width:132px">الصنف</th><th rowspan="2">الوحدة</th>`
       + (perWarehouse ? whs.map((w) => `<th colspan="${whSpan}">${esc(w.name)}</th>`).join('') : '')
