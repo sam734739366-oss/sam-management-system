@@ -44,7 +44,14 @@ function git(args, opts = {}) {
 }
 
 function ensureTagOnRemote() {
-  const local = git(['rev-parse', '-q', '--verify', `refs/tags/${TAG}`], { stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+  let local = '';
+  try {
+    local = git(['rev-parse', '-q', '--verify', `refs/tags/${TAG}`], { stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+  } catch (e) {
+    // git exits 1 when the new release tag does not exist yet — that is the
+    // normal path, not a publish failure. Any real git error surfaces below.
+    local = '';
+  }
   if (!local) {
     // tag the current HEAD of the checked-out branch
     git(['tag', '-a', TAG, '-m', `SAM Management System ${TAG}`]);
