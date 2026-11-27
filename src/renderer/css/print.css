@@ -52,6 +52,8 @@
    reading size, in black instead of soft grey, every writing centred.
    ------------------------------------------------------------------ */
 .sheet {
+  display: flex;
+  flex-direction: column;
   font-size: 11pt;
   color: #000;
   /* V9 — «هوامش صغيرة جدا»: 5mm on every side, on the preview and on the
@@ -59,7 +61,20 @@
      outside the writing area. */
   padding: 5mm !important;
 }
-.sheet .doc-foot { inset-inline-start: 5mm; inset-inline-end: 5mm; bottom: 3mm; }
+/* The footer used to be absolute at the paper edge while the body had no
+   reserved space. A full report therefore put its last row underneath the
+   footer. It now belongs to the normal flow: free space pushes it to the
+   bottom, and a long report grows instead of covering its own last line. */
+.sheet > :not(.wm):not(.doc-foot) { flex: 0 0 auto; }
+.sheet .doc-body { margin-bottom: 4mm; }
+.sheet .sig-band { margin-bottom: 3mm; }
+.sheet.half .doc-body { margin-bottom: 2.5mm; }
+.sheet.half .sig-band { margin-bottom: 2.5mm; }
+.sheet .doc-foot {
+  position: static;
+  inset: auto;
+  margin-top: auto;
+}
 .sheet .doc-mast .m-side { font-size: 9pt; color: #1d2939; line-height: 1.6; }
 .sheet .doc-mast .m-brand .b-name { font-size: 15pt; }
 .sheet .doc-mast .m-brand .b-sub { font-size: 9pt; color: #1d2939; }
@@ -75,11 +90,11 @@
    a solid head with a strong rule under it, and a stripe that survives
    the printer (a tint as faint as the one on the screen simply vanishes) */
 .sheet table.tbl {
-  --tbl-col-line: #b3c0d2;
-  --tbl-row-line: #62748f;
-  --tbl-head-bg: #c3d8f2;
+  --tbl-col-line: #a8b7cb;
+  --tbl-row-line: #71839d;
+  --tbl-head-bg: #d8e6f7;
   --tbl-head-line: #475569;
-  --tbl-stripe: #dfe9f7;
+  --tbl-stripe: #edf3fa;
   --tbl-plain: #ffffff;
   border: .75pt solid var(--tbl-row-line) !important;
   -webkit-print-color-adjust: exact;
@@ -161,7 +176,23 @@
 .sheet .sig .nm { font-weight: 900; }
 .sheet .sig .sp { font-size: 9pt; color: #1d2939; }
 .sheet .sig .line { border-bottom: 1px solid #2f3b4d; }
-.sheet .doc-foot { font-size: 8.5pt; color: #1d2939; font-weight: 800; border-top: .5pt solid #9fb0c6; }
+.sheet .doc-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 4mm;
+  font-size: 8.5pt;
+  line-height: 1.45;
+  color: #334155;
+  font-weight: 800;
+  background: #f1f5f9;
+  border: .75pt solid #94a3b8;
+  border-radius: 1.5mm;
+  padding: 1.4mm 2mm;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+.sheet .doc-foot > span { min-width: 0; }
 
 /* V9 — the DENSE sheet (the daily matrix: item × every warehouse) keeps a
    smaller writing so many columns still fit one page. This rule lives HERE
