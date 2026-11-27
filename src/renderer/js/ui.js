@@ -601,46 +601,64 @@
 
     /* group the sheets into physical A4 pages */
     const groupCount = half ? Math.ceil(pages.length / 2) : pages.length;
+    let pageCount = groupCount;
+    const layout = pages.map((p, index) => ({ p, index, full: false, node: null }));
 
     const buildPreview = () => {
       const groups = [];
-      if (half) {
-        for (let i = 0; i < pages.length; i += 2) groups.push(pages.slice(i, i + 2));
-      } else {
-        pages.forEach((p) => groups.push([p]));
+      let pair = [];
+      const flushPair = () => {
+        if (!pair.length) return;
+        groups.push({ items: pair.slice(), half: true });
+        pair = [];
+      };
+      for (const item of layout) {
+        if (!half) {
+          groups.push({ items: [item], half: false });
+        } else if (item.full) {
+          flushPair();
+          groups.push({ items: [item], half: false });
+        } else {
+          pair.push(item);
+          if (pair.length === 2) flushPair();
+        }
       }
+      flushPair();
 
       const built = el('div', 'pv-pages');
       groups.forEach((grp, gi) => {
+        const useHalf = half && grp.half;
         const frame = el('div', `pv-frame${land ? ' land' : ''}${paper === 'a5' ? ' a5' : ''}`);
         const cap = el('div', 'pv-cap');
         cap.innerHTML = `<b>صفحة ${gi + 1}</b> من ${groups.length} — ${paperLabel}` +
-          (half ? ' — تصريحان بنصف ورقة' : '');
+          (useHalf ? ' — تصريحان بنصف ورقة' : '');
         frame.appendChild(cap);
 
-        const page = el('div', `print-page${half ? ' perm' : ''}${land ? ' land' : ''}${paper === 'a5' && !half ? ' a5' : ''}`);
-        grp.forEach((p, i) => {
-          if (half && i > 0) {
+        const page = el('div', `print-page${useHalf ? ' perm' : ''}${land ? ' land' : ''}${paper === 'a5' && !useHalf ? ' a5' : ''}`);
+        grp.items.forEach((item, i) => {
+          if (useHalf && i > 0) {
             const cut = el('div', 'pv-cut', '<span>خط القص</span>');
             page.appendChild(cut);
           }
-          page.appendChild(sheet({
-            ...p,
-            half: half || !!p.half,
-            landscape: land || !!p.landscape,
-            paper: p.paper || paper,
+          const node = sheet({
+            ...item.p,
+            half: useHalf ? (half || !!item.p.half) : false,
+            landscape: land || !!item.p.landscape,
+            paper: item.p.paper || paper,
             __sigs: sigSet
-          }));
+          });
+          node.dataset.permitIndex = String(item.index);
+          item.node = node;
+          page.appendChild(node);
         });
         frame.appendChild(page);
         built.appendChild(frame);
       });
+      pageCount = groups.length;
       return built;
     };
 
     let built = buildPreview();
-
-    const pageCount = groupCount;
     return new Promise((resolve) => {
       const ov = el('div', 'pv no-print');
       const bar = el('div', 'pv-bar');
@@ -732,6 +750,54 @@
       };
       markOverflow();
 
+      const syncNote = () => {
+        const note = ov.querySelector('.pv-note');
+        if (note) note.textContent = `${opts.title || ''} — ${paperLabel}${pageCount > 1 ? ` — ${pageCount} صفحات` : ''}`;
+      };
+
+      let recheckToken = 0;
+      const schedulePermitRecheck = () => {
+        if (!half) return;
+        const token = ++recheckToken;
+        const root = built;
+        (async () => {
+          try { await document.fonts.ready; } catch (e) {}
+          const images = [...root.querySelectorAll('img')];
+          await Promise.all(images.map((img) => img.complete ? Promise.resolve() : new Promise((resolve) => {
+            img.addEventListener('load', resolve, { once: true });
+            img.addEventListener('error', resolve, { once: true });
+          })));
+          if (token !== recheckToken || root !== built || !ov.isConnected) return;
+          ensurePermitsFit();
+        })();
+      };
+      scroll.addEventListener('load', schedulePermitRecheck, true);
+      document.fonts.addEventListener('loadingdone', schedulePermitRecheck, { once: true });
+
+      /* A half permit has a fixed cut height. If even the compact layout is
+         too tall, promote only that permit to a full A4 page instead of
+         hiding rows or the footer behind overflow:hidden. */
+      const ensurePermitsFit = () => {
+        if (!half) return;
+        let changed = false;
+        for (const item of layout) {
+          if (item.full || !item.node) continue;
+          if (item.node.scrollHeight > item.node.clientHeight + 2) {
+            item.full = true;
+            changed = true;
+          }
+        }
+        if (!changed) return;
+        built = buildPreview();
+        scroll.replaceChildren(built);
+        syncNote();
+        fitHalves();
+        markOverflow();
+        applyZoom();
+        fit();
+        schedulePermitRecheck();
+      };
+
       let zoomPct = 100;
       let fitMode = true;
       const applyZoom = () => {
@@ -747,16 +813,22 @@
         applyZoom();
       };
       fit();
+      ensurePermitsFit();
+      schedulePermitRecheck();
       global.addEventListener('resize', fit);
 
       /* the paper is rebuilt when the signature footer changes */
       function rebuild() {
+        layout.forEach((item) => { item.full = false; });
         const next = buildPreview();
         scroll.innerHTML = '';
         scroll.appendChild(next);
         built = next;
+        syncNote();
         fitHalves();
         markOverflow();
+        ensurePermitsFit();
+        schedulePermitRecheck();
         applyZoom();
         fit();
       }

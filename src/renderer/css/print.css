@@ -36,6 +36,12 @@
   html, body { background: #fff !important; overflow: visible !important; }
   .no-print { display: none !important; }
   .print-root { display: block !important; position: static !important; }
+  /* Keep the physical paper height in the print host too. Without this,
+     margin-top:auto cannot push a short document's footer to the page bottom. */
+  .print-host .sheet:not(.half):not(.a5):not(.landscape) { min-height: 296mm !important; }
+  .print-host .sheet.landscape:not(.half):not(.a5) { min-height: 200mm !important; }
+  .print-host .sheet.a5:not(.landscape) { min-height: 209mm !important; }
+  .print-host .sheet.a5.landscape { min-height: 147mm !important; }
 }
 
 /* the sheet behaves like paper on both surfaces */
@@ -73,6 +79,13 @@
 .sheet .doc-foot {
   position: static;
   inset: auto;
+  flex: 0 0 auto;
+  margin-top: auto;
+}
+.sheet.half .doc-foot {
+  position: static;
+  inset: auto;
+  flex: 0 0 auto;
   margin-top: auto;
 }
 .sheet .doc-mast .m-side { font-size: 9pt; color: #1d2939; line-height: 1.6; }

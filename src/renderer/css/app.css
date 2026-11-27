@@ -1255,14 +1255,7 @@
    ===================================================================== */
 
 .tbl {
-  /* the palette of the grid — the paper carries its own copy of it */
-  --tbl-col-line: #e4eaf3;   /* the hairline BETWEEN two columns */
-  --tbl-row-line: #c2d0e2;   /* the rule BETWEEN two rows */
-  --tbl-head-bg: #cfe0f6;    /* the solid fill of the head */
-  --tbl-head-line: #93a9c6;  /* the strong rule under the head */
-  --tbl-stripe: #e6effb;     /* the tinted row */
-  --tbl-plain: #ffffff;      /* the row that carries no tint */
-  --tbl-hover: #dbeafe;      /* the row under the mouse */
+  /* Screen grid tokens live once in theme.css; print.css owns paper tokens. */
 }
 
 /* --- the head: a solid fill, a bold label and a strong rule under it --- */
@@ -1314,41 +1307,6 @@
    sheet carries the very same grid — print.css owns the paper sizes,
    because it is the last stylesheet of the cascade.
    ===================================================================== */
-.sheet table.tbl {
-  /* the palette of the paper: darker than the screen, because the
-     printer puts ink on the page and not light on a screen. The preview
-     wears the very same colours as the printed sheet. */
-  --tbl-col-line: #b3c0d2;
-  --tbl-row-line: #62748f;
-  --tbl-head-bg: #c3d8f2;
-  --tbl-head-line: #475569;
-  --tbl-stripe: #dfe9f7;
-  --tbl-plain: #ffffff;
-}
-.sheet table.tbl { border: 1px solid var(--tbl-row-line); }
-.sheet table.tbl thead th {
-  background: var(--tbl-head-bg) !important;
-  color: #0a1220 !important;
-  font-weight: 900;
-  border-bottom: 2px solid var(--tbl-head-line);
-  border-inline-end: 1px solid var(--tbl-col-line);
-}
-.sheet table.tbl tbody td {
-  border-bottom: 1px solid var(--tbl-row-line);
-  border-inline-end: 1px solid var(--tbl-col-line);
-}
-.sheet table.tbl thead tr > *:last-child,
-.sheet table.tbl tbody tr > *:last-child { border-inline-end: 0; }
-.sheet table.tbl tbody tr:nth-child(odd) td { background: var(--tbl-plain); }
-.sheet table.tbl tbody tr:nth-child(even) td { background: var(--tbl-stripe); }
-/* the totals row is never a striped row */
-.sheet table.tbl tbody tr.tot-row td,
-.sheet table.tbl tfoot tr.tot-row td {
-  background: var(--tbl-head-bg) !important;
-  font-weight: 900 !important;
-  color: #0a1220 !important;
-}
-
 /* =====================================================================
    The company of the customer — the masthead of the printed paper
    The block sits in the middle of the masthead: the logo on the right

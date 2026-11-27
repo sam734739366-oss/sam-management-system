@@ -14,6 +14,7 @@
   --brand-600: #2f6fed;
   --brand-500: #3b82f6;
   --brand-300: #93c5fd;
+  --brand-200: #bfdbfe;
   --brand-100: #dbeafe;
   --brand-050: #eff6ff;
 
@@ -25,17 +26,20 @@
   --accent-050: #f0fdfa;
 
   /* neutrals */
-  --ink: #17202f;
+  --ink: #172033;
   --ink-soft: #3c4a60;
-  --muted-fg: #5b6b83;
+  --muted-fg: #526176;
   --label-fg: #2b3849;
-  --bg: #e9eef6;
+  --bg: #eef3f9;
   --paper: #f4f7fb;
   --surface: #ffffff;
-  --surface-2: #f2f6fc;
-  --surface-3: #e8eefa;
-  --line: #dde5f0;
-  --line-strong: #c3cfe0;
+  --surface-2: #f8fafc;
+  --surface-3: #eaf0f7;
+  --line: #d6dfeb;
+  --line-strong: #aebdd0;
+  --control-border: #7d8da3;
+  --focus: #1d4ed8;
+  --info: #0369a1;
 
   /* V5 — the app canvas: a cool, layered wash instead of a flat grey.
      Four tinted pools over a soft vertical wash: the corner colours are
@@ -66,8 +70,9 @@
   --c-gout: #0369a1;
   --c-issue: #c2410c;
   --c-adjust: #b91c1c;
-  --c-ok: #15803d;
-  --c-warn: #b45309;
+  --c-ok: #166534;
+  --c-ok-dark: #14532d;
+  --c-warn: #92400e;
   --c-info: #0369a1;
 
   /* V6-7 — the scale. One ladder for every size in the program, so a
@@ -109,12 +114,12 @@
   /* input contrast tokens */
   --input-fg: #1e293b;
   --input-bg: #ffffff;
-  --input-ph: #94a3b8;
+  --input-ph: #64748b;
 
-  --ok: #15803d;
+  --ok: #166534;
   --ok-bg: #f0fdf4;
   --ok-line: #bbf7d0;
-  --warn: #b45309;
+  --warn: #92400e;
   --warn-bg: #fffbeb;
   --warn-line: #fde68a;
   --bad: #b91c1c;
@@ -127,6 +132,7 @@
 
   --shadow-s: 0 1px 2px rgba(15, 23, 42, .05), 0 1px 3px rgba(15, 23, 42, .04);
   --shadow: 0 4px 14px rgba(15, 23, 42, .07), 0 1px 4px rgba(15, 23, 42, .05);
+  --shadow-m: 0 10px 24px rgba(15, 23, 42, .12), 0 2px 6px rgba(15, 23, 42, .06);
   --shadow-l: 0 18px 42px rgba(15, 23, 42, .16), 0 4px 12px rgba(15, 23, 42, .08);
 
   --font-body: "Tajawal", "Cairo", "Segoe UI", "Tahoma", sans-serif;
@@ -210,7 +216,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 }
 .btn:hover { transform: translateY(-1px); box-shadow: var(--shadow); border-color: var(--brand-300); }
 .btn:active { transform: translateY(0); box-shadow: var(--shadow-s); }
-.btn:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(37, 99, 235, .22); }
+.btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .btn svg { width: 15px; height: 15px; flex: none; }
 /* the label of a control — kept apart from the 3D plate, which is a <span>
    too, so a stray querySelector('span') would pour the label into the icon */
@@ -218,7 +224,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 
 .btn-primary { --btn-bg: var(--brand); --btn-fg: #fff; --btn-bd: transparent; }
 .btn-primary:hover { --btn-bg: var(--brand-700); }
-.btn-gold { --btn-bg: var(--accent); --btn-fg: #fff; --btn-bd: transparent; }
+.btn-gold { --btn-bg: var(--accent-600); --btn-fg: #fff; --btn-bd: transparent; }
 .btn-gold:hover { --btn-bg: var(--accent-600); }
 .btn-danger { --btn-bg: #dc2626; --btn-fg: #fff; --btn-bd: transparent; }
 .btn-danger:hover { --btn-bg: #b91c1c; }
@@ -256,8 +262,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
   padding: 6px 10px;
   min-height: var(--ctl-h);
   border-radius: var(--ctl-r);
-  border: 1px solid var(--line);
-  /* typed text is always dark on white — never inherited from a parent */
+  border: 1px solid var(--control-border);
   color: var(--input-fg) !important;
   background-color: var(--input-bg) !important;
   -webkit-text-fill-color: var(--input-fg) !important;
@@ -268,9 +273,10 @@ button, input, select, textarea { font: inherit; color: inherit; }
 }
 .input:hover:not(:disabled) { border-color: var(--brand-300); }
 .input:focus, .select:focus, textarea.input:focus {
-  outline: none;
-  border-color: var(--brand);
-  box-shadow: 0 0 0 4px rgba(37, 99, 235, .14);
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-color: var(--focus);
+  box-shadow: 0 0 0 4px rgba(29, 78, 216, .12);
 }
 .input::placeholder, .select::placeholder, textarea.input::placeholder {
   color: var(--input-ph) !important;
@@ -334,7 +340,16 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--brand); width:
    V6-7: the table must FIT its box. The header wraps, and a long text
    breaks inside its cell — so a wide list never pushes the table past
    the edge of the screen and the user never scrolls sideways. */
-.tbl { width: 100%; border-collapse: separate; border-spacing: 0; font-size: var(--fs-lg); }
+.tbl {
+  --tbl-col-line: #c5d1e1;
+  --tbl-row-line: #94a3b8;
+  --tbl-head-bg: #e8f0fb;
+  --tbl-head-line: #64748b;
+  --tbl-stripe: #f1f5fb;
+  --tbl-plain: #ffffff;
+  --tbl-hover: #dbeafe;
+  width: 100%; border-collapse: separate; border-spacing: 0; font-size: var(--fs-lg);
+}
 .tbl thead th {
   position: sticky; top: 0; z-index: 2;
   background: var(--surface-3);
@@ -548,7 +563,6 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--brand); width:
 .sheet .sig .nm { font-weight: 800; }
 .sheet .sig .sp { display: block; font-size: 8pt; color: #3d4a60; margin-top: 1mm; height: 4mm; }
 .sheet .doc-foot {
-  position: absolute; bottom: 4mm; inset-inline-start: 12mm; inset-inline-end: 12mm;
   display: flex; justify-content: space-between; align-items: center;
   font-size: 8pt; color: #33415a; font-weight: 700; border-top: .5pt solid #c9d3e0; padding-top: 1.5mm;
 }
@@ -587,7 +601,7 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--brand); width:
 .sheet.half .sig-band { margin: 4mm 2mm 0; gap: 6mm; }
 .sheet.half .sig .line { height: 7mm; }
 .sheet.half .sig .line[style] { height: 5mm !important; }
-.sheet.half .doc-foot { bottom: 2mm; inset-inline-start: 8mm; inset-inline-end: 8mm; font-size: 7pt; padding-top: 1mm; }
+.sheet.half .doc-foot { font-size: 7pt; padding-top: 1mm; }
 .sheet.half table.tbl th { font-size: 8.5pt; padding: 3px 5px; }
 .sheet.half table.tbl td { font-size: 8.5pt; padding: 3px 5px; }
 /* the masthead on a half sheet must not eat the permit's space */
@@ -612,10 +626,6 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--brand); width:
 /* print tables: aligned, ruled, and always wrapping (never running together) */
 .sheet table.tbl { border: 1px solid #9aa9bf; }
 .sheet table.tbl th, .sheet table.tbl td { white-space: normal; overflow-wrap: anywhere; }
-.sheet table.tbl th { background: #e7eefa !important; color: #0a1220 !important; font-size: 9pt; font-weight: 800; border-bottom: 1px solid #9aa9bf; vertical-align: bottom; padding: 4px 6px; }
-.sheet table.tbl td { border-bottom: 1px solid #ccd5e2; color: #0a1220; font-weight: 600; padding: 4px 6px; }
-.sheet table.tbl tr:nth-child(even) td { background: #f4f7fb; }
-.sheet .tot-row td { background: #e7eefa !important; font-weight: 800; }
 
 @media print {
   html, body { background: #fff; overflow: visible; }
@@ -672,9 +682,9 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--brand); width:
     filter: brightness(1.06);
   }
 }
-.nav-item:focus-visible, .tab:focus-visible, .dr-kind:focus-visible, .kl-tile:focus-visible, .raw-card:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, .22);
+:where(.btn, .nav-item, .tab, .dr-chip, .dr-seg button, .dr-kind, .rpt-card, .rw-item, .kl-tile, .raw-card, .wc, .tb-btn, .pw-toggle, .combo-caret, .combo-plus, .s-btn, .b-btn, .row-del, .pv-zoom button):focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
 }
 .t3d.tiny { width: 15px; height: 15px; border-radius: 5px; }
 .t3d.tiny .ic { width: 9px; height: 9px; stroke-width: 2.4; }
