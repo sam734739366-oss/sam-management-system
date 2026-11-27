@@ -650,18 +650,32 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--brand); width:
   place-items: center;
   width: 28px; height: 28px;
   flex: none;
+  line-height: 1;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
   border-radius: 9px;
   background:
     linear-gradient(158deg, var(--t-soft) 0%, var(--t) 46%, var(--t-dark) 100%);
   color: #fff;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, .55),
-    inset 0 -2px 3px rgba(0, 0, 0, .16),
-    0 1px 1px rgba(15, 23, 42, .14),
-    0 3px 7px -3px rgba(15, 23, 42, .38);
+    inset 0 -2px 3px rgba(0, 0, 0, .14),
+    0 1px 1px rgba(15, 23, 42, .12),
+    0 3px 7px -3px rgba(15, 23, 42, .3);
+  transition: transform var(--dur) var(--ease), filter var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
   -webkit-print-color-adjust: exact; print-color-adjust: exact;
 }
-.t3d .ic { width: 15px; height: 15px; stroke-width: 2; stroke: #fff; }
+.t3d .ic { width: 15px; height: 15px; stroke-width: 2; stroke: #fff; pointer-events: none; }
+@media (hover: hover) {
+  .btn:hover .t3d, .dr-kind:hover .t3d, .kl-tile:hover .t3d, .raw-card:hover .t3d {
+    transform: translateY(-1px) scale(1.04);
+    filter: brightness(1.06);
+  }
+}
+.nav-item:focus-visible, .tab:focus-visible, .dr-kind:focus-visible, .kl-tile:focus-visible, .raw-card:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, .22);
+}
 .t3d.tiny { width: 15px; height: 15px; border-radius: 5px; }
 .t3d.tiny .ic { width: 9px; height: 9px; stroke-width: 2.4; }
 .t3d.tiny::after { border-radius: 4px 4px 7px 7px; }
@@ -697,6 +711,17 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--brand); width:
 .t3d.tone-ok     { --t: var(--c-ok); }
 .t3d.tone-warn   { --t: var(--c-warn); }
 .t3d.tone-info   { --t: var(--c-info); }
+
+/* Respect the operating-system preference: decorative motion becomes
+   effectively instant while colours, focus and layout remain unchanged. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
 
 /* ---------- searchable dropdown (SamUI.combo) ---------- */
 .combo { position: relative; width: 100%; }

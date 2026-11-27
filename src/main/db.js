@@ -3393,7 +3393,7 @@ function partyAccountReport(filters = {}, type = 'customer') {
    كرتون. Ampoules are never added to covers.
    ===================================================================== */
 
-/** the seven kinds, in the order the customer named them */
+/** the document kinds and advanced reports, in the order shown on screen */
 const DOC_REPORT_KINDS = [
   { key: 'sale', title: 'المبيعات', hint: 'ما تم بيعه خلال الفترة — كل فاتورة بأسطرهـا' },
   { key: 'purchase', title: 'المشتريات', hint: 'ما تم شراؤه خلال الفترة' },
@@ -3402,7 +3402,12 @@ const DOC_REPORT_KINDS = [
   { key: 'sale_return', title: 'مرتجع مبيعات', hint: 'ما رجعه العملاء' },
   { key: 'purchase_return', title: 'مرتجع مشتريات', hint: 'ما أُرجع إلى الموردين' },
   { key: 'tolling_in', title: 'استلام خام العميل', hint: 'مادة العميل التي استلمها المخزن' },
-  { key: 'warehouse_flow', title: 'حركة المخازن', hint: 'دخول وخروج كل مخزن خلال الفترة — تفصيل وإجمالي' }
+  { key: 'customer_raw', title: 'متابعة خام العميل', hint: 'كم سلّم · كم بقي في المخازن · كم ما زال في الإنتاج' },
+  { key: 'warehouse_flow', title: 'حركة المخازن', hint: 'دخول وخروج كل مخزن خلال الفترة — تفصيل وإجمالي' },
+  { key: 'category', title: 'تقرير الفئات', hint: 'وارد وصادر وصافي كل فئة بوحدتها' },
+  { key: 'customer_statement', title: 'كشف حساب العميل', hint: 'مستندات العميل والقيمة والرصيد الجاري' },
+  { key: 'supplier_statement', title: 'كشف حساب المورد', hint: 'مستندات المورد والقيمة والرصيد الجاري' },
+  { key: 'item_report', title: 'تقرير الصنف', hint: 'افتتاحي · وارد · صادر · متبقي لكل صنف ومخزن' }
 ];
 
 function docReport(filters = {}) {
@@ -3423,6 +3428,8 @@ function docReport(filters = {}) {
   if (to) { dw.push('d.doc_date <= ?'); dp.push(to); }
   const parties = idList(filters.partyId);
   if (parties.length) { dw.push(`d.party_id IN (${holes(parties)})`); dp.push(...parties); }
+  const docIds = idList(filters.docIds);
+  if (docIds.length) { dw.push(`d.id IN (${holes(docIds)})`); dp.push(...docIds); }
 
   /* line-level conditions — each of them may carry several choices */
   const lw = []; const lp = [];
@@ -3444,7 +3451,8 @@ function docReport(filters = {}) {
   const lines = db.prepare(
     `SELECT d.id AS docId, d.kind AS docKind, d.doc_no AS docNo, d.external_no AS externalNo,
             d.doc_date AS docDate, d.invoice_value AS invoiceValue,
-            p.name AS partyName, w.name AS warehouseName,
+            p.name AS partyName, p.id AS partyId, p.type AS partyType,
+            w.name AS warehouseName,
             l.id AS lineId, l.bucket, l.pieces, l.cartons, l.bags,
             l.unit_count AS unitCount, l.note AS note, d.notes AS docNote,
             i.id AS itemId, i.code AS itemCode, i.name AS itemName,
@@ -3474,6 +3482,7 @@ function docReport(filters = {}) {
       hasExternal: !!String(r.externalNo || '').trim(),
       docDate: r.docDate,
       partyName: r.partyName || '—',
+      partyId: r.partyId || null, partyType: r.partyType || '',
       warehouseName: r.lineWarehouseName || r.warehouseName || '—',
       itemId: r.itemId, itemCode: r.itemCode, itemName: r.itemName,
       baseUnit: r.baseUnit || 'حبة', category: r.category,
@@ -3496,7 +3505,8 @@ function docReport(filters = {}) {
       byDoc.set(r.docId, {
         docId: r.docId, docKind: r.docKind, docKindAr: r.docKindAr,
         docNo: r.docNo, externalNo: r.externalNo, hasExternal: r.hasExternal,
-        docDate: r.docDate, partyName: r.partyName, warehouseName: r.warehouseName,
+        docDate: r.docDate, partyName: r.partyName, partyId: r.partyId, partyType: r.partyType,
+        warehouseName: r.warehouseName,
         itemCount: 0, pieces: 0, cartons: 0, bags: 0, invoiceValue: r.invoiceValue || 0,
         note: r.docNote || ''
       });
@@ -3563,6 +3573,387 @@ function docReport(filters = {}) {
 }
 
 /* =====================================================================
+   V11 — advanced reports inside the same screen.
+
+   They reuse the document filters and the same {columns, rows, totals}
+   contract. Nothing here writes to the database, and no quantity total is
+   allowed to cross unit boundaries.
+   ===================================================================== */
+function advancedDocConditions(filters = {}) {
+  const dw = []; const dp = []; const lw = []; const lp = [];
+  const from = String(filters.dateFrom || '').trim();
+  const to = String(filters.dateTo || '').trim();
+  if (from) { dw.push('d.doc_date >= ?'); dp.push(from); }
+  if (to) { dw.push('d.doc_date <= ?'); dp.push(to); }
+  const parties = idList(filters.partyId);
+  if (parties.length) { dw.push(`d.party_id IN (${holes(parties)})`); dp.push(...parties); }
+  const docIds = idList(filters.docIds);
+  if (docIds.length) { dw.push(`d.id IN (${holes(docIds)})`); dp.push(...docIds); }
+  const items = idList(filters.itemId);
+  if (items.length) { lw.push(`l.item_id IN (${holes(items)})`); lp.push(...items); }
+  const cats = strList(filters.category);
+  if (cats.length) { lw.push(`IFNULL(i.category,'') IN (${holes(cats)})`); lp.push(...cats); }
+  const whs = idList(filters.warehouseId);
+  if (whs.length) {
+    lw.push(`(l.warehouse_id IN (${holes(whs)}) OR (l.warehouse_id IS NULL AND d.warehouse_id IN (${holes(whs)})))`);
+    lp.push(...whs, ...whs);
+  }
+  const buckets = Array.isArray(filters.buckets) ? filters.buckets.filter((b) => BUCKETS.includes(b)) : [];
+  if (buckets.length) { lw.push(`l.bucket IN (${holes(buckets)})`); lp.push(...buckets); }
+  return { dw, dp, lw, lp, from, to };
+}
+
+/** تقرير الفئات: every category and unit, with in / out / net and money once
+    per document. A mixed-category invoice keeps its value on its first
+    included line, exactly like the document report — never duplicated. */
+function categoryReport(filters = {}) {
+  const c = advancedDocConditions(filters);
+  const dwSql = c.dw.length ? 'AND ' + c.dw.join(' AND ') : '';
+  const lwSql = c.lw.length ? 'AND ' + c.lw.join(' AND ') : '';
+  const lines = db.prepare(
+    `SELECT d.id AS docId, d.kind AS docKind, d.doc_date AS docDate,
+            d.invoice_value AS invoiceValue, p.type AS partyType,
+            l.id AS lineId, l.pieces, l.sign AS lineSign, IFNULL(i.category,'') AS category,
+            i.base_unit AS unit
+     FROM documents d
+     JOIN doc_lines l ON l.document_id=d.id
+     JOIN items i ON i.id=l.item_id
+     LEFT JOIN parties p ON p.id=d.party_id
+     WHERE 1=1 ${dwSql} ${lwSql}
+     ORDER BY d.doc_date, d.id, l.id`
+  ).all(...c.dp, ...c.lp);
+
+  const groups = new Map();
+  const seenDocs = new Set();
+  for (const r of lines) {
+    const key = `${r.category}\u0000${r.unit}`;
+    if (!groups.has(key)) {
+      groups.set(key, {
+        category: r.category || '—', unit: r.unit || 'حبة',
+        docIds: new Set(), lines: 0, inQty: 0, outQty: 0, net: 0, value: 0
+      });
+    }
+    const g = groups.get(key);
+    const sign = r.docKind === 'adjustment' ? int(r.lineSign)
+      : (DOC_KINDS[r.docKind] ? DOC_KINDS[r.docKind].sign : 0);
+    const pieces = int(r.pieces);
+    g.docIds.add(r.docId); g.lines += 1;
+    if (sign > 0) g.inQty += pieces;
+    else if (sign < 0) g.outQty += pieces;
+    g.net += sign * pieces;
+    if (!seenDocs.has(r.docId)) {
+      seenDocs.add(r.docId);
+      g.value += moneyNum(r.invoiceValue);
+    }
+  }
+  const rows = [...groups.values()].map((g) => ({ ...g, documents: g.docIds.size }))
+    .sort((a, b) => a.category.localeCompare(b.category, 'ar') || a.unit.localeCompare(b.unit, 'ar'));
+  const unitMap = new Map();
+  rows.forEach((r) => {
+    if (!unitMap.has(r.unit)) unitMap.set(r.unit, { unit: r.unit, inQty: 0, outQty: 0, net: 0, value: 0, lines: 0 });
+    const u = unitMap.get(r.unit);
+    u.inQty += r.inQty; u.outQty += r.outQty; u.net += r.net; u.value += r.value; u.lines += r.lines;
+  });
+  return {
+    report: 'category', kind: 'category', mode: 'detail', title: 'تقرير الفئات',
+    columns: [
+      { key: 'category', label: 'الفئة' },
+      { key: 'unit', label: 'الوحدة' },
+      { key: 'documents', label: 'عدد المستندات', num: true },
+      { key: 'lines', label: 'عدد الأسطر', num: true },
+      { key: 'inQty', label: 'وارد', num: true },
+      { key: 'outQty', label: 'صادر', num: true },
+      { key: 'net', label: 'الصافي', num: true, signed: true },
+      { key: 'value', label: 'قيمة الفواتير', money: true }
+    ],
+    rows,
+    totals: {
+      rows: rows.length, documents: seenDocs.size,
+      value: rows.reduce((a, r) => a + r.value, 0),
+      byUnit: [...unitMap.values()]
+    }
+  };
+}
+
+/** كشف حساب عميل أو مورد: chronological document lines with a running
+    monetary balance. The opening is derived from earlier documents; there is
+    no invented cash-payment ledger. */
+function partyStatementReport(filters = {}, type = filters.kind === 'supplier_statement' ? 'supplier' : 'customer') {
+  const supplier = type === 'supplier';
+  const kind = supplier ? 'supplier_statement' : 'customer_statement';
+  const title = supplier ? 'كشف حساب المورد' : 'كشف حساب العميل';
+  const c = advancedDocConditions(filters);
+  c.dw.push(`p.type IN (?, 'both')`); c.dp.push(supplier ? 'supplier' : 'customer');
+  const dwSql = c.dw.length ? 'AND ' + c.dw.join(' AND ') : '';
+  const lwSql = c.lw.length ? 'AND ' + c.lw.join(' AND ') : '';
+  const valueSign = (docKind) => supplier
+    ? (docKind === 'purchase' ? 1 : docKind === 'purchase_return' ? -1 : 0)
+    : (docKind === 'sale' ? 1 : docKind === 'sale_return' ? -1 : 0);
+
+  const openingMap = new Map();
+  if (c.from) {
+    const oc = advancedDocConditions({ ...filters, dateFrom: '', dateTo: '' });
+    oc.dw.push(`p.type IN (?, 'both')`); oc.dp.push(supplier ? 'supplier' : 'customer');
+    oc.dw.push('d.doc_date < ?'); oc.dp.push(c.from);
+    const odSql = oc.dw.length ? 'AND ' + oc.dw.join(' AND ') : '';
+    const olSql = oc.lw.length ? 'AND ' + oc.lw.join(' AND ') : '';
+    const prior = db.prepare(
+      `SELECT d.id AS docId, d.kind AS docKind, d.invoice_value AS invoiceValue,
+              d.party_id AS partyId
+       FROM documents d
+       JOIN doc_lines l ON l.document_id=d.id
+       JOIN items i ON i.id=l.item_id
+       LEFT JOIN parties p ON p.id=d.party_id
+       WHERE 1=1 ${odSql} ${olSql}
+       GROUP BY d.id`
+    ).all(...oc.dp, ...oc.lp);
+    prior.forEach((r) => {
+      openingMap.set(r.partyId, (openingMap.get(r.partyId) || 0) + moneyNum(r.invoiceValue) * valueSign(r.docKind));
+    });
+  }
+
+  const lines = db.prepare(
+    `SELECT d.id AS docId, d.kind AS docKind, d.doc_no AS docNo, d.external_no AS externalNo,
+            d.doc_date AS docDate, d.invoice_value AS invoiceValue, d.notes AS docNote,
+            p.id AS partyId, p.name AS partyName, p.type AS partyType,
+            l.id AS lineId, l.pieces, l.sign AS lineSign, l.note,
+            i.id AS itemId, i.code AS itemCode, i.name AS itemName, i.base_unit AS baseUnit,
+            lw.name AS warehouseName
+     FROM documents d
+     JOIN doc_lines l ON l.document_id=d.id
+     JOIN items i ON i.id=l.item_id
+     LEFT JOIN parties p ON p.id=d.party_id
+     LEFT JOIN warehouses lw ON lw.id=l.warehouse_id
+     WHERE 1=1 ${dwSql} ${lwSql}
+     ORDER BY d.doc_date, d.id, l.id`
+  ).all(...c.dp, ...c.lp);
+
+  const seenDocs = new Set();
+  const partiesSeen = new Set();
+  const balances = new Map();
+  const unitMap = new Map();
+  let debit = 0, credit = 0;
+  const rows = lines.map((r) => {
+    const first = !seenDocs.has(r.docId);
+    seenDocs.add(r.docId); partiesSeen.add(r.partyId);
+    if (!balances.has(r.partyId)) balances.set(r.partyId, openingMap.get(r.partyId) || 0);
+    const value = moneyNum(r.invoiceValue);
+    const signed = value * valueSign(r.docKind);
+    if (first) {
+      balances.set(r.partyId, balances.get(r.partyId) + signed);
+      if (signed > 0) debit += signed;
+      else if (signed < 0) credit += -signed;
+    }
+    const sign = r.docKind === 'adjustment' ? int(r.lineSign)
+      : (DOC_KINDS[r.docKind] ? DOC_KINDS[r.docKind].sign : 0);
+    const unit = r.baseUnit || 'حبة';
+    if (!unitMap.has(unit)) unitMap.set(unit, { unit, inQty: 0, outQty: 0, net: 0 });
+    const u = unitMap.get(unit);
+    if (sign > 0) u.inQty += int(r.pieces);
+    else if (sign < 0) u.outQty += int(r.pieces);
+    u.net += sign * int(r.pieces);
+    return {
+      docId: r.docId, docFirst: first, docKind: r.docKind,
+      docKindAr: DOC_KINDS[r.docKind] ? DOC_KINDS[r.docKind].ar : r.docKind,
+      docNo: r.docNo, externalNo: r.externalNo || r.docNo,
+      hasExternal: !!String(r.externalNo || '').trim(), docDate: r.docDate,
+      partyId: r.partyId, partyName: r.partyName || '—', partyType: r.partyType,
+      itemId: r.itemId, itemCode: r.itemCode, itemName: r.itemName,
+      baseUnit: unit, warehouseName: r.warehouseName || '—',
+      inQty: sign > 0 ? int(r.pieces) : 0, outQty: sign < 0 ? int(r.pieces) : 0,
+      invoiceValue: first ? value : null, signedValue: first ? signed : null,
+      balance: first ? balances.get(r.partyId) : null,
+      note: r.note || (first ? (r.docNote || '') : '')
+    };
+  });
+  const opening = [...partiesSeen].reduce((a, id) => a + (openingMap.get(id) || 0), 0);
+  const balance = [...partiesSeen].reduce((a, id) => a + (balances.get(id) || 0), 0);
+  return {
+    report: kind, kind, mode: 'detail', title,
+    columns: [
+      { key: 'docDate', label: 'التاريخ' },
+      { key: 'externalNo', label: 'رقم المستند' },
+      { key: 'docKindAr', label: 'النوع' },
+      { key: 'partyName', label: supplier ? 'المورد' : 'العميل' },
+      { key: 'itemName', label: 'الصنف', pic: true },
+      { key: 'baseUnit', label: 'الوحدة' },
+      { key: 'warehouseName', label: 'المخزن' },
+      { key: 'inQty', label: 'وارد', num: true },
+      { key: 'outQty', label: 'صادر', num: true },
+      { key: 'invoiceValue', label: 'قيمة المستند', money: true },
+      { key: 'signedValue', label: 'حركة القيمة', money: true },
+      { key: 'balance', label: 'الرصيد الجاري', num: true, signed: true },
+      { key: 'note', label: 'ملاحظة' }
+    ],
+    rows,
+    totals: {
+      rows: rows.length, documents: seenDocs.size, opening, debit, credit, balance,
+      byUnit: [...unitMap.values()]
+    }
+  };
+}
+
+function itemMoveConditions(filters = {}, opening = false) {
+  const where = []; const params = [];
+  const from = String(filters.dateFrom || '').trim();
+  const to = String(filters.dateTo || '').trim();
+  if (opening) {
+    where.push(from ? "(m.doc_type='opening' OR m.move_date < ?)" : "m.doc_type='opening'");
+    if (from) params.push(from);
+  } else {
+    where.push("m.doc_type <> 'opening'");
+    if (from) { where.push('m.move_date >= ?'); params.push(from); }
+    if (to) { where.push('m.move_date <= ?'); params.push(to); }
+    const docIds = idList(filters.docIds);
+    if (docIds.length) { where.push(`m.doc_id IN (${holes(docIds)})`); params.push(...docIds); }
+    const parties = idList(filters.partyId);
+    if (parties.length) { where.push(`m.party_id IN (${holes(parties)})`); params.push(...parties); }
+  }
+  const whs = idList(filters.warehouseId);
+  if (whs.length) { where.push(`m.warehouse_id IN (${holes(whs)})`); params.push(...whs); }
+  const items = idList(filters.itemId);
+  if (items.length) { where.push(`m.item_id IN (${holes(items)})`); params.push(...items); }
+  const cats = strList(filters.category);
+  if (cats.length) { where.push(`IFNULL(i.category,'') IN (${holes(cats)})`); params.push(...cats); }
+  const buckets = Array.isArray(filters.buckets) ? filters.buckets.filter((b) => BUCKETS.includes(b)) : [];
+  if (buckets.length) { where.push(`m.bucket IN (${holes(buckets)})`); params.push(...buckets); }
+  if (filters.includeCustomer !== true) where.push('m.is_customer = 0');
+  return { where, params };
+}
+
+/** تقرير الصنف: opening + period in/out + balance for each item/warehouse,
+    or every movement with its running balance. Customer-owned stock stays
+    out unless explicitly requested, like the warehouse reports. */
+function itemReport(filters = {}) {
+  const mode = filters.mode === 'summary' ? 'summary' : 'detail';
+  const pc = itemMoveConditions(filters, false);
+  const pSql = pc.where.length ? 'AND ' + pc.where.join(' AND ') : '';
+  const period = db.prepare(
+    `SELECT m.item_id AS itemId, m.warehouse_id AS warehouseId,
+            i.code AS itemCode, i.name AS itemName, i.base_unit AS baseUnit,
+            w.name AS warehouseName,
+            COALESCE(SUM(CASE WHEN m.piece_delta>0 THEN m.piece_delta ELSE 0 END),0) AS inQty,
+            COALESCE(SUM(CASE WHEN m.piece_delta<0 THEN -m.piece_delta ELSE 0 END),0) AS outQty,
+            COALESCE(SUM(m.piece_delta),0) AS net, COUNT(*) AS moves
+     FROM stock_moves m
+     JOIN items i ON i.id=m.item_id
+     JOIN warehouses w ON w.id=m.warehouse_id
+     WHERE 1=1 ${pSql}
+     GROUP BY m.item_id, m.warehouse_id, i.base_unit
+     ORDER BY i.code, w.name`
+  ).all(...pc.params);
+  const oc = itemMoveConditions(filters, true);
+  const oSql = oc.where.length ? 'AND ' + oc.where.join(' AND ') : '';
+  const openingRows = db.prepare(
+    `SELECT m.item_id AS itemId, m.warehouse_id AS warehouseId, i.base_unit AS baseUnit,
+            i.code AS itemCode, i.name AS itemName, w.name AS warehouseName,
+            COALESCE(SUM(m.piece_delta),0) AS opening
+     FROM stock_moves m
+     JOIN items i ON i.id=m.item_id
+     JOIN warehouses w ON w.id=m.warehouse_id
+     WHERE 1=1 ${oSql}
+     GROUP BY m.item_id, m.warehouse_id, i.base_unit`
+  ).all(...oc.params);
+  const openingMap = new Map(openingRows.map((r) => [`${r.itemId}:${r.warehouseId}:${r.baseUnit}`, int(r.opening)]));
+  const periodSummary = period.map((r) => {
+    const opening = openingMap.get(`${r.itemId}:${r.warehouseId}:${r.baseUnit}`) || 0;
+    return { ...r, opening, balance: opening + int(r.net) };
+  });
+  const summary = [...periodSummary];
+  if (mode === 'summary') {
+    const seen = new Set(summary.map((r) => `${r.itemId}:${r.warehouseId}:${r.baseUnit}`));
+    openingRows.forEach((r) => {
+      const key = `${r.itemId}:${r.warehouseId}:${r.baseUnit}`;
+      const opening = int(r.opening);
+      if (seen.has(key) || opening === 0) return;
+      seen.add(key);
+      summary.push({
+        itemId: r.itemId, warehouseId: r.warehouseId, itemCode: r.itemCode,
+        itemName: r.itemName, baseUnit: r.baseUnit, warehouseName: r.warehouseName,
+        opening, inQty: 0, outQty: 0, net: 0, moves: 0, balance: opening
+      });
+    });
+    summary.sort((a, b) => String(a.itemCode).localeCompare(String(b.itemCode))
+      || String(a.warehouseName).localeCompare(String(b.warehouseName)));
+  }
+  const unitMap = new Map();
+  (mode === 'summary' ? summary : periodSummary).forEach((r) => {
+    const unit = r.baseUnit || 'حبة';
+    if (!unitMap.has(unit)) unitMap.set(unit, { unit, opening: 0, inQty: 0, outQty: 0, net: 0, balance: 0, moves: 0 });
+    const u = unitMap.get(unit);
+    u.opening += r.opening; u.inQty += r.inQty; u.outQty += r.outQty;
+    u.net += r.net; u.balance += r.balance; u.moves += r.moves;
+  });
+
+  let rows = summary;
+  let columns = [
+    { key: 'itemCode', label: 'كود الصنف' },
+    { key: 'itemName', label: 'الصنف', pic: true },
+    { key: 'baseUnit', label: 'الوحدة' },
+    { key: 'warehouseName', label: 'المخزن' },
+    { key: 'opening', label: 'افتتاحي', num: true },
+    { key: 'inQty', label: 'وارد', num: true },
+    { key: 'outQty', label: 'صادر', num: true },
+    { key: 'balance', label: 'المتبقي', num: true, signed: true }
+  ];
+  if (mode === 'detail') {
+    const moves = db.prepare(
+      `SELECT m.id AS moveId, m.move_date AS moveDate, m.doc_type AS docType, m.doc_id AS docId,
+              m.doc_no AS docNo, d.external_no AS externalNo, m.piece_delta AS delta,
+              m.bucket AS bucket, m.note,
+              i.id AS itemId, i.code AS itemCode, i.name AS itemName, i.base_unit AS baseUnit,
+              w.id AS warehouseId, w.name AS warehouseName, p.name AS partyName,
+              p.id AS partyId, p.type AS partyType
+       FROM stock_moves m
+       JOIN items i ON i.id=m.item_id
+       JOIN warehouses w ON w.id=m.warehouse_id
+       LEFT JOIN parties p ON p.id=m.party_id
+       LEFT JOIN documents d ON d.id=m.doc_id AND d.kind=m.doc_type
+       WHERE 1=1 ${pSql}
+       ORDER BY m.move_date, m.id`
+    ).all(...pc.params);
+    const running = new Map();
+    const seenDocs = new Set();
+    rows = moves.map((r) => {
+      const key = `${r.itemId}:${r.warehouseId}:${r.baseUnit}`;
+      if (!running.has(key)) running.set(key, openingMap.get(key) || 0);
+      running.set(key, running.get(key) + int(r.delta));
+      const docKey = `${r.docType}:${r.docId || r.moveId}`;
+      const first = !seenDocs.has(docKey); seenDocs.add(docKey);
+      return {
+        moveId: r.moveId, docId: r.docId, docFirst: first, moveDate: r.moveDate,
+        docType: r.docType, docTypeAr: DOC_LABELS_ALL[r.docType] || r.docType,
+        docNo: r.docNo, externalNo: r.externalNo || r.docNo || '—',
+        hasExternal: !!String(r.externalNo || '').trim(),
+        partyName: r.partyName || '—', partyId: r.partyId || null, partyType: r.partyType || '',
+        warehouseId: r.warehouseId, warehouseName: r.warehouseName || '—',
+        itemId: r.itemId, itemCode: r.itemCode, itemName: r.itemName, baseUnit: r.baseUnit || 'حبة',
+        bucket: r.bucket, bucketAr: AR_BUCKET[r.bucket] || r.bucket,
+        inQty: r.delta > 0 ? r.delta : 0, outQty: r.delta < 0 ? -r.delta : 0,
+        balance: running.get(key), note: r.note || ''
+      };
+    });
+    columns = [
+      { key: 'moveDate', label: 'التاريخ' },
+      { key: 'externalNo', label: 'رقم المستند' },
+      { key: 'docTypeAr', label: 'نوع الحركة' },
+      { key: 'partyName', label: 'الطرف' },
+      { key: 'itemName', label: 'الصنف', pic: true },
+      { key: 'baseUnit', label: 'الوحدة' },
+      { key: 'warehouseName', label: 'المخزن' },
+      { key: 'inQty', label: 'وارد', num: true },
+      { key: 'outQty', label: 'صادر', num: true },
+      { key: 'balance', label: 'الرصيد الجاري', num: true, signed: true },
+      { key: 'note', label: 'ملاحظة' }
+    ];
+  }
+  return {
+    report: 'item_report', kind: 'item_report', mode, title: 'تقرير الصنف', columns, rows,
+    totals: { rows: rows.length, moves: period.reduce((a, r) => a + r.moves, 0), byUnit: [...unitMap.values()] }
+  };
+}
+
+/* =====================================================================
    V9 — حركة المخازن: the movement of the warehouses, in detail and in
    total, for the period the customer chose.
 
@@ -3602,7 +3993,8 @@ function stockFlowReport(filters = {}) {
             m.piece_delta AS delta, m.carton_qty AS cartons, m.bag_qty AS bags,
             m.bucket AS bucket, m.note AS note,
             i.id AS itemId, i.code AS itemCode, i.name AS itemName, i.base_unit AS baseUnit,
-            w.id AS warehouseId, w.name AS warehouseName, p.name AS partyName
+            w.id AS warehouseId, w.name AS warehouseName, p.name AS partyName,
+            p.id AS partyId, p.type AS partyType
      FROM stock_moves m
      JOIN items i ON i.id = m.item_id
      LEFT JOIN warehouses w ON w.id = m.warehouse_id
@@ -3622,6 +4014,7 @@ function stockFlowReport(filters = {}) {
       externalNo: r.externalNo || r.docNo || '—',
       hasExternal: !!String(r.externalNo || '').trim(),
       partyName: r.partyName || '—',
+      partyId: r.partyId || null, partyType: r.partyType || '',
       warehouseId: r.warehouseId, warehouseName: r.warehouseName || '—',
       itemId: r.itemId, itemCode: r.itemCode, itemName: r.itemName,
       baseUnit: r.baseUnit || 'حبة',
@@ -3700,6 +4093,245 @@ function stockFlowReport(filters = {}) {
       byUnit: Object.values(unitMap)
     }
   };
+}
+
+/* =====================================================================
+   V10 — متابعة خام العميل: one batch, one truth.
+
+   The customer owns the material. The report follows the four papers linked
+   by documents.batch_id and answers the three questions he asked:
+     · كم سلّم للعميل؟
+     · كم تبقّى له في المخازن؟
+     · كم ما زال في الإنتاج؟
+
+   الأمبول = العلبة 1:1. Quantities are therefore comparable inside that
+   unit pair, while every other unit keeps its own total. Nothing is stored
+   by this report: all numbers are read from the documents and the ledger.
+   ===================================================================== */
+function customerRawSimple(s) {
+  return String(s || '').toLowerCase().replace(/[أإآٱ]/g, 'ا').replace(/ة/g, 'ه').replace(/\s+/g, '');
+}
+function customerRawUnique(units) {
+  return [...new Set((units || []).map((u) => String(u || '').trim()).filter(Boolean))];
+}
+function customerRawSameDimension(a, b) {
+  const x = customerRawSimple(a), y = customerRawSimple(b);
+  if (!x || !y) return false;
+  return x === y || (x === 'امبول' && y === 'علبه') || (x === 'علبه' && y === 'امبول');
+}
+function customerRawUnitsFit(units, reference) {
+  const list = customerRawUnique(units);
+  if (!list.length) return true;
+  const ref = reference || list[0];
+  return list.every((u) => customerRawSameDimension(u, ref));
+}
+function customerRawDims(rawUnit, stages) {
+  const raw = String(rawUnit || 'حبة').trim();
+  const s = stages || {};
+  const issued = customerRawUnique(s.issued);
+  const produced = customerRawUnique(s.produced);
+  const defect = customerRawUnique(s.defect);
+  const sale = customerRawUnique(s.sale);
+  const returned = customerRawUnique(s.returned);
+  const issuedOk = customerRawUnitsFit(issued);
+  const producedOk = customerRawUnitsFit(produced);
+  const defectOk = customerRawUnitsFit(defect);
+  const saleOk = customerRawUnitsFit(sale);
+  const returnedOk = customerRawUnitsFit(returned);
+  const deliveredOk = saleOk && returnedOk && customerRawUnitsFit([...sale, ...returned]);
+  const issuedFitsRaw = issuedOk && customerRawUnitsFit(issued, raw);
+  const producedFitsRaw = producedOk && customerRawUnitsFit(produced, raw);
+  const defectFitsRaw = defectOk && customerRawUnitsFit(defect, raw);
+  const deliveredFitsRaw = deliveredOk && customerRawUnitsFit([...sale, ...returned], raw);
+  const compatible = issuedFitsRaw && producedFitsRaw && defectFitsRaw && deliveredFitsRaw;
+  const allUnits = customerRawUnique([...issued, ...produced, ...defect, ...sale, ...returned]);
+  const ampoule = customerRawSimple(raw) === 'امبول';
+  const box = customerRawSimple(raw) === 'علبه';
+  const hasCounterpart = allUnits.some((u) => (ampoule && customerRawSimple(u) === 'علبه')
+    || (box && customerRawSimple(u) === 'امبول'));
+  const otherUnits = allUnits.filter((u) => customerRawSimple(u) !== customerRawSimple(raw));
+  const unitLabel = compatible
+    ? ((ampoule || box) && hasCounterpart ? 'امبول / علبة (1:1)' : raw)
+    : `${raw} → ${(otherUnits.length ? otherUnits : allUnits).join(' + ')} (وحدتان مختلفتان)`;
+  return {
+    compatible, unitLabel,
+    unitKey: compatible
+      ? (ampoule || box ? 'ampoule-box-1:1' : `unit:${customerRawSimple(raw)}`)
+      : `incompatible:${customerRawSimple(raw)}:${allUnits.map(customerRawSimple).join('+')}`,
+    finishedUnit: customerRawUnique([...produced, ...sale, ...returned])
+      .filter((u) => customerRawSimple(u) !== customerRawSimple(raw)).join(' + '),
+    rawBalanceOk: issuedFitsRaw,
+    finishedBalanceOk: producedOk && deliveredOk && customerRawUnitsFit([...produced, ...sale, ...returned]),
+    productionBalanceOk: issuedOk && producedOk && customerRawUnitsFit([...issued, ...produced])
+  };
+}
+
+function customerRawReport(filters = {}) {
+  const from = String(filters.dateFrom || '').trim();
+  const to = String(filters.dateTo || '').trim();
+  const where = ['1=1']; const params = [];
+  /* A batch is in the period when its receipt OR any paper linked to it is in
+     that period. The balances themselves are cumulative up to «to», so a
+     report opened on the invoice day still tells the whole story of its batch. */
+  if (from && to) {
+    where.push(`(t.doc_date BETWEEN ? AND ? OR EXISTS (SELECT 1 FROM documents dx WHERE dx.batch_id=t.id AND dx.doc_date BETWEEN ? AND ?))`);
+    params.push(from, to, from, to);
+  } else if (from) {
+    where.push(`(t.doc_date >= ? OR EXISTS (SELECT 1 FROM documents dx WHERE dx.batch_id=t.id AND dx.doc_date >= ?))`);
+    params.push(from, from);
+  } else if (to) {
+    where.push(`(t.doc_date <= ? OR EXISTS (SELECT 1 FROM documents dx WHERE dx.batch_id=t.id AND dx.doc_date <= ?))`);
+    params.push(to, to);
+  }
+  const parties = idList(filters.partyId);
+  if (parties.length) { where.push(`t.party_id IN (${holes(parties)})`); params.push(...parties); }
+  const batchIds = idList(filters.batchIds);
+  if (batchIds.length) { where.push(`t.id IN (${holes(batchIds)})`); params.push(...batchIds); }
+  const items = idList(filters.itemId);
+  if (items.length) { where.push(`t.raw_item_id IN (${holes(items)})`); params.push(...items); }
+  const cats = strList(filters.category);
+  if (cats.length) { where.push(`IFNULL(raw.category,'') IN (${holes(cats)})`); params.push(...cats); }
+
+  const batches = db.prepare(
+    `SELECT t.id AS batchId, t.doc_no AS batchNo, t.doc_date AS docDate,
+            t.party_id AS partyId, p.name AS partyName,
+            t.raw_item_id AS itemId, raw.code AS itemCode, raw.name AS itemName,
+            raw.base_unit AS rawUnit, raw.category AS category,
+            t.pieces_in AS received, t.bags_in AS bagsIn, t.note AS note,
+            w.name AS warehouseName,
+            (SELECT MIN(d.id) FROM documents d WHERE d.kind='tolling_in' AND d.batch_id=t.id) AS docId
+     FROM tolling_orders t
+     JOIN parties p ON p.id=t.party_id
+     JOIN items raw ON raw.id=t.raw_item_id
+     LEFT JOIN warehouses w ON w.id=t.warehouse_id
+     WHERE ${where.join(' AND ')}
+     ORDER BY t.doc_date, t.id`
+  ).all(...params);
+
+  const progress = new Map();
+  const stageUnits = new Map();
+  if (batches.length) {
+    const ids = batches.map((b) => b.batchId);
+    const pw = [`d.batch_id IN (${holes(ids)})`]; const pp = [...ids];
+    if (to) { pw.push('m.move_date <= ?'); pp.push(to); }
+    const rows = db.prepare(
+      `SELECT d.batch_id AS batchId,
+              COALESCE(SUM(CASE WHEN d.kind='prod_issue' AND m.item_id=t.raw_item_id THEN -m.piece_delta ELSE 0 END),0) AS issued,
+              COALESCE(SUM(CASE WHEN d.kind='prod_receipt' AND m.bucket='good' THEN m.piece_delta ELSE 0 END),0) AS producedGood,
+              COALESCE(SUM(CASE WHEN d.kind='prod_receipt' AND m.bucket='defect' THEN m.piece_delta ELSE 0 END),0) AS producedDefect,
+              COALESCE(SUM(CASE WHEN d.kind='sale' THEN -m.piece_delta ELSE 0 END),0) AS delivered,
+              COALESCE(SUM(CASE WHEN d.kind='sale_return' THEN m.piece_delta ELSE 0 END),0) AS returned,
+              GROUP_CONCAT(DISTINCT CASE WHEN d.kind='prod_issue' AND m.item_id=t.raw_item_id THEN i.base_unit END) AS issuedUnits,
+              GROUP_CONCAT(DISTINCT CASE WHEN d.kind='prod_receipt' AND m.bucket='good' THEN i.base_unit END) AS producedUnits,
+              GROUP_CONCAT(DISTINCT CASE WHEN d.kind='prod_receipt' AND m.bucket='defect' THEN i.base_unit END) AS defectUnits,
+              GROUP_CONCAT(DISTINCT CASE WHEN d.kind='sale' THEN i.base_unit END) AS saleUnits,
+              GROUP_CONCAT(DISTINCT CASE WHEN d.kind='sale_return' THEN i.base_unit END) AS returnedUnits
+       FROM stock_moves m
+       JOIN documents d ON d.id=m.doc_id AND d.kind=m.doc_type
+       JOIN tolling_orders t ON t.id=d.batch_id
+       JOIN items i ON i.id=m.item_id
+       WHERE ${pw.join(' AND ')}
+       GROUP BY d.batch_id`
+    ).all(...pp);
+    const splitUnits = (v) => String(v || '').split(',').map((x) => x.trim()).filter(Boolean);
+    rows.forEach((r) => {
+      progress.set(r.batchId, r);
+      stageUnits.set(r.batchId, {
+        issued: splitUnits(r.issuedUnits), produced: splitUnits(r.producedUnits),
+        defect: splitUnits(r.defectUnits), sale: splitUnits(r.saleUnits), returned: splitUnits(r.returnedUnits)
+      });
+    });
+  }
+
+  const detail = batches.map((b) => {
+    const p = progress.get(b.batchId) || {};
+    const stages = stageUnits.get(b.batchId) || {};
+    const issued = customerRawUnitsFit(stages.issued) ? int(p.issued) : null;
+    const producedGood = customerRawUnitsFit(stages.produced) ? int(p.producedGood) : null;
+    const producedDefect = customerRawUnitsFit(stages.defect) ? int(p.producedDefect) : null;
+    const returned = customerRawUnitsFit(stages.returned) ? int(p.returned) : null;
+    const delivered = customerRawUnitsFit(stages.sale) && returned !== null
+      && customerRawUnitsFit([...(stages.sale || []), ...(stages.returned || [])])
+      ? int(p.delivered) - returned : null;
+    const received = !to || b.docDate <= to ? int(b.received) : 0;
+    const dims = customerRawDims(b.rawUnit, stages);
+    const rawInWarehouse = dims.rawBalanceOk && issued !== null ? received - issued : null;
+    const finishedInWarehouse = dims.finishedBalanceOk && producedGood !== null && delivered !== null
+      ? producedGood - delivered : null;
+    const inWarehouse = dims.compatible && rawInWarehouse !== null && finishedInWarehouse !== null
+      ? rawInWarehouse + finishedInWarehouse : null;
+    const inProduction = dims.productionBalanceOk && issued !== null && producedGood !== null
+      ? issued - producedGood : null;
+    const unitLabel = dims.unitLabel;
+    const status = !dims.compatible ? 'unit-mismatch'
+      : delivered > 0 && delivered >= producedGood && inProduction <= 0
+        ? 'delivered'
+        : (producedGood > 0 ? 'ready' : (issued > 0 ? 'in-production' : 'received'));
+    return {
+      batchId: b.batchId, batchNo: b.batchNo, docId: b.docId || null,
+      docFirst: true, docKind: 'tolling_in', docDate: b.docDate,
+      partyId: b.partyId, partyName: b.partyName || '—',
+      itemId: b.itemId, itemCode: b.itemCode, itemName: b.itemName,
+      rawUnit: b.rawUnit || 'حبة', finishedUnit: dims.finishedUnit,
+      unitLabel, unitKey: dims.unitKey, unitCompatible: dims.compatible,
+      warehouseName: b.warehouseName || '—', category: b.category || '',
+      received, issued, producedGood, producedDefect, delivered, returned,
+      rawInWarehouse, finishedInWarehouse, inWarehouse, inProduction,
+      bagsIn: int(b.bagsIn), note: b.note || '', status
+    };
+  });
+
+  const unitMap = new Map();
+  detail.forEach((r) => {
+    if (!r.unitCompatible) return;
+    if (!unitMap.has(r.unitKey)) {
+      unitMap.set(r.unitKey, {
+        unit: r.unitKey === 'ampoule-box-1:1' ? 'امبول / علبة (1:1)' : r.unitLabel,
+        batches: 0, received: 0, issued: 0, producedGood: 0,
+        producedDefect: 0, delivered: 0, returned: 0, rawInWarehouse: 0,
+        finishedInWarehouse: 0, inWarehouse: 0, inProduction: 0
+      });
+    }
+    const u = unitMap.get(r.unitKey);
+    u.batches += 1;
+    ['received', 'issued', 'producedGood', 'producedDefect', 'delivered', 'returned',
+      'rawInWarehouse', 'finishedInWarehouse', 'inWarehouse', 'inProduction'].forEach((k) => { u[k] += r[k]; });
+  });
+  const byUnit = [...unitMap.values()];
+  const incompatibleBatches = detail.filter((r) => !r.unitCompatible).length;
+  const totals = { rows: detail.length, documents: detail.length, batches: detail.length, incompatibleBatches, byUnit };
+  /* A bare grand total is safe only when every row uses compatible units.
+     Incompatible batches stay visible row by row, but never enter a sum. */
+  if (byUnit.length === 1 && !incompatibleBatches) Object.assign(totals, byUnit[0]);
+
+  const columns = [
+    { key: 'batchNo', label: 'دفعة العميل' },
+    { key: 'docDate', label: 'تاريخ الاستلام' },
+    { key: 'partyName', label: 'العميل' },
+    { key: 'itemName', label: 'الصنف', pic: true },
+    { key: 'unitLabel', label: 'الوحدة' },
+    { key: 'received', label: 'خام مستلم', num: true },
+    { key: 'issued', label: 'صرف للإنتاج', num: true },
+    { key: 'producedGood', label: 'تام مستلم', num: true },
+    { key: 'delivered', label: 'مسلّم للعميل', num: true },
+    { key: 'inWarehouse', label: 'باقٍ بالمخازن', num: true, signed: true },
+    { key: 'inProduction', label: 'ما زال بالإنتاج', num: true, signed: true },
+    { key: 'rawInWarehouse', label: 'منها خام', num: true },
+    { key: 'finishedInWarehouse', label: 'منها تام', num: true },
+    { key: 'producedDefect', label: 'تالف مسجّل', num: true },
+    { key: 'returned', label: 'مرتجع للعميل', num: true },
+    { key: 'warehouseName', label: 'مخزن الاستلام' },
+    { key: 'note', label: 'ملاحظة' }
+  ];
+
+  return {
+    report: 'customer_raw', kind: 'customer_raw', mode: 'detail',
+    title: 'متابعة خام العميل', columns, rows: detail, totals
+  };
+}
+
+function customerRawArchive(filters = {}) {
+  return customerRawReport(filters || {});
 }
 
 function runReport(filters = {}) {
@@ -3830,7 +4462,12 @@ module.exports = {
   reportFacets,
   dailyReport,
   docReport,
+  categoryReport,
+  partyStatementReport,
+  itemReport,
   stockFlowReport,
+  customerRawReport,
+  customerRawArchive,
   DOC_REPORT_KINDS,
   REPORTS,
   runReport,

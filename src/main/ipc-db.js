@@ -100,9 +100,16 @@ const API = {
   /* V9 — the document reports that replace the old catalogue.
      «حركة المخازن» reads the ledger instead of the documents, and returns
      the same shape, so one dispatch point serves the whole screen. */
-  docReport: (filters) => (filters && filters.kind === 'warehouse_flow'
-    ? d.stockFlowReport(filters)
-    : d.docReport(filters || {})),
+  docReport: (filters) => {
+    if (filters && filters.kind === 'customer_raw') return d.customerRawReport(filters);
+    if (filters && filters.kind === 'warehouse_flow') return d.stockFlowReport(filters);
+    if (filters && filters.kind === 'category') return d.categoryReport(filters);
+    if (filters && filters.kind === 'customer_statement') return d.partyStatementReport(filters, 'customer');
+    if (filters && filters.kind === 'supplier_statement') return d.partyStatementReport(filters, 'supplier');
+    if (filters && filters.kind === 'item_report') return d.itemReport(filters);
+    return d.docReport(filters || {});
+  },
+  customerRawArchive: (filters) => d.customerRawArchive(filters || {}),
   DOC_REPORT_KINDS: () => d.DOC_REPORT_KINDS,
 
   /* V4 — the ready-made report catalogue and the dispatcher behind it */
@@ -185,6 +192,7 @@ const PERMS = {
   reportFacets: ['reports', 'view'],
   dailyReport: ['reports', 'view'],
   docReport: ['reports', 'view'],
+  customerRawArchive: ['transactions', 'view'],
   DOC_REPORT_KINDS: ['reports', 'view'],
   REPORTS: ['reports', 'view'],
   runReport: ['reports', 'view']

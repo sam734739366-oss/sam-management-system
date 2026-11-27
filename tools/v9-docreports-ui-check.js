@@ -55,7 +55,7 @@ app.whenReady().then(async () => {
      period. The customer asked for it to stay out unless he asks for it. */
   db.addItem({ code: 'D-1', name: 'صنف راكد', base_unit: 'حبة', category: 'خام' }, [{ warehouseId: W1, good: 77 }]);
   const P1 = db.addParty({ name: 'عميل الرياض', phone: '0555', type: 'customer' });
-  const today = new Date().toISOString().slice(0, 10);
+  const today = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
   const line = (item, pieces, extra = {}) => ({ item_id: item.id, bucket: 'good', pieces, cartons: 0, bags: 0, ...extra });
   const doc = (kind, ext, value, lines, extra = {}) => db.saveDocument({
     kind, external_no: ext, doc_date: today, invoice_value: value,
@@ -98,7 +98,7 @@ app.whenReady().then(async () => {
   check('شاشة التقارير تفتح', screen && screen.active === true, screen && screen.active);
   check('بطاقات التقارير القديمة اختفت', screen && screen.oldCards === false && screen.oldBtn === false,
     screen && { cards: screen.oldCards, btn: screen.oldBtn });
-  check('أنواع المستندات السبعة + حركة المخازن موجودة', screen && screen.kinds.length === 8, screen && screen.kinds);
+  check('أنواع التقارير الثلاثة عشر موجودة', screen && screen.kinds.length === 13, screen && screen.kinds);
   check('جدول وصندوق إجماليات موجودان', screen && screen.hasTable && screen.hasTotals, screen);
 
   /* ---- 2 — the sales report, detailed then summary ---- */

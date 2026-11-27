@@ -4,10 +4,10 @@
    تقارير المستندات — V9
    The screen that replaces the old catalogue of fourteen reports.
 
-   One engine, the seven kinds the customer named, two shapes of the same
-   truth (تفصيلي / ملخّص), «الكل» as a visible choice in every filter, the
-   number HE wrote on the paper, and a total for every unit separately —
-   20,000 ريال beside 20,000 أمبول beside 20,000 كرتون, never mixed.
+   One engine for document kinds and advanced reports, with «الكل» as a
+   visible choice in every filter, the number HE wrote on the paper, and a
+   total for every unit separately — 20,000 ريال beside 20,000 أمبول beside
+   20,000 كرتون, never mixed.
 
    The screen, the paper and Excel are painted from ONE row list, so they
    can never disagree about a number.
@@ -18,7 +18,7 @@
   const STORE = 'sam.docreports.v1';
   const CURRENCY = SamUI.CURRENCY || 'ريال يمني';
 
-  /* the seven kinds, with the colour and the icon of the document itself */
+  /* document colours and icons; advanced reports use their own meaning */
   const KIND_META = {
     sale: { icon: 'i-cart', tone: 'tone-sell' },
     purchase: { icon: 'i-truck', tone: 'tone-buy' },
@@ -27,7 +27,12 @@
     sale_return: { icon: 'i-return', tone: 'tone-sreturn' },
     purchase_return: { icon: 'i-return', tone: 'tone-buy' },
     tolling_in: { icon: 'i-tolling', tone: 'tone-pretn' },
-    warehouse_flow: { icon: 'i-swap', tone: 'tone-move' }
+    customer_raw: { icon: 'i-tolling', tone: 'tone-pretn' },
+    warehouse_flow: { icon: 'i-swap', tone: 'tone-move' },
+    category: { icon: 'i-chart', tone: 'tone-info' },
+    customer_statement: { icon: 'i-user', tone: 'tone-sell' },
+    supplier_statement: { icon: 'i-truck', tone: 'tone-buy' },
+    item_report: { icon: 'i-box', tone: 'tone-produce' }
   };
 
   const PERIODS = [
@@ -58,6 +63,9 @@
     category: [],
     warehouseId: [],
     buckets: ['good'],
+    docIds: [],
+    batchIds: [],
+    back: [],
     paper: 'a4',
     orient: 'portrait',
     cols: {},          // per «kind|mode» → { columnKey: bool }
@@ -86,7 +94,7 @@
         if (raw.modes && typeof raw.modes === 'object') state.modes = raw.modes;
       }
     } catch (e) { /* a blocked storage never breaks the report */ }
-    state.mode = state.modes[state.kind] || 'detail';
+    state.mode = defaultMode(state.kind);
   }
   function writeStore() {
     try {
@@ -97,6 +105,49 @@
     } catch (e) { /* ignore */ }
   }
   const colKey = () => `${state.kind}|${state.mode}`;
+  const isCustomerRaw = () => state.kind === 'customer_raw';
+  const isAdvanced = () => ['category', 'customer_statement', 'supplier_statement', 'item_report'].includes(state.kind);
+  const isStatement = () => state.kind === 'customer_statement' || state.kind === 'supplier_statement';
+  const isItemReport = () => state.kind === 'item_report';
+  const defaultMode = (kind) => {
+    if (kind === 'customer_raw' || kind === 'category' || isStatementKind(kind)) return 'detail';
+    if (kind === 'item_report') return state.modes[kind] || 'summary';
+    return state.modes[kind] || 'detail';
+  };
+  const isStatementKind = (kind) => kind === 'customer_statement' || kind === 'supplier_statement';
+
+  /* The tracking report has no document shape, bucket or warehouse filter:
+     every visible control must answer a real question, so the irrelevant
+     controls are hidden rather than left as decorations. */
+  function paintSpecial() {
+    if (!refs) return;
+    const raw = isCustomerRaw();
+    const fixedShape = raw || state.kind === 'category' || isStatement();
+    const modeSection = document.getElementById('drModeSection');
+    const bucketSection = document.getElementById('drBucketsSection');
+    const whField = document.getElementById('drWhField');
+    const docField = document.getElementById('drDocField');
+    const batchField = document.getElementById('drBatchField');
+    const back = document.getElementById('btnDocBack');
+    if (modeSection) modeSection.style.display = fixedShape ? 'none' : '';
+    if (bucketSection) bucketSection.style.display = raw ? 'none' : '';
+    if (whField) whField.style.display = raw ? 'none' : '';
+    if (docField) docField.style.display = state.docIds.length ? '' : 'none';
+    if (batchField) batchField.style.display = state.batchIds.length ? '' : 'none';
+    if (back) back.style.display = state.back.length ? '' : 'none';
+    const detailMode = refs.mode.querySelector('[data-mode="detail"]');
+    const summaryMode = refs.mode.querySelector('[data-mode="summary"]');
+    if (detailMode) detailMode.textContent = isItemReport() ? 'تفصيلي — كل حركة' : 'تفصيلي — سطر لكل صنف';
+    if (summaryMode) summaryMode.textContent = isItemReport() ? 'ملخّص — صنف ومخزن' : 'ملخّص — سطر لكل مستند';
+    const explain = document.getElementById('drExplain');
+    if (explain) {
+      if (raw) explain.textContent = 'متابعة خام العميل تقرير تراكمي: المصروف للإنتاج − التام السليم = ما زال في الإنتاج، والخام غير المصروف + (التام السليم − المسلّم للعميل) = باقٍ في المخازن. الأمبول يساوي العلبة 1:1، والوحدات الأخرى لا تُخلط. الرصيد محسوب حتى نهاية الفترة المختارة.';
+      else if (state.kind === 'category') explain.textContent = 'تقرير الفئات يجمع الوارد والصادر والصافي لكل فئة ووحدة. قيمة الفاتورة تظهر مرة واحدة للمستند على أول سطر داخل التقرير، ولا تتكرر بين الفئات. انقر على فئة أو صنف أو رقم مستند لفتح تقريره.';
+      else if (isStatement()) explain.textContent = 'كشف الحساب يعرض مستندات الطرف بترتيب التاريخ مع الرصيد الافتتاحي المحسوب من مستندات ما قبل الفترة. المبيعات تزيد حساب العميل والمرتجع يخفضه؛ المشتريات تزيد حساب المورد ومرتجعها يخفضه. لا توجد دفعات نقدية غير مسجلة في البرنامج.';
+      else if (isItemReport()) explain.textContent = 'تقرير الصنف يعرض الافتتاحي والوارد والصادر والمتبقي لكل صنف ومخزن. الافتتاحي يشمل رصيد البداية وكل الحركات السابقة للفترة، والتفصيلي يعرض الرصيد الجاري بعد كل حركة. الوحدات لا تُجمع معاً.';
+      else explain.textContent = '«تفصيلي» يعرض كل صنف داخل كل مستند مع قيمة الفاتورة مرة واحدة للمستند، و«ملخّص» يعرض كل مستند على سطر. الرقم المعروض هو رقمك الخارجي؛ وإن لم يكن للمستند رقم خارجي يظهر رقمه الداخلي ومعه علامة «داخلي». انقر على العميل أو الصنف أو رقم المستند لفتح تقريره.';
+    }
+  }
 
   /* ---------------- the picture beside the name ---------------- */
   async function ensurePicDir() {
@@ -177,7 +228,9 @@
       itemId: state.itemId || [],
       category: state.category || [],
       warehouseId: state.warehouseId || [],
-      buckets: state.buckets.slice()
+      buckets: state.buckets.slice(),
+      docIds: state.docIds.slice(),
+      batchIds: state.batchIds.slice()
     };
   }
 
@@ -206,6 +259,16 @@
     });
   }
 
+  function selectKind(kind) {
+    state.kind = kind;
+    state.mode = defaultMode(kind);
+    state.docIds = [];
+    state.batchIds = [];
+    state.back = [];
+    writeStore();
+    paintSpecial(); paintKinds(); paintMode(); fillCombos(); run();
+  }
+
   function paintKinds() {
     if (!refs) return;
     refs.kinds.innerHTML = '';
@@ -216,12 +279,7 @@
       b.dataset.kind = k.key;
       b.title = k.hint || '';
       b.innerHTML = `${iconTile(m.icon, m.tone, 'sm')}<span class="dr-kind-txt"><b>${esc(k.title)}</b><small>${esc(k.hint || '')}</small></span>`;
-      b.addEventListener('click', () => {
-        state.kind = k.key;
-        state.mode = state.modes[k.key] || 'detail';
-        writeStore();
-        paintKinds(); paintMode(); run();
-      });
+      b.addEventListener('click', () => selectKind(k.key));
       refs.kinds.appendChild(b);
     });
   }
@@ -343,9 +401,13 @@
      ===================================================================== */
   const COL_MM = {
     externalNo: 20, docDate: 20, moveDate: 20, docKindAr: 22, docTypeAr: 22, partyName: 28, warehouseName: 22,
+    category: 22, unit: 12, documents: 16, lines: 14,
     itemName: 34, baseUnit: 12, bucketAr: 12, itemCount: 14, moves: 14, pieces: 16,
-    inQty: 15, outQty: 15, delta: 15, net: 15,
-    cartons: 14, bags: 14, invoiceValue: 22, note: 26
+    inQty: 15, outQty: 15, delta: 15, net: 15, opening: 16, balance: 18, signedValue: 20, value: 20,
+    cartons: 14, bags: 14, invoiceValue: 22, note: 26,
+    batchNo: 18, unitLabel: 25, received: 18, issued: 18, producedGood: 18,
+    delivered: 20, inWarehouse: 21, inProduction: 21, rawInWarehouse: 17,
+    finishedInWarehouse: 17, producedDefect: 17, returned: 17
   };
   function paperWidthMM() {
     const w = state.paper === 'a5' ? 148 : 210;
@@ -359,10 +421,29 @@
      nothing but zeros is not worth paper at all and gives its room away. */
   /* the note is information the customer typed himself, so it outranks the
      derived pack columns — those are often zero and give their room away */
-  const PAPER_PRIORITY = ['externalNo', 'docDate', 'moveDate', 'itemName', 'pieces', 'invoiceValue',
-    'note', 'docKindAr', 'docTypeAr', 'inQty', 'outQty', 'delta', 'net', 'baseUnit', 'partyName',
+  const PAPER_PRIORITY = ['externalNo', 'docDate', 'moveDate', 'category', 'itemName', 'pieces', 'invoiceValue',
+    'value', 'signedValue', 'balance', 'opening', 'note', 'docKindAr', 'docTypeAr', 'inQty', 'outQty', 'delta', 'net', 'baseUnit', 'partyName',
     'cartons', 'bags', 'bucketAr', 'warehouseName', 'itemCount', 'moves'];
-  const prio = (c) => { const i = PAPER_PRIORITY.indexOf(c.key); return i < 0 ? 99 : i; };
+  /* On a narrow sheet the customer's three answers must survive even when
+     the explanatory columns do not: delivered, in warehouses, in production. */
+  const RAW_PAPER_PRIORITY = ['batchNo', 'unitLabel', 'delivered', 'inWarehouse', 'inProduction',
+    'received', 'issued', 'producedGood', 'itemName', 'partyName', 'docDate',
+    'rawInWarehouse', 'finishedInWarehouse', 'producedDefect', 'returned', 'warehouseName', 'note'];
+  /* A5 portrait is only 138mm inside the 5mm margins. The six batch
+     quantities and their identity still fit when the columns are compact;
+     none of the customer's answers is sacrificed to explanatory columns. */
+  const RAW_A5_MM = {
+    batchNo: 14, itemName: 20, unitLabel: 18, received: 13, issued: 13,
+    producedGood: 13, delivered: 14, inWarehouse: 14, inProduction: 14,
+    partyName: 20, docDate: 16, rawInWarehouse: 14, finishedInWarehouse: 14,
+    producedDefect: 14, returned: 14, warehouseName: 18, note: 20
+  };
+  const narrowRaw = () => isCustomerRaw() && state.paper === 'a5' && state.orient !== 'landscape';
+  const paperColMM = (c) => (narrowRaw() && RAW_A5_MM[c.key]) || COL_MM[c.key] || 24;
+  const prio = (c) => {
+    const i = (isCustomerRaw() ? RAW_PAPER_PRIORITY : PAPER_PRIORITY).indexOf(c.key);
+    return i < 0 ? 99 : i;
+  };
 
   function paperColumns() {
     const act = activeColumns();
@@ -375,7 +456,7 @@
     const kept = new Set();
     let used = 0;
     useful.slice().sort((a, b) => prio(a) - prio(b)).forEach((c) => {
-      const mm = COL_MM[c.key] || 24;
+      const mm = paperColMM(c);
       if (used + mm <= budget) { kept.add(c.key); used += mm; }
     });
     const keep = useful.filter((c) => kept.has(c.key));
@@ -402,12 +483,26 @@
   const NUM_COLOR = {
     inQty: 'var(--c-ok)', outQty: 'var(--c-pretn)', pieces: 'var(--c-buy)',
     cartons: 'var(--c-sell)', bags: 'var(--c-gin)',
-    itemCount: 'var(--c-plain)', moves: 'var(--c-plain)'
+    itemCount: 'var(--c-plain)', moves: 'var(--c-plain)', documents: 'var(--c-plain)', lines: 'var(--c-plain)',
+    opening: 'var(--c-plain)', balance: 'var(--c-ok)', signedValue: 'var(--c-ok)', value: 'var(--c-ok)',
+    received: 'var(--c-ok)', issued: 'var(--c-issue)', producedGood: 'var(--c-produce)',
+    delivered: 'var(--c-sell)', rawInWarehouse: 'var(--c-ok)',
+    finishedInWarehouse: 'var(--c-ok)', producedDefect: 'var(--c-warn)', returned: 'var(--c-pretn)'
   };
 
   function cellHtml(row, c, print) {
     const v = row[c.key];
+    if ((c.num || c.money) && v == null) {
+      const why = row.unitCompatible === false ? 'الوحدة الخام والتام غير متطابقة — لا يوجد رصيد مجموع مؤكد' : 'لا توجد قيمة';
+      return `<span title="${esc(why)}" style="opacity:.55;font-weight:800">—</span>`;
+    }
     if (c.pic) return itemCell(row, print ? 17 : 14, print);
+    if (c.key === 'batchNo') {
+      return `<b style="color:${print ? '#6941c6' : 'var(--c-pretn)'};font-weight:800">${esc(String(v == null ? '—' : v))}</b>`;
+    }
+    if (c.key === 'unitLabel') {
+      return `<b style="color:${print ? '#344054' : 'var(--label-fg)'};font-size:.94em">${esc(String(v == null ? '—' : v))}</b>`;
+    }
     if (c.key === 'externalNo') {
       const mark = row.hasExternal === false
         ? ` <small style="color:${print ? '#667085' : '#94a3b8'};font-weight:700">داخلي</small>` : '';
@@ -443,12 +538,119 @@
     return esc(String(v == null || v === '' ? '—' : v));
   }
 
+  /* ---------------- click a number to open its report ---------------- */
+  function drillFor(row, col) {
+    if (!row) return null;
+    if (col.key === 'partyName' && row.partyId) {
+      const supplier = row.partyType === 'supplier' || state.kind === 'supplier_statement'
+        || row.docKind === 'purchase' || row.docKind === 'purchase_return';
+      return { type: 'party', id: row.partyId, kind: supplier ? 'supplier_statement' : 'customer_statement' };
+    }
+    if (col.key === 'category' && row.category) return { type: 'category', id: row.category, kind: 'category' };
+    if ((col.key === 'itemName' || col.key === 'itemCode') && row.itemId) return { type: 'item', id: row.itemId, kind: 'item_report' };
+    if ((col.key === 'externalNo' || col.key === 'docNo') && row.docId) {
+      const docKind = row.docKind || row.docType || '';
+      const kind = state.kinds.some((k) => k.key === docKind) ? docKind : 'sale';
+      return { type: 'doc', id: row.docId, kind };
+    }
+    return null;
+  }
+
+  function reportSnapshot() {
+    return {
+      kind: state.kind, mode: state.mode,
+      partyId: state.partyId.slice(), itemId: state.itemId.slice(), category: state.category.slice(),
+      warehouseId: state.warehouseId.slice(), buckets: state.buckets.slice(), docIds: state.docIds.slice(),
+      batchIds: state.batchIds.slice(), period: state.period, from: state.from, to: state.to
+    };
+  }
+
+  function openDrill(drill) {
+    if (!drill || drill.id == null || drill.id === '') return;
+    state.back.push(reportSnapshot());
+    state.kind = drill.kind;
+    state.mode = defaultMode(drill.kind);
+    state.partyId = []; state.itemId = []; state.category = []; state.docIds = []; state.batchIds = [];
+    if (drill.type === 'party') state.partyId = [drill.id];
+    else if (drill.type === 'category') state.category = [drill.id];
+    else if (drill.type === 'item') { state.itemId = [drill.id]; state.mode = 'summary'; }
+    else if (drill.type === 'doc') state.docIds = [drill.id];
+    paintSpecial(); paintKinds(); paintMode(); fillCombos(); run();
+  }
+
+  function goBack() {
+    const prev = state.back.pop();
+    if (!prev) return;
+    state.kind = prev.kind; state.mode = prev.mode;
+    state.partyId = prev.partyId; state.itemId = prev.itemId; state.category = prev.category;
+    state.warehouseId = prev.warehouseId; state.buckets = prev.buckets; state.docIds = prev.docIds;
+    state.batchIds = prev.batchIds || [];
+    state.period = prev.period; state.from = prev.from; state.to = prev.to;
+    if (refs) { refs.from.value = state.from; refs.to.value = state.to; }
+    writeStore(); paintSpecial(); paintKinds(); paintMode(); paintPeriods(); fillCombos(); run();
+  }
+
   /* ---------------- the totals: every thing in its own unit ---------------- */
+  function advancedTotalsHtml(t) {
+    const card = (label, value, unit, cls) => `<div class="dr-tot ${cls || ''}">`
+      + `<span class="lbl">${esc(label)}</span><b>${SamDB.fmt(SamDB.n(value))}</b><span class="unit">${esc(unit)}</span></div>`;
+    let html = '';
+    if (state.kind === 'category') {
+      html = card('قيمة الفواتير', t.value, CURRENCY, 'money')
+        + card('عدد المستندات', t.documents, 'مستند', 'docs')
+        + card('صفوف الفئات', t.rows, 'فئة / وحدة', 'lines');
+    } else if (isStatement()) {
+      const debitLabel = state.kind === 'supplier_statement' ? 'مشتريات / له' : 'مبيعات / عليه';
+      html = card('الرصيد الافتتاحي', t.opening, CURRENCY, 'docs')
+        + card(debitLabel, t.debit, CURRENCY, 'money')
+        + card('مرتجع / خصم', t.credit, CURRENCY, 'lines')
+        + card('الرصيد الختامي', t.balance, CURRENCY, 'money')
+        + card('عدد المستندات', t.documents, 'مستند', 'docs');
+    } else if (isItemReport()) {
+      html = card('عدد الصفوف', t.rows, state.mode === 'summary' ? 'صنف / مخزن' : 'حركة', 'docs')
+        + card('عدد الحركات', t.moves, 'حركة', 'lines');
+    }
+    (t.byUnit || []).forEach((u) => {
+      if (state.kind === 'category') {
+        html += `<div class="dr-tot unit"><span class="lbl">${esc(u.unit)}</span>`
+          + `<b>${SamDB.fmt(SamDB.n(u.net))}</b><span class="unit">${esc(u.unit)} — صافي</span>`
+          + `<small>وارد ${SamDB.fmt(u.inQty)} · صادر ${SamDB.fmt(u.outQty)}</small></div>`;
+      } else if (isStatement()) {
+        html += `<div class="dr-tot unit"><span class="lbl">${esc(u.unit)}</span>`
+          + `<b>${SamDB.fmt(SamDB.n(u.net))}</b><span class="unit">${esc(u.unit)} — صافي</span>`
+          + `<small>وارد ${SamDB.fmt(u.inQty)} · صادر ${SamDB.fmt(u.outQty)}</small></div>`;
+      } else if (isItemReport()) {
+        html += `<div class="dr-tot unit"><span class="lbl">${esc(u.unit)}</span>`
+          + `<b>${SamDB.fmt(SamDB.n(u.balance))}</b><span class="unit">${esc(u.unit)} — متبقي</span>`
+          + `<small>افتتاحي ${SamDB.fmt(u.opening)} · وارد ${SamDB.fmt(u.inQty)} · صادر ${SamDB.fmt(u.outQty)}</small></div>`;
+      }
+    });
+    return html;
+  }
+
   function totalsHtml() {
     const t = (state.res && state.res.totals) || null;
     if (!t) return '';
     const card = (label, value, unit, cls) => `<div class="dr-tot ${cls || ''}">`
       + `<span class="lbl">${esc(label)}</span><b>${SamDB.fmt(SamDB.n(value))}</b><span class="unit">${esc(unit)}</span></div>`;
+    if (isAdvanced()) return advancedTotalsHtml(t);
+    if (isCustomerRaw()) {
+      let html = card('عدد الدفعات', t.batches, 'دفعة', 'docs');
+      if (t.incompatibleBatches) {
+        html += `<div class="dr-tot unit" style="border-color:var(--warn-line);background:var(--warn-bg)">`
+          + `<span class="lbl">تنبيه الوحدات</span><b>${SamDB.fmt(t.incompatibleBatches)}</b>`
+          + `<span class="unit">دفعات بوحدات مختلفة</span>`
+          + '<small>لا تُجمع أرصدتها؛ تظهر كميات الخام والتام منفصلة، والرصيد المجموع بعلامة —.</small></div>';
+      }
+      (t.byUnit || []).forEach((u) => {
+        html += `<div class="dr-tot unit"><span class="lbl">${esc(u.unit)}</span>`
+          + `<small>مسلّم للعميل <b>${SamDB.fmt(u.delivered)}</b></small>`
+          + `<small>باقٍ بالمخازن <b>${SamDB.fmt(u.inWarehouse)}</b></small>`
+          + `<small>ما زال بالإنتاج <b>${SamDB.fmt(u.inProduction)}</b></small>`
+          + `<span class="unit">مستلم ${SamDB.fmt(u.received)} · صرف ${SamDB.fmt(u.issued)} · تام ${SamDB.fmt(u.producedGood)}</span></div>`;
+      });
+      return html;
+    }
     /* a flow report totals what entered and what left; a document report
        totals the money of the papers. Each in the unit of the thing. */
     const flow = t.inQty !== undefined;
@@ -482,20 +684,36 @@
     if (!res || !refs) return;
     const cols = activeColumns();
     refs.title.textContent = res.title;
-    refs.count.textContent = `${SamDB.fmt(res.rows.length)} ${state.mode === 'summary' ? 'مستند' : 'سطر'}`;
+    const countUnit = isCustomerRaw() ? 'دفعة'
+      : state.kind === 'category' ? 'فئة / وحدة'
+        : isItemReport() ? (state.mode === 'summary' ? 'صنف / مخزن' : 'حركة')
+          : state.mode === 'summary' ? 'مستند' : 'سطر';
+    refs.count.textContent = `${SamDB.fmt(res.rows.length)} ${countUnit}`;
     refs.totals.innerHTML = totalsHtml();
 
     const head = `<thead><tr>${cols.map((c) => `<th class="${c.pic ? 'pic' : ''} ${c.num || c.money ? 'num' : ''}">${esc(c.label)}</th>`).join('')}</tr></thead>`;
-    const body = res.rows.map((r) => `<tr class="dr-row ${r.docFirst ? 'doc-first' : ''}" data-doc="${r.docId}">`
-      + cols.map((c) => `<td class="${c.num || c.money ? 'num' : ''}">${cellHtml(r, c, false)}</td>`).join('') + '</tr>').join('');
+    const body = res.rows.map((r) => `<tr class="dr-row ${r.docFirst ? 'doc-first' : ''}" data-doc="${r.docId || ''}">`
+      + cols.map((c) => {
+        const d = drillFor(r, c);
+        const attr = d ? ` data-drill="${d.type}" data-id="${esc(String(d.id))}" data-kind="${esc(d.kind)}" style="cursor:pointer"` : '';
+        return `<td class="${c.num || c.money ? 'num' : ''}"${attr}>${cellHtml(r, c, false)}</td>`;
+      }).join('') + '</tr>').join('');
     refs.tbl.innerHTML = head + `<tbody>${body}</tbody>`;
     toggleEmpty(refs.empty, refs.tbl, res.rows.length === 0);
-    if (!res.rows.length) emptyState(refs.empty, 'i-search', 'لا توجد مستندات بهذه الخيارات', 'جرّب «كل الفترات» أو اختر «الكل» في الفلاتر.');
+    if (!res.rows.length) {
+      if (isCustomerRaw()) emptyState(refs.empty, 'i-search', 'لا توجد دفعات خام عميل بهذه الخيارات', 'جرّب «كل الفترات» أو اختر «الكل» في الفلاتر.');
+      else if (isAdvanced()) emptyState(refs.empty, 'i-search', 'لا توجد بيانات بهذه الخيارات', 'جرّب «كل الفترات» أو اختر «الكل» في الفلاتر.');
+      else emptyState(refs.empty, 'i-search', 'لا توجد مستندات بهذه الخيارات', 'جرّب «كل الفترات» أو اختر «الكل» في الفلاتر.');
+    }
 
-    const per = state.period === 'all' ? 'كل الفترات' : `${res.rows.length ? '' : ''}${state.from || '…'} ← ${state.to || '…'}`;
-    refs.foot.innerHTML = `<span>الفترة: <b>${esc(per)}</b></span>`
-      + `<span>الحالات: <b>${esc(state.buckets.map((b) => (BUCKETS.find((x) => x.key === b) || {}).label).join(' + '))}</b></span>`
-      + `<span>الشكل: <b>${state.mode === 'summary' ? 'ملخّص' : 'تفصيلي'}</b></span>`;
+    const per = state.period === 'all' ? 'كل الفترات' : `${state.from || '…'} ← ${state.to || '…'}`;
+    const docFilter = state.docIds.length ? `<span>النطاق: <b>مستند محدد (${SamDB.fmt(state.docIds.length)})</b></span>` : '';
+    const batchFilter = state.batchIds.length ? `<span>النطاق: <b>دفعة محددة (${SamDB.fmt(state.batchIds.length)})</b></span>` : '';
+    refs.foot.innerHTML = isCustomerRaw()
+      ? `<span>الفترة: <b>${esc(per)}</b></span>${batchFilter}<span>الرصيد: <b>تراكمي حتى نهاية الفترة</b></span>`
+      : `<span>الفترة: <b>${esc(per)}</b></span>${docFilter}${batchFilter}`
+        + `<span>الحالات: <b>${esc(state.buckets.map((b) => (BUCKETS.find((x) => x.key === b) || {}).label).join(' + '))}</b></span>`
+        + `<span>الشكل: <b>${state.mode === 'summary' ? 'ملخّص' : 'تفصيلي'}</b></span>`;
 
     const fit = paperColumns();
     if (fit.hidden.length) {
@@ -525,6 +743,56 @@
   }
 
   /* ---------------- the paper: the SAME rows, the SAME columns ---------------- */
+  function customerRawTotalsTable(t) {
+    const rows = (t.byUnit || []).map((u) => `<tr><td>${esc(u.unit)}</td>`
+      + `<td>${SamDB.fmt(u.batches)}</td><td>${SamDB.fmt(u.received)}</td>`
+      + `<td>${SamDB.fmt(u.issued)}</td><td>${SamDB.fmt(u.producedGood)}</td>`
+      + `<td>${SamDB.fmt(u.delivered)}</td><td>${SamDB.fmt(u.inWarehouse)}</td>`
+      + `<td>${SamDB.fmt(u.inProduction)}</td></tr>`).join('');
+    return `<div style="margin-top:4mm"><b>الإجماليات — كل وحدة على حدة</b>`
+      + '<table class="tbl" style="width:100%;table-layout:fixed">'
+      + '<thead><tr><th>الوحدة</th><th>الدفعات</th><th>مستلم</th><th>صرف</th><th>تام مستلم</th>'
+      + '<th>مسلّم للعميل</th><th>بالمخازن</th><th>بالإنتاج</th></tr></thead>'
+      + `<tbody>${rows}</tbody></table></div>`;
+  }
+
+  function advancedTotalsTable(t) {
+    const rows = (t.byUnit || []).map((u) => {
+      if (state.kind === 'category') return `<tr><td>${esc(u.unit)}</td><td>${SamDB.fmt(u.inQty)}</td><td>${SamDB.fmt(u.outQty)}</td><td>${SamDB.fmt(u.net)}</td><td>${SamDB.fmt(u.value)}</td></tr>`;
+      if (isStatement()) return `<tr><td>${esc(u.unit)}</td><td>${SamDB.fmt(u.inQty)}</td><td>${SamDB.fmt(u.outQty)}</td><td>${SamDB.fmt(u.net)}</td></tr>`;
+      return `<tr><td>${esc(u.unit)}</td><td>${SamDB.fmt(u.opening)}</td><td>${SamDB.fmt(u.inQty)}</td><td>${SamDB.fmt(u.outQty)}</td><td>${SamDB.fmt(u.balance)}</td></tr>`;
+    }).join('');
+    const heads = state.kind === 'category'
+      ? '<th>الوحدة</th><th>وارد</th><th>صادر</th><th>الصافي</th><th>قيمة الفواتير</th>'
+      : isStatement()
+        ? '<th>الوحدة</th><th>وارد</th><th>صادر</th><th>الصافي</th>'
+        : '<th>الوحدة</th><th>افتتاحي</th><th>وارد</th><th>صادر</th><th>المتبقي</th>';
+    return `<div style="margin-top:4mm"><b>الإجماليات — كل وحدة على حدة</b>`
+      + `<table class="tbl" style="width:100%;table-layout:fixed"><thead><tr>${heads}</tr></thead><tbody>${rows}</tbody></table></div>`;
+  }
+
+  function advancedSheetHead(t) {
+    const per = state.period === 'all' ? 'كل الفترات' : `${state.from} ← ${state.to}`;
+    if (state.kind === 'category') return [
+      { k: 'الفترة', v: per },
+      { k: 'عدد المستندات', v: SamDB.fmt(t.documents) },
+      { k: 'قيمة الفواتير', v: `${SamDB.fmt(t.value)} ${CURRENCY}` }
+    ];
+    if (isStatement()) return [
+      { k: 'الفترة', v: per },
+      { k: 'الافتتاحي', v: `${SamDB.fmt(t.opening)} ${CURRENCY}` },
+      { k: state.kind === 'supplier_statement' ? 'مشتريات / له' : 'مبيعات / عليه', v: `${SamDB.fmt(t.debit)} ${CURRENCY}` },
+      { k: 'مرتجع / خصم', v: `${SamDB.fmt(t.credit)} ${CURRENCY}` },
+      { k: 'الرصيد الختامي', v: `${SamDB.fmt(t.balance)} ${CURRENCY}` }
+    ];
+    return [
+      { k: 'الفترة', v: per },
+      { k: 'عدد الصفوف', v: SamDB.fmt(t.rows) },
+      { k: 'عدد الحركات', v: SamDB.fmt(t.moves) },
+      { k: 'الإجماليات', v: 'كل وحدة على حدة' }
+    ];
+  }
+
   function sheetOpts() {
     const res = state.res;
     const fit = paperColumns();
@@ -533,12 +801,69 @@
     const body = res.rows.map((r) => `<tr class="${r.docFirst ? 'doc-first' : ''}">`
       + cols.map((c) => `<td>${cellHtml(r, c, true)}</td>`).join('') + '</tr>').join('');
     const t = res.totals;
+    const per = state.period === 'all' ? 'كل الفترات' : `${state.from} ← ${state.to}`;
+    if (isCustomerRaw()) {
+      const one = (t.byUnit || []).length === 1 && !t.incompatibleBatches;
+      const amount = (key) => one ? SamDB.fmt(t[key]) : 'بوحدته';
+      const unitWarning = t.incompatibleBatches
+        ? `<p style="margin:0 0 3mm;padding:2.5mm 3mm;border:1px solid #f3c58b;background:#fff8e8;border-radius:2mm;font-size:9pt;font-weight:700;text-align:center">تنبيه: ${SamDB.fmt(t.incompatibleBatches)} دفعات بوحدات مختلفة — لا تُجمع أرصدتها؛ تظهر كميات الخام والتام منفصلة، والرصيد المجموع بعلامة —.</p>`
+        : '';
+      const mmTotal = cols.reduce((sum, c) => sum + paperColMM(c), 0) || 1;
+      const colgroup = `<colgroup>${cols.map((c) => `<col style="width:${(paperColMM(c) / mmTotal * 100).toFixed(2)}%">`).join('')}</colgroup>`;
+      return {
+        title: `تقرير ${res.title}`,
+        subtitle: `سطر لكل دفعة · رصيد تراكمي حتى نهاية الفترة · ${per}`,
+        docRef: `DR-${state.kind}-${state.from || 'all'}-${state.to || 'all'}`,
+        docRefLabel: 'رقم التقرير',
+        head: [
+          { k: 'الفترة', v: per },
+          { k: 'عدد الدفعات', v: SamDB.fmt(t.batches) },
+          { k: 'مسلّم للعميل', v: amount('delivered') },
+          { k: 'باقٍ بالمخازن', v: amount('inWarehouse') },
+          { k: 'ما زال بالإنتاج', v: amount('inProduction') }
+        ],
+        bodyHtml: `
+          ${unitWarning}
+          <table class="tbl" style="width:100%;table-layout:fixed">
+            ${colgroup}<thead>${head}</thead><tbody>${body}</tbody>
+          </table>
+          ${customerRawTotalsTable(t)}`,
+        dense: false,
+        landscape: state.orient === 'landscape',
+        paper: state.paper,
+        footer: `SAM Management System — تقرير ${res.title}`
+          + (fit.hidden.length ? ` · أُخفي من الورق: ${fit.hidden.map((c) => c.label).join(' · ')}` : ''),
+        kind: 'report'
+      };
+    }
+    if (isAdvanced()) {
+      const subtitle = state.kind === 'category' ? 'سطر لكل فئة ووحدة'
+        : isStatement() ? 'سطر لكل صنف — القيمة مرة واحدة والرصيد جارٍ'
+          : state.mode === 'summary' ? 'ملخّص — سطر لكل صنف ومخزن' : 'تفصيلي — كل حركة ورصيدها الجاري';
+      return {
+        title: isStatement() ? res.title : `تقرير ${res.title}`,
+        subtitle: `${subtitle} · ${per}`,
+        docRef: `DR-${state.kind}-${state.from || 'all'}-${state.to || 'all'}`,
+        docRefLabel: 'رقم التقرير',
+        head: advancedSheetHead(t),
+        bodyHtml: `
+          <table class="tbl" style="width:100%;table-layout:fixed">
+            <thead>${head}</thead><tbody>${body}</tbody>
+          </table>
+          ${advancedTotalsTable(t)}`,
+        dense: false,
+        landscape: state.orient === 'landscape',
+        paper: state.paper,
+        footer: `SAM Management System — تقرير ${res.title}`
+          + (fit.hidden.length ? ` · أُخفي من الورق: ${fit.hidden.map((c) => c.label).join(' · ')}` : ''),
+        kind: 'report'
+      };
+    }
     const flow = t.inQty !== undefined;
     const unitRows = (t.byUnit || []).map((u) => (flow
       ? `<tr><td>${esc(u.unit)}</td><td>${SamDB.fmt(u.inQty)}</td><td>${SamDB.fmt(u.outQty)}</td><td>${SamDB.fmt(u.net)}</td></tr>`
       : `<tr><td>${esc(u.unit)}</td><td>${SamDB.fmt(u.pieces)}</td>`
         + `<td>${SamDB.fmt(u.cartons)}</td><td>${SamDB.fmt(u.bags)}</td></tr>`)).join('');
-    const per = state.period === 'all' ? 'كل الفترات' : `${state.from} ← ${state.to}`;
     return {
       title: `تقرير ${res.title}`,
       subtitle: `${state.mode === 'summary' ? 'ملخّص — سطر لكل مستند' : 'تفصيلي — سطر لكل صنف'} · ${per}`,
@@ -603,16 +928,94 @@
     if (!res) return null;
     const cols = activeColumns();
     const columns = cols.map((c) => ({
-      header: c.label, key: c.key, bold: c.pic || c.key === 'externalNo',
+      header: c.label, key: c.key, bold: c.pic || c.key === 'externalNo' || c.key === 'batchNo',
       num: !!(c.num || c.money), fmt: c.money ? '#,##0.00' : '#,##0'
     }));
-    if (state.mode === 'detail') columns.unshift({ header: 'كود الصنف', key: 'itemCode' });
+    const withItemCode = state.mode === 'detail' && res.rows.some((r) => r.itemCode);
+    if (withItemCode) columns.unshift({ header: 'كود الصنف', key: 'itemCode' });
     const rows = res.rows.map((r) => {
       const o = {};
-      cols.forEach((c) => { o[c.key] = (c.num || c.money) ? SamDB.n(r[c.key]) : (r[c.key] == null ? '' : String(r[c.key])); });
-      if (state.mode === 'detail') o.itemCode = r.itemCode || '';
+      cols.forEach((c) => { o[c.key] = (c.num || c.money) ? (r[c.key] == null ? null : SamDB.n(r[c.key])) : (r[c.key] == null ? '' : String(r[c.key])); });
+      if (withItemCode) o.itemCode = r.itemCode || '';
       return o;
     });
+    if (isCustomerRaw()) {
+      const t = res.totals;
+      const one = (t.byUnit || []).length === 1 && !t.incompatibleBatches;
+      const totals = one
+        ? ['received', 'issued', 'producedGood', 'delivered', 'inWarehouse', 'inProduction',
+          'rawInWarehouse', 'finishedInWarehouse', 'producedDefect', 'returned']
+          .filter((key) => cols.some((c) => c.key === key))
+          .map((key) => ({ key, value: t[key] }))
+        : [];
+      const meta = [
+        ['الفترة', state.period === 'all' ? 'كل الفترات' : `${state.from} ← ${state.to}`],
+        ['الشكل', 'سطر لكل دفعة — رصيد تراكمي حتى نهاية الفترة'],
+        ['عدد الدفعات', SamDB.fmt(t.batches)],
+        ['قاعدة الوحدة', 'الأمبول يساوي العلبة 1:1 — لا تُخلط الوحدات الأخرى'],
+        ...(t.incompatibleBatches ? [['تنبيه الوحدات', `${SamDB.fmt(t.incompatibleBatches)} دفعات بوحدات مختلفة — أرصدتها المجمعة فارغة، وكميات الخام والتام منفصلة.`]] : [])
+      ];
+      (t.byUnit || []).forEach((u) => {
+        meta.push([`إجمالي خام مستلم — ${u.unit}`, SamDB.fmt(u.received)]);
+        meta.push([`إجمالي صرف للإنتاج — ${u.unit}`, SamDB.fmt(u.issued)]);
+        meta.push([`إجمالي تام مستلم — ${u.unit}`, SamDB.fmt(u.producedGood)]);
+        meta.push([`إجمالي مسلّم للعميل — ${u.unit}`, SamDB.fmt(u.delivered)]);
+        meta.push([`إجمالي باقٍ بالمخازن — ${u.unit}`, SamDB.fmt(u.inWarehouse)]);
+        meta.push([`إجمالي ما زال بالإنتاج — ${u.unit}`, SamDB.fmt(u.inProduction)]);
+      });
+      return {
+        fileName: `SAM-${state.kind}-${state.from || 'all'}-${state.to || 'all'}.xlsx`,
+        sheetName: res.title,
+        title: `تقرير ${res.title}`,
+        subtitle: 'SAM Management System — إجماليات كل وحدة على حدة',
+        meta, columns, rows, totals
+      };
+    }
+    if (isAdvanced()) {
+      const t = res.totals;
+      const totals = [];
+      if (state.kind === 'category' && cols.some((c) => c.key === 'value')) totals.push({ key: 'value', value: t.value });
+      if (isStatement()) {
+        if (cols.some((c) => c.key === 'signedValue')) totals.push({ key: 'signedValue', value: t.debit - t.credit });
+        if (cols.some((c) => c.key === 'balance')) totals.push({ key: 'balance', value: t.balance });
+      }
+      const meta = [
+        ['الفترة', state.period === 'all' ? 'كل الفترات' : `${state.from} ← ${state.to}`],
+        ['الشكل', state.kind === 'category' ? 'سطر لكل فئة ووحدة'
+          : isStatement() ? 'كشف مستندات — القيمة مرة واحدة والرصيد جارٍ'
+            : state.mode === 'summary' ? 'ملخّص صنف/مخزن' : 'تفصيل كل حركة']
+      ];
+      if (state.kind === 'category') {
+        meta.push(['عدد المستندات', SamDB.fmt(t.documents)]);
+        meta.push(['قيمة الفواتير', `${SamDB.fmt(t.value)} ${CURRENCY}`]);
+      } else if (isStatement()) {
+        meta.push(['الرصيد الافتتاحي', `${SamDB.fmt(t.opening)} ${CURRENCY}`]);
+        meta.push(['الرصيد الختامي', `${SamDB.fmt(t.balance)} ${CURRENCY}`]);
+      } else {
+        meta.push(['عدد الصفوف', SamDB.fmt(t.rows)]);
+        meta.push(['عدد الحركات', SamDB.fmt(t.moves)]);
+      }
+      (t.byUnit || []).forEach((u) => {
+        if (state.kind === 'category') {
+          meta.push([`إجمالي صافي ${u.unit}`, SamDB.fmt(u.net)]);
+          meta.push([`إجمالي قيمة ${u.unit}`, `${SamDB.fmt(u.value)} ${CURRENCY}`]);
+        } else if (isStatement()) {
+          meta.push([`إجمالي وارد ${u.unit}`, SamDB.fmt(u.inQty)]);
+          meta.push([`إجمالي صادر ${u.unit}`, SamDB.fmt(u.outQty)]);
+        } else {
+          meta.push([`افتتاحي ${u.unit}`, SamDB.fmt(u.opening)]);
+          meta.push([`وارد ${u.unit}`, SamDB.fmt(u.inQty)]);
+          meta.push([`صادر ${u.unit}`, SamDB.fmt(u.outQty)]);
+          meta.push([`متبقي ${u.unit}`, SamDB.fmt(u.balance)]);
+        }
+      });
+      return {
+        fileName: `SAM-${state.kind}-${state.from || 'all'}-${state.to || 'all'}.xlsx`,
+        sheetName: res.title, title: `تقرير ${res.title}`,
+        subtitle: 'SAM Management System — إجماليات كل وحدة على حدة',
+        meta, columns, rows, totals
+      };
+    }
     const totals = [{ key: 'pieces', value: res.totals.pieces }];
     if (res.totals.inQty !== undefined) {
       totals.push({ key: 'inQty', value: res.totals.inQty });
@@ -662,6 +1065,15 @@
     document.getElementById('btnDocRun').addEventListener('click', run);
     document.getElementById('btnDocPrint').addEventListener('click', doPrint);
     document.getElementById('btnDocExcel').addEventListener('click', doExcel);
+    document.getElementById('btnDocBack').addEventListener('click', goBack);
+    document.getElementById('drDocClear').addEventListener('click', () => {
+      state.docIds = [];
+      paintSpecial(); run();
+    });
+    document.getElementById('drBatchClear').addEventListener('click', () => {
+      state.batchIds = [];
+      paintSpecial(); run();
+    });
     refs.from.addEventListener('change', () => { state.from = refs.from.value; state.period = 'custom'; paintPeriods(); run(); });
     refs.to.addEventListener('change', () => { state.to = refs.to.value; state.period = 'custom'; paintPeriods(); run(); });
     [...refs.mode.querySelectorAll('button')].forEach((b) => b.addEventListener('click', () => {
@@ -676,16 +1088,38 @@
     }));
     document.getElementById('drAllCols').addEventListener('click', () => setAllCols(true));
     document.getElementById('drNoCols').addEventListener('click', () => setAllCols(false));
-    /* double-click a row → the document itself, with edit AND hard delete,
-       exactly as the operations screen offers it */
-    refs.tbl.addEventListener('dblclick', (e) => {
-      const tr = e.target.closest('tr.dr-row');
-      if (!tr || !window.SamDocs) return;
-      const id = Number(tr.dataset.doc);
-      if (!id) return;
-      if (typeof SamDocs.viewDoc === 'function') SamDocs.viewDoc(id);
-      else SamDocs.openEditor(id);
+    refs.tbl.addEventListener('click', (e) => {
+      const td = e.target.closest('td[data-drill]');
+      if (!td) return;
+      openDrill({ type: td.dataset.drill, id: td.dataset.id, kind: td.dataset.kind });
     });
+    /* Reports stay read-only. A double-click explains where edits live and
+       never opens the document editor with its hard-delete action. */
+    refs.tbl.addEventListener('dblclick', (e) => {
+      if (!e.target.closest('tr.dr-row')) return;
+      toast('التقارير للقراءة فقط — افتح العمليات لتعديل المستندات', 'warn', 4600);
+    });
+  }
+
+  function openReport(kind, options = {}) {
+    if (!refs || !kind) return;
+    const list = (v) => Array.isArray(v) ? v : (v == null || v === '' ? [] : [v]);
+    state.kind = kind;
+    state.mode = defaultMode(kind);
+    state.partyId = list(options.partyId);
+    state.itemId = list(options.itemId);
+    state.category = list(options.category);
+    state.warehouseId = list(options.warehouseId);
+    state.buckets = Array.isArray(options.buckets) && options.buckets.length ? options.buckets.slice() : ['good'];
+    state.docIds = list(options.docIds);
+    state.batchIds = list(options.batchIds);
+    state.back = [];
+    if (options.period === 'custom') {
+      state.period = 'custom'; state.from = options.from || ''; state.to = options.to || '';
+      if (refs) { refs.from.value = state.from; refs.to.value = state.to; }
+    } else applyPeriod(options.period || 'all');
+    writeStore();
+    paintSpecial(); paintKinds(); paintMode(); paintBuckets(); fillCombos(); run();
   }
 
   async function load() {
@@ -717,9 +1151,9 @@
     initCombos();
     wire();
     applyPeriod(state.period === 'custom' ? 'today' : state.period);
-    paintKinds(); paintMode(); paintPaper(); paintBuckets();
+    paintSpecial(); paintKinds(); paintMode(); paintPaper(); paintBuckets();
     await run();
   }
 
-  window.SamDocReports = { load, run, print: doPrint, pdf: doPdf, excel: doExcel, sheetOpts, excelSpec, state };
+  window.SamDocReports = { load, open: openReport, run, print: doPrint, pdf: doPdf, excel: doExcel, sheetOpts, excelSpec, state };
 })();

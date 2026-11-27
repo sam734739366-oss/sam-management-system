@@ -73,7 +73,7 @@ app.whenReady().then(async () => {
   const C = db.addItem({ code: 'C-1', name: 'غطاء', base_unit: 'غطاء', category: 'خام' }, [{ warehouseId: W1, good: 1000 }]);
   const P1 = db.addParty({ name: 'عميل الرياض', phone: '0555', type: 'customer' });
   const P2 = db.addParty({ name: 'مورد جدة', phone: '0444', type: 'supplier' });
-  const today = new Date().toISOString().slice(0, 10);
+  const today = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
   const line = (item, pieces, extra = {}) => ({ item_id: item.id || item, bucket: 'good', pieces, cartons: 0, bags: 0, ...extra });
   const doc = (kind, ext, value, lines, extra = {}) => db.saveDocument({
     kind, external_no: ext, doc_date: today, invoice_value: value,

@@ -578,10 +578,11 @@
       <section class="view" id="v-reports">
         <div class="view-head">
           <div>
-            <h2>تقارير المستندات</h2>
-            <p class="sub">نوع المستند · فترة من وإلى · «الكل» في كل فلتر · الإجماليات بوحدة كل شيء · الرقم الخارجي هو المعروض</p>
+            <h2>التقارير</h2>
+            <p class="sub">مستندات · فئات · كشوف حسابات · أصناف · «الكل» في كل فلتر · إجماليات كل وحدة على حدة · انقر للتقرير</p>
           </div>
           <div class="view-actions">
+            <button class="btn btn-ghost" id="btnDocBack" style="display:none"><span class="t3d xs tone-pretn"><svg class="ic"><use href="#i-return"/></svg></span><span class="btn-txt">رجوع</span></button>
             <button class="btn btn-primary" id="btnDocRun"><span class="t3d xs tone-pretn"><svg class="ic"><use href="#i-chart"/></svg></span><span class="btn-txt">تشغيل التقرير</span><span class="kbd">F5</span></button>
             <button class="btn btn-ghost" id="btnDocPrint"><span class="t3d xs tone-info"><svg class="ic"><use href="#i-print"/></svg></span><span class="btn-txt">طباعة / PDF</span></button>
             <button class="btn btn-ghost" id="btnDocExcel"><span class="t3d xs tone-ok"><svg class="ic"><use href="#i-archive"/></svg></span><span class="btn-txt">تصدير Excel</span></button>
@@ -604,17 +605,23 @@
               <div class="field"><span>العميل / المورد</span><div id="drParty"></div></div>
               <div class="field"><span>الصنف</span><div id="drItem"></div></div>
               <div class="field"><span>الفئة</span><div id="drCategory"></div></div>
-              <div class="field"><span>المخزن</span><div id="drWh"></div></div>
+              <div class="field" id="drWhField"><span>المخزن</span><div id="drWh"></div></div>
+              <div class="field" id="drDocField" style="display:none"><span>المستند المحدد</span><button type="button" class="btn btn-sm btn-ghost" id="drDocClear">إلغاء فلتر المستند</button></div>
+              <div class="field" id="drBatchField" style="display:none"><span>الدفعة المحددة</span><button type="button" class="btn btn-sm btn-ghost" id="drBatchClear">إلغاء فلتر الدفعة</button></div>
             </div>
 
-            <div class="form-sec" style="margin-top:14px"><span class="t3d xs tone-info"><svg class="ic"><use href="#i-list"/></svg></span><span>شكل التقرير</span></div>
-            <div class="dr-seg" id="drMode">
-              <button type="button" data-mode="detail">تفصيلي — سطر لكل صنف</button>
-              <button type="button" data-mode="summary">ملخّص — سطر لكل مستند</button>
+            <div id="drModeSection">
+              <div class="form-sec" style="margin-top:14px"><span class="t3d xs tone-info"><svg class="ic"><use href="#i-list"/></svg></span><span>شكل التقرير</span></div>
+              <div class="dr-seg" id="drMode">
+                <button type="button" data-mode="detail">تفصيلي — سطر لكل صنف</button>
+                <button type="button" data-mode="summary">ملخّص — سطر لكل مستند</button>
+              </div>
             </div>
 
-            <div class="form-sec" style="margin-top:14px"><span class="t3d xs tone-move"><svg class="ic"><use href="#i-box"/></svg></span><span>الحالات داخلة في التقرير</span></div>
-            <div class="cols-wrap" id="drBuckets"></div>
+            <div id="drBucketsSection">
+              <div class="form-sec" style="margin-top:14px"><span class="t3d xs tone-move"><svg class="ic"><use href="#i-box"/></svg></span><span>الحالات داخلة في التقرير</span></div>
+              <div class="cols-wrap" id="drBuckets"></div>
+            </div>
 
             <div class="form-sec" style="margin-top:14px"><span class="t3d xs tone-adjust"><svg class="ic"><use href="#i-scale"/></svg></span><span>الورق والاتجاه</span></div>
             <div class="dr-seg" id="drPaper">
@@ -645,7 +652,7 @@
             <div class="report-foot" id="drFoot"></div>
           </div>
         </div>
-        <p class="foot-note">«تفصيلي» يعرض كل صنف داخل كل مستند مع قيمة الفاتورة مرة واحدة للمستند، و«ملخّص» يعرض كل مستند على سطر. الرقم المعروض هو رقمك الخارجي؛ وإن لم يكن للمستند رقم خارجي يظهر رقمه الداخلي ومعه علامة «داخلي». الرصيد الافتتاحي لا يدخل في تقارير المستندات لأنه ليس مستنداً — وله مربع مستقل في التقرير اليومي.</p>
+        <p class="foot-note" id="drExplain">«تفصيلي» يعرض كل صنف داخل كل مستند مع قيمة الفاتورة مرة واحدة للمستند، و«ملخّص» يعرض كل مستند على سطر. الرقم المعروض هو رقمك الخارجي؛ وإن لم يكن للمستند رقم خارجي يظهر رقمه الداخلي ومعه علامة «داخلي». الرصيد الافتتاحي لا يدخل في تقارير المستندات لأنه ليس مستنداً — وله مربع مستقل في التقرير اليومي.</p>
       </section>
 
       <!-- ---------- daily report ---------- -->
