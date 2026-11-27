@@ -141,6 +141,7 @@ const PERM_BUTTONS = [
   ['#btnAddWh', 'warehouses', 'add'],
   ['#btnAddParty', 'parties', 'add'],
   ['#btnNewDoc', 'transactions', 'add'],
+  ['#rawGoReport', 'reports', 'view'],
   ['#btnNewIssue', 'production', 'add'],
   ['#btnNewTolling', 'production', 'add'],
   ['#btnNewArchive', 'production', 'add'],

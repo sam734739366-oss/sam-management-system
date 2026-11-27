@@ -56,7 +56,6 @@
 
   const state = {
     docs: [], items: [], warehouses: [], parties: [], batches: [],
-    rawArchive: { rows: [], search: '', status: 'all', error: '' },
     kinds: Object.fromEntries(Object.entries(KIND_STYLE).map(([k, v]) => [k, v.ar])),
     kindCounts: {},
     filter: { kind: '', search: '' }
@@ -247,68 +246,14 @@
      لا يظهر إلا في الإنتاج». The strip shows what left the warehouse for
      the plant — the last issues, with their totals — and opens the
      production screen with one click. */
-  const RAW_STATUS = {
-    received: 'مستلم', 'in-production': 'في الإنتاج', ready: 'جاهز',
-    delivered: 'مسلّم', 'unit-mismatch': 'وحدات مختلفة'
-  };
-  const rawNum = (v) => v == null ? '—' : SamDB.fmt(v);
-  function rawArchiveFiltered() {
-    const q = String(state.rawArchive.search || '').trim().toLowerCase();
-    return (state.rawArchive.rows || []).filter((r) => {
-      if (state.rawArchive.status !== 'all' && r.status !== state.rawArchive.status) return false;
-      if (!q) return true;
-      return [r.batchNo, r.partyName, r.itemName, r.itemCode, r.warehouseName]
-        .some((v) => String(v || '').toLowerCase().includes(q));
-    });
-  }
-  function rawArchiveRowsHtml() {
-    const canReport = !window.SamSession || SamSession.can('reports', 'view');
-    return rawArchiveFiltered().map((r) => `<tr data-batch-id="${r.batchId}">
-      <td class="mono"><b>${esc(r.batchNo || '—')}</b></td>
-      <td>${esc(r.docDate || '—')}</td>
-      <td>${esc(r.partyName || '—')}</td>
-      <td>${esc(r.itemName || '—')}</td>
-      <td>${esc(r.unitLabel || r.rawUnit || '—')}</td>
-      <td class="num">${rawNum(r.received)}</td>
-      <td class="num">${rawNum(r.issued)}</td>
-      <td class="num">${rawNum(r.producedGood)}</td>
-      <td class="num">${rawNum(r.delivered)}</td>
-      <td class="num"><b>${rawNum(r.inWarehouse)}</b></td>
-      <td class="num"><b>${rawNum(r.inProduction)}</b></td>
-      <td class="num">${rawNum(r.producedDefect)}</td>
-      <td class="num">${rawNum(r.returned)}</td>
-      <td><span class="chip ${r.status === 'unit-mismatch' ? 'bad' : r.status === 'delivered' ? 'ok' : 'accent'}">${esc(RAW_STATUS[r.status] || r.status || '—')}</span></td>
-      <td><div class="row-actions">
-        ${canReport ? '<button type="button" class="btn btn-sm btn-ghost" data-action="report">تقرير الدفعة</button>' : ''}
-        ${r.docId ? `<button type="button" class="btn btn-sm btn-ghost" data-action="permit">تصريح الاستلام</button>` : ''}
-      </div></td>
-    </tr>`).join('');
-  }
-  function paintRawArchiveTable() {
-    const body = document.getElementById('rawBatchesBody');
-    if (!body) return;
-    const rows = rawArchiveFiltered();
-    body.innerHTML = rawArchiveRowsHtml();
-    const count = document.getElementById('rawBatchCount');
-    if (count) count.textContent = `${SamDB.fmt(rows.length)} من ${SamDB.fmt((state.rawArchive.rows || []).length)} دفعة`;
-    const empty = document.getElementById('rawBatchEmpty');
-    if (empty) empty.style.display = rows.length ? 'none' : '';
-  }
-
   async function renderRawIssueStrip() {
     const host = document.getElementById('rawIssueStrip');
     if (!host) return;
-    host.innerHTML = '<div class="raw-head"><b>جارٍ تحميل دفعات خام العميل…</b></div>';
-    state.rawArchive.error = '';
-    const [docs, batches, archive] = await Promise.all([
+    host.innerHTML = '<div class="raw-head"><b>جارٍ تحميل بيانات الخام…</b></div>';
+    const [docs, batches] = await Promise.all([
       SamDB.call('listDocuments', { kind: 'prod_issue', limit: 8 }).catch(() => []),
-      SamDB.call('listDocuments', { kind: 'tolling_in', limit: 50 }).catch(() => []),
-      SamDB.call('customerRawArchive', {}).catch((e) => {
-        state.rawArchive.error = e && e.message ? e.message : 'تعذّر تحميل أرشيف خام العميل';
-        return null;
-      })
+      SamDB.call('listDocuments', { kind: 'tolling_in', limit: 50 }).catch(() => [])
     ]);
-    state.rawArchive.rows = archive && Array.isArray(archive.rows) ? archive.rows : [];
     const rows = (docs || []).filter((d) => d.kind === 'prod_issue');
     const pieces = rows.reduce((a, d) => a + (Number(d.totalPieces) || 0), 0);
     const cards = rows.slice(0, 4).map((d) => `
@@ -323,8 +268,6 @@
         <span class="raw-date">${esc(b.partyName || '')}</span>
         <span class="raw-qty">${SamDB.fmt(b.totalPieces || 0)} حبة</span>
       </button>`).join('');
-    const canReport = !window.SamSession || SamSession.can('reports', 'view');
-    const canAdd = !window.SamSession || SamSession.can('transactions', 'add');
     host.innerHTML = `
       <div class="raw-head">
         <span class="t3d tone-issue"><svg class="ic"><use href="#i-issue"/></svg></span>
@@ -338,38 +281,7 @@
         <b>تصاريح دخول خام العميل</b>
         <span class="dim">${SamDB.fmt((batches || []).length)} دفعة</span>
       </div>
-      <div class="raw-cards">${batchCards}</div>` : ''}
-      <div class="raw-archive-head">
-        <div><h3>دفعات خام العميل — الاستلامات والمتابعة</h3><p>نفس أرقام تقرير المتابعة: مستلم · صرف · تام · مسلّم · مخازن · إنتاج</p></div>
-        <div class="raw-archive-actions">
-          <button class="btn btn-sm btn-ghost" type="button" id="rawNewReceipt" ${canAdd ? '' : 'style="display:none"'}>استلام خام جديد</button>
-          <button class="btn btn-sm btn-primary" type="button" id="rawGoReport" ${canReport ? '' : 'style="display:none"'}>تقرير المتابعة</button>
-        </div>
-      </div>
-      <div class="raw-archive-filters">
-        <input id="rawBatchSearch" class="input" type="search" placeholder="بحث برقم الدفعة أو العميل أو الصنف…" value="${esc(state.rawArchive.search || '')}" />
-        <select id="rawBatchStatus" class="input">
-          <option value="all">كل الحالات</option>
-          <option value="received">مستلم</option>
-          <option value="in-production">في الإنتاج</option>
-          <option value="ready">جاهز</option>
-          <option value="delivered">مسلّم</option>
-          <option value="unit-mismatch">وحدات مختلفة</option>
-        </select>
-        <span class="dim" id="rawBatchCount"></span>
-      </div>
-      ${state.rawArchive.error ? `<p class="form-err">${esc(state.rawArchive.error)}</p>` : ''}
-      <div class="tbl-wrap raw-archive-table">
-        <table class="tbl" id="rawBatchesTbl">
-          <thead><tr>
-            <th>الدفعة</th><th>التاريخ</th><th>العميل</th><th>الصنف</th><th>الوحدة</th>
-            <th>مستلم</th><th>صرف</th><th>تام</th><th>مسلّم</th><th>بالمخازن</th><th>بالإنتاج</th>
-            <th>تالف</th><th>مرتجع</th><th>الحالة</th><th>الإجراءات</th>
-          </tr></thead>
-          <tbody id="rawBatchesBody"></tbody>
-        </table>
-      </div>
-      <div class="empty" id="rawBatchEmpty" style="display:none">لا توجد دفعات بهذه الخيارات — جرّب «كل الحالات» أو امسح البحث.</div>`;
+      <div class="raw-cards">${batchCards}</div>` : ''}`;
     host.querySelectorAll('.raw-card').forEach((b) => {
       if (b.getAttribute('data-batch')) {
         b.addEventListener('click', () => printPermits(Number(b.getAttribute('data-batch'))));
@@ -382,48 +294,6 @@
       const nav = document.querySelector('.nav-item[data-view=production]');
       if (nav) nav.click();
     });
-    const search = host.querySelector('#rawBatchSearch');
-    if (search) search.addEventListener('input', () => {
-      state.rawArchive.search = search.value;
-      paintRawArchiveTable();
-    });
-    const status = host.querySelector('#rawBatchStatus');
-    if (status) {
-      status.value = state.rawArchive.status || 'all';
-      status.addEventListener('change', () => {
-        state.rawArchive.status = status.value;
-        paintRawArchiveTable();
-      });
-    }
-    const report = host.querySelector('#rawGoReport');
-    if (report) report.addEventListener('click', () => {
-      const nav = document.querySelector('.nav-item[data-view=reports]');
-      if (nav) nav.click();
-      if (window.SamDocReports && typeof SamDocReports.open === 'function') {
-        SamDocReports.open('customer_raw', { period: 'all' });
-      } else toast('تعذّر فتح تقرير المتابعة', 'bad');
-    });
-    const newReceipt = host.querySelector('#rawNewReceipt');
-    if (newReceipt) newReceipt.addEventListener('click', () => openEditor(null, 'tolling_in'));
-    const table = host.querySelector('#rawBatchesTbl');
-    if (table) table.addEventListener('click', (e) => {
-      const btn = e.target.closest('[data-action]');
-      const tr = btn && btn.closest('tr[data-batch-id]');
-      if (!btn || !tr) return;
-      const row = (state.rawArchive.rows || []).find((r) => String(r.batchId) === tr.dataset.batchId);
-      if (!row) return;
-      if (btn.dataset.action === 'report') {
-        if (!canReport) return toast('لا تملك صلاحية عرض التقارير', 'bad');
-        const nav = document.querySelector('.nav-item[data-view=reports]');
-        if (nav) nav.click();
-        if (window.SamDocReports && typeof SamDocReports.open === 'function') {
-          SamDocReports.open('customer_raw', { period: 'all', batchIds: [row.batchId] });
-        } else toast('تعذّر فتح تقرير الدفعة', 'bad');
-      } else if (btn.dataset.action === 'permit' && row.docId) {
-        printPermits(row.docId);
-      }
-    });
-    paintRawArchiveTable();
   }
 
   function render() {
@@ -1926,6 +1796,13 @@
   /* ---------------- wiring ---------------- */
   let t = null;
   document.getElementById('btnNewDoc').addEventListener('click', () => openEditor(null));
+  document.getElementById('rawGoReport').addEventListener('click', () => {
+    const nav = document.querySelector('.nav-item[data-view=reports]');
+    if (nav) nav.click();
+    if (window.SamDocReports && typeof SamDocReports.open === 'function') {
+      SamDocReports.open('customer_raw', { period: 'all' });
+    } else toast('تعذّر فتح تقرير المتابعة', 'bad');
+  });
   document.getElementById('docSearch').addEventListener('input', (e) => {
     clearTimeout(t);
     t = setTimeout(() => { state.filter.search = e.target.value; load(); }, 200);

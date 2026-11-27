@@ -1518,13 +1518,3 @@
 .raw-card .raw-no { font-size: 12.5px; font-weight: 800; color: var(--brand-700); }
 .raw-card .raw-date { font-size: 11px; color: var(--muted-fg); }
 .raw-card .raw-qty { font-size: 12px; font-weight: 700; }
-.raw-archive-head { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-top:14px; padding:10px 12px; border:1px solid var(--line); border-radius:12px; background:var(--surface); }
-.raw-archive-head h3 { margin:0; font-size:14px; font-weight:900; color:var(--ink); }
-.raw-archive-head p { margin:3px 0 0; font-size:11.5px; color:var(--muted-fg); }
-.raw-archive-actions { display:flex; gap:8px; flex-wrap:wrap; }
-.raw-archive-filters { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:10px 0; }
-.raw-archive-filters .input { max-width:340px; }
-.raw-archive-filters select.input { max-width:190px; }
-.raw-archive-table { max-height:520px; }
-.raw-archive-table th, .raw-archive-table td { white-space:nowrap; }
-.raw-archive-table .row-actions { display:flex; gap:5px; }

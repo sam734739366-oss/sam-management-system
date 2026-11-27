@@ -1,5 +1,5 @@
 /**
- * tools/v12-customer-raw-operations-ui-check.js — customer raw archive in operations.
+ * tools/v12-customer-raw-operations-ui-check.js — icon-only customer raw follow-up.
  *
  * Run: env -u ELECTRON_RUN_AS_NODE npx electron tools/v12-customer-raw-operations-ui-check.js
  */
@@ -87,82 +87,53 @@ app.whenReady().then(async () => {
     await js(`sam.auth.login('admin','admin123')`);
     await sleep(1600);
     await js(`document.querySelector('.nav-item[data-view=transactions]').click()`);
-    await sleep(1600);
+    await sleep(1500);
 
-    const archive = await js(`(() => {
-      const host=document.getElementById('rawIssueStrip');
-      const table=document.getElementById('rawBatchesTbl');
-      return { visible: host && getComputedStyle(host).display !== 'none',
-        text: host ? host.textContent.replace(/\\s+/g,' ').trim() : '',
-        rows: table ? table.querySelectorAll('tbody tr[data-batch-id]').length : 0,
-        search: !!document.getElementById('rawBatchSearch'),
-        status: !!document.getElementById('rawBatchStatus'),
-        report: !!document.getElementById('rawGoReport'),
-        newReceipt: !!document.getElementById('rawNewReceipt'),
-        oldCards: host ? host.querySelectorAll('.raw-card').length : 0,
-        production: !!document.getElementById('rawGoProduction') };
+    const operations = await js(`(() => {
+      const view=document.getElementById('v-transactions');
+      const icon=document.getElementById('rawGoReport');
+      const strip=document.getElementById('rawIssueStrip');
+      return {
+        archiveTable:!!document.getElementById('rawBatchesTbl'),
+        archiveSearch:!!document.getElementById('rawBatchSearch'),
+        archiveText:/الاستلامات والمتابعة/.test(view.textContent||''),
+        iconInHeader:!!icon && !!icon.closest('.view-actions'),
+        iconVisible:!!icon && getComputedStyle(icon).display !== 'none',
+        iconText:icon ? icon.textContent.trim() : '',
+        iconLabel:icon ? icon.getAttribute('aria-label') : '',
+        iconSvg:!!icon && !!icon.querySelector('svg'),
+        oldCards:strip ? strip.querySelectorAll('.raw-card').length : 0,
+        production:!!document.getElementById('rawGoProduction')
+      };
     })()`);
-    check('أرشيف خام العميل ظاهر في العمليات', archive && archive.visible && /دفعات خام العميل/.test(archive.text), archive);
-    check('الأرشيف يعرض كل الاستلامات', archive && archive.rows === 3, archive && archive.rows);
-    check('البحث وفلتر الحالة وإجراءات التقرير والاستلام موجودة', archive && archive.search && archive.status && archive.report && archive.newReceipt, archive);
-    check('شريط الصرف القديم وتصاريح الدخول ما زالا يعملان', archive && archive.oldCards >= 1 && archive.production, archive);
+    check('لا يظهر جدول الأرشيف أو بحثه داخل العمليات', operations && !operations.archiveTable && !operations.archiveSearch && !operations.archiveText, operations);
+    check('أيقونة المتابعة فقط تظهر في ترويسة العمليات', operations && operations.iconInHeader && operations.iconVisible && operations.iconSvg, operations);
+    check('الأيقونة بلا نص ظاهر ومعها تسمية واضحة', operations && operations.iconText === '' && /متابعة خام العميل/.test(operations.iconLabel || ''), operations);
+    check('شريط الصرف القديم وتصاريح الدخول ما زالا يعملان', operations && operations.oldCards >= 1 && operations.production, operations);
 
-    const rowText = await js(`document.getElementById('rawBatchesTbl').textContent.replace(/\\s+/g,' ').trim()`);
-    check('الأرشيف يعرض أرقام متابعة الدفعة', ['100','60','50','10','40'].every(n => rowText.includes(n)), rowText.slice(0, 500));
-
-    await js(`(() => { const e=document.getElementById('rawBatchSearch'); e.value='عميل ثانٍ'; e.dispatchEvent(new Event('input',{bubbles:true})); })()`);
-    await sleep(250);
-    check('بحث العميل يضيّق الدفعات', await js(`document.querySelectorAll('#rawBatchesTbl tbody tr[data-batch-id]').length === 2`));
-    await js(`(() => { const e=document.getElementById('rawBatchSearch'); e.value=''; e.dispatchEvent(new Event('input',{bubbles:true})); const s=document.getElementById('rawBatchStatus'); s.value='received'; s.dispatchEvent(new Event('change',{bubbles:true})); })()`);
-    await sleep(250);
-    check('فلتر الحالة يعرض الدفعات المستلمة فقط', await js(`document.querySelectorAll('#rawBatchesTbl tbody tr[data-batch-id]').length === 1`));
-    await js(`(() => { const s=document.getElementById('rawBatchStatus'); s.value='all'; s.dispatchEvent(new Event('change',{bubbles:true})); })()`);
-    await sleep(250);
-
-    await js(`document.querySelector('#rawBatchesTbl tr[data-batch-id] [data-action="report"]').click()`);
+    await js(`document.getElementById('rawGoReport').click()`);
     await sleep(1300);
-    const opened = await js(`(() => ({ kind:SamDocReports.state.kind, batchIds:SamDocReports.state.batchIds,
-      rows:SamDocReports.state.res && SamDocReports.state.res.rows.length,
-      batchField:!!document.getElementById('drBatchField') && getComputedStyle(document.getElementById('drBatchField')).display !== 'none' }))()`);
-    check('زر تقرير الدفعة يفتح التقرير مفلتراً', opened && opened.kind === 'customer_raw' && opened.batchIds.length === 1 && opened.rows === 1, opened);
-    check('فلتر الدفعة ظاهر في شاشة التقرير', opened && opened.batchField, opened);
-    await js(`document.getElementById('drBatchClear').click()`);
-    await sleep(900);
-    check('إلغاء فلتر الدفعة يعيد كل الدفعات', await js(`SamDocReports.state.batchIds.length === 0 && SamDocReports.state.res.rows.length === 3`));
-
-    await js(`document.querySelector('.nav-item[data-view=transactions]').click()`);
-    await sleep(1200);
-    await js(`document.getElementById('rawNewReceipt').click(); null`);
-    await sleep(500);
-    const editor = await js(`(() => { const m=document.querySelector('.modal.editor'); return m ? m.textContent.replace(/\\s+/g,' ').trim().slice(0,180) : ''; })()`);
-    check('زر استلام جديد يفتح محرر استلام خام العميل', /استلام خام عميل/.test(editor), editor);
-    await js(`(() => { const b=[...document.querySelectorAll('.modal.editor .modal-foot button')].find(x=>/إغلاق/.test(x.textContent||'')); if(b)b.click(); })()`);
-    await sleep(250);
+    const opened = await js(`(() => ({ active:document.getElementById('v-reports').classList.contains('active'),
+      kind:SamDocReports.state.kind, rows:SamDocReports.state.res && SamDocReports.state.res.rows.length }))()`);
+    check('الضغط على الأيقونة يفتح شاشة متابعة خام العميل', opened && opened.active && opened.kind === 'customer_raw' && opened.rows === 3, opened);
 
     await js(`sam.auth.logout()`);
     await sleep(700);
     await js(`sam.auth.login('ops','ops123')`);
     await sleep(1500);
     await js(`document.querySelector('.nav-item[data-view=transactions]').click()`);
-    await sleep(1400);
+    await sleep(1300);
     const limited = await js(`(async () => {
-      let denied = false;
-      try { await SamDB.call('docReport', { kind: 'customer_raw' }); }
-      catch (e) { denied = !!(e && e.denied); }
-      return {
-        archiveRows: document.querySelectorAll('#rawBatchesTbl tbody tr[data-batch-id]').length,
-        reportButtons: document.querySelectorAll('#rawBatchesTbl [data-action="report"]').length,
-        headerReport: !!document.getElementById('rawGoReport') && getComputedStyle(document.getElementById('rawGoReport')).display !== 'none',
-        newReceipt: !!document.getElementById('rawNewReceipt') && getComputedStyle(document.getElementById('rawNewReceipt')).display !== 'none',
-        denied
-      };
+      let denied=false;
+      try { await SamDB.call('docReport',{kind:'customer_raw'}); } catch(e) { denied=!!(e&&e.denied); }
+      const icon=document.getElementById('rawGoReport');
+      return { denied, iconHidden:!icon || getComputedStyle(icon).display === 'none' };
     })()`);
-    check('مستخدم العمليات يرى الأرشيف دون صلاحية تقارير', limited && limited.archiveRows === 3 && limited.reportButtons === 0 && !limited.headerReport, limited);
-    check('مستخدم العمليات يحتفظ بصلاحية الاستلام الجديد', limited && limited.newReceipt, limited);
+    check('مستخدم العمليات لا يرى أيقونة تقارير غير مسموح له', limited && limited.iconHidden, limited);
     check('التقرير المباشر ممنوع دون صلاحية تقارير', limited && limited.denied, limited);
 
     check('لا أخطاء في وحدة التحكم', errors.length === 0, errors);
-    await shutdown(0);
+    await shutdown(fail ? 1 : 0);
   } catch (error) {
     console.log('FATAL: ' + (error && error.stack ? error.stack : error));
     await shutdown(1);
